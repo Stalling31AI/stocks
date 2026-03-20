@@ -9,13 +9,13 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Interval → yahoo-finance2 params
+// Interval → yahoo-finance2 v3 params
 function getYahooParams(interval) {
   const map = {
-    '5m':  { interval: '5m',  range: '5d'  },
-    '15m': { interval: '15m', range: '1mo' },
-    '1h':  { interval: '1h',  range: '3mo' },
-    '1d':  { interval: '1d',  range: '1y'  },
+    '5m':  { interval: '5m',  days: 5   },
+    '15m': { interval: '15m', days: 30  },
+    '1h':  { interval: '1h',  days: 90  },
+    '1d':  { interval: '1d',  days: 365 },
   };
   return map[interval] || map['1d'];
 }
@@ -25,11 +25,11 @@ app.get('/api/quote/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { interval = '1d' } = req.query;
-    const { interval: yInterval, range } = getYahooParams(interval);
+    const { interval: yInterval, days } = getYahooParams(interval);
 
     const result = await yahooFinance.chart(symbol, {
+      period1: new Date(Date.now() - days * 24 * 60 * 60 * 1000),
       interval: yInterval,
-      range,
     });
 
     const quotes = (result.quotes || [])
