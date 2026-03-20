@@ -1,5 +1,6 @@
 const express = require('express');
-const yahooFinance = require('yahoo-finance2').default;
+const { YahooFinance } = require('yahoo-finance2');
+const yahooFinance = new YahooFinance();
 const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
 
