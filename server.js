@@ -14,8 +14,8 @@ app.get('/api/quote/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const { interval = '1d' } = req.query;
     const intervalMap = {
-      '5m':  { interval: '5m',  range: '5d' },
-      '15m': { interval: '15m', range: '5d' },
+      '5m':  { interval: '5m',  range: '1d' },
+      '15m': { interval: '15m', range: '1d' },
       '1h':  { interval: '1h',  range: '1mo' },
       '1d':  { interval: '1d',  range: '1y' },
     };
@@ -62,17 +62,19 @@ app.post('/api/analyze', async (req, res) => {
     const last   = recent[recent.length - 1];
 
     const fmt = (v, d = 2) => (v != null ? Number(v).toFixed(d) : 'N/A');
+    const nowStr = new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam' });
 
-    const prompt = `Je bent een professionele technische analist. Analyseer de marktdata voor ${symbol} en geef een concreet handelsadvies.
+    const prompt = `Je bent een professionele daytrader en technische analist. Analyseer ${symbol} voor intraday handel.
 
 Aandeel: ${symbol}
 Timeframe: ${interval}
 Huidige koers: ${fmt(last.close)}
+Huidige tijd (Amsterdam): ${nowStr}
 
-Recente OHLCV (laatste 10 kaarsen):
-${recent.slice(-10).map(q => {
+Recente OHLCV (laatste 15 kaarsen):
+${recent.slice(-15).map(q => {
   const d = new Date(q.date);
-  return `${d.toLocaleDateString('nl-NL')} ${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})} | O:${fmt(q.open)} H:${fmt(q.high)} L:${fmt(q.low)} C:${fmt(q.close)} V:${q.volume}`;
+  return `${d.toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit' })} | O:${fmt(q.open)} H:${fmt(q.high)} L:${fmt(q.low)} C:${fmt(q.close)} V:${q.volume}`;
 }).join('\n')}
 
 Technische indicatoren:
@@ -81,25 +83,44 @@ Technische indicatoren:
 - Bollinger Bands: Upper ${fmt(indicators.bb?.upper)} | Midden ${fmt(indicators.bb?.middle)} | Lower ${fmt(indicators.bb?.lower)}
 - Trend (EMA20 vs EMA50): ${indicators.trend || 'NEUTRAAL'}
 
+Zoek eerst naar recent nieuws over ${symbol} van vandaag via web search.
+
+Analyseer dan:
+1. Dagtrend: hoe bewoog het aandeel van ochtend naar middag?
+2. Nieuws sentiment: positief of negatief nieuws vandaag?
+3. Concreet instapmoment: wanneer is/was het beste instapmoment vandaag? (geef tijdstip HH:MM)
+4. Actie-advies: KOOP NU / WACHT TOT HH:MM / NIET MEER KOPEN VANDAAG
+
 Geef ALLEEN het volgende JSON-object terug, geen extra tekst:
 {
   "signaal": "KOOP" of "VERKOOP" of "WACHT",
+  "actie": "KOOP NU" of "WACHT TOT HH:MM" of "NIET MEER KOPEN VANDAAG",
+  "instap_tijd": "<bijv. 14:30 of nu>",
   "vertrouwen": <integer 0-100>,
-  "redenering": "<2-3 zinnen onderbouwing in het Nederlands>",
+  "dagtrend": "<1-2 zinnen over ochtend vs middag beweging>",
+  "nieuws_sentiment": "POSITIEF" of "NEGATIEF" of "NEUTRAAL",
+  "nieuws_samenvatting": "<1-2 zinnen over recent nieuws>",
+  "redenering": "<3-4 zinnen volledige onderbouwing in het Nederlands>",
   "entry": <entry prijs als decimaal>,
   "stop_loss": <stop-loss prijs als decimaal>,
   "target": <koersdoel als decimaal>,
-  "rr_ratio": <risk/reward ratio als decimaal, bijv. 2.5>
+  "verwacht_rendement_pct": <verwacht rendement in % als decimaal>,
+  "rr_ratio": <risk/reward ratio als decimaal>
 }`;
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: 2048,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       messages: [{ role: 'user', content: prompt }],
+    }, {
+      headers: { 'anthropic-beta': 'web-search-2025-03-05' },
     });
 
-    const text = message.content[0].text.trim();
-    const match = text.match(/\{[\s\S]*\}/);
+    // Find the last text block (web_search may produce tool_use blocks before the final answer)
+    const textBlock = [...message.content].reverse().find(b => b.type === 'text');
+    if (!textBlock) throw new Error('AI gaf geen tekst terug');
+    const match = textBlock.text.trim().match(/\{[\s\S]*\}/);
     if (!match) throw new Error('AI gaf geen valide JSON terug');
 
     res.json(JSON.parse(match[0]));
