@@ -1,6 +1,4 @@
 const express = require('express');
-const yahooFinance = require('yahoo-finance2').default;
-yahooFinance.setGlobalConfig({ validation: { logOptionsErrors: false } });
 const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
 
@@ -10,41 +8,40 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Interval → yahoo-finance2 params
-function getYahooParams(interval) {
-  const map = {
-    '5m':  { interval: '5m',  range: '5d'  },
-    '15m': { interval: '15m', range: '1mo' },
-    '1h':  { interval: '1h',  range: '3mo' },
-    '1d':  { interval: '1d',  range: '1y'  },
-  };
-  return map[interval] || map['1d'];
-}
-
 // GET /api/quote/:symbol?interval=1d
 app.get('/api/quote/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { interval = '1d' } = req.query;
-    const { interval: yInterval, range } = getYahooParams(interval);
-
-    const result = await yahooFinance.chart(symbol, {
-      interval: yInterval,
-      range: range,
-    }, { validateResult: false });
-
-    const quotes = (result.quotes || [])
-      .filter(q => q.open != null && q.close != null && q.high != null && q.low != null)
-      .map(q => ({
-        date: q.date instanceof Date ? q.date.toISOString() : q.date,
-        open:   +q.open.toFixed(4),
-        high:   +q.high.toFixed(4),
-        low:    +q.low.toFixed(4),
-        close:  +q.close.toFixed(4),
-        volume: q.volume || 0,
-      }));
-
-    res.json({ symbol, interval, meta: result.meta || {}, quotes });
+    const intervalMap = {
+      '5m':  { interval: '5m',  range: '5d' },
+      '15m': { interval: '15m', range: '5d' },
+      '1h':  { interval: '1h',  range: '1mo' },
+      '1d':  { interval: '1d',  range: '1y' },
+    };
+    const params = intervalMap[interval] || intervalMap['1d'];
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${params.interval}&range=${params.range}&includePrePost=false`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+      }
+    });
+    if (!response.ok) throw new Error(`Yahoo returned ${response.status}`);
+    const data = await response.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) throw new Error('Geen data van Yahoo');
+    const ts = result.timestamp;
+    const q = result.indicators.quote[0];
+    const quotes = ts.map((t, i) => ({
+      date: new Date(t * 1000).toISOString(),
+      open:   q.open[i]   != null ? +q.open[i].toFixed(4)   : null,
+      high:   q.high[i]   != null ? +q.high[i].toFixed(4)   : null,
+      low:    q.low[i]    != null ? +q.low[i].toFixed(4)    : null,
+      close:  q.close[i]  != null ? +q.close[i].toFixed(4)  : null,
+      volume: q.volume[i] || 0,
+    })).filter(q => q.open && q.close && q.high && q.low);
+    res.json({ symbol, interval, meta: result.meta, quotes });
   } catch (err) {
     console.error('Quote error:', err.message);
     res.status(500).json({ error: err.message });
