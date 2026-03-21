@@ -276,8 +276,45 @@
     #alert-balk { gap: 8px; font-size: 11px; }
     #refresh-countdown { display: none; }
     #mini-dashboard { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    #premarket-inhoud { grid-template-columns: 1fr 1fr; gap: 8px; }
-    #premarket { padding: 12px; }
+    #premarket {
+      padding: 10px;
+      overflow: hidden;
+    }
+    #premarket-inhoud {
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    #premarket-inhoud > div {
+      padding: 10px;
+      min-width: 0;
+      word-break: break-word;
+      overflow: hidden;
+    }
+    #premarket-inhoud > div[style*="grid-column"] {
+      grid-column: 1 / -1;
+      font-size: 11px;
+      line-height: 1.5;
+      padding: 10px;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+    /* Gele daytrade tip balk */
+    #premarket [style*="background:#fffbeb"],
+    #premarket [style*="background: #fffbeb"] {
+      grid-column: 1 / -1;
+      font-size: 11px;
+      line-height: 1.5;
+      padding: 10px;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      box-sizing: border-box;
+      width: 100%;
+    }
+    /* Grote getallen kleiner op mobiel */
+    #premarket .opening-gap-waarde,
+    #premarket [style*="font-size:22px"] {
+      font-size: 18px !important;
+    }
     #dashboard-grid { grid-template-columns: 1fr; gap: 12px; }
     #ai-panel { display: flex; flex-direction: column; gap: 12px; }
     .chart-container { height: 240px !important; }
