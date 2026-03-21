@@ -659,6 +659,32 @@ function drawCandlestick({ bbArr, ema20, ema50 }) {
       : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
     ctx.fillText(label, xPos(i), h - 6);
   }
+
+  // Volume bars
+  const maxVol = Math.max(...quotes.map(c => c.volume || 0));
+  if (maxVol > 0) {
+    const volHeight = ch * 0.15;
+    const volTop = pad.top + ch - volHeight;
+
+    for (let i = 0; i < quotes.length; i++) {
+      const c = quotes[i];
+      if (!c.volume) continue;
+      const x = xPos(i);
+      const isUp = c.close >= c.open;
+      const barH = (c.volume / maxVol) * volHeight;
+
+      ctx.fillStyle = isUp
+        ? 'rgba(22, 163, 74, 0.3)'
+        : 'rgba(220, 38, 38, 0.3)';
+      ctx.fillRect(x - barW/2, volTop + volHeight - barH, barW, barH);
+    }
+
+    // Volume label
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('VOL', pad.left + 4, volTop + 12);
+  }
 }
 
 function drawRSI({ rsiArr }) {
