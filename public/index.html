@@ -237,6 +237,17 @@
     @keyframes lds{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
 
     .chart-wrap { position: relative; }
+  @media (max-width: 768px) {
+    header { flex-wrap: wrap; gap: 8px; }
+    #snelkeuze { gap: 4px; }
+    .snel-btn { font-size: 11px; padding: 4px 8px; }
+    .chart-container { height: 280px !important; }
+    .rsi-container { height: 100px !important; }
+    .macd-container { height: 100px !important; }
+    .ai-grid { grid-template-columns: 1fr 1fr !important; }
+    .signal-badge { font-size: 16px !important; }
+    body { font-size: 14px; }
+  }
   </style>
 </head>
 <body>
