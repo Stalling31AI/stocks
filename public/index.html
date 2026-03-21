@@ -370,6 +370,52 @@
         <div style="font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📋 Analyse geschiedenis</div>
         <div id="geschiedenis-lijst"></div>
       </div>
+      <div id="risico-calc" style="background:#fff;border-radius:12px;padding:20px;margin-top:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+  <div style="font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;">🧮 Risico Calculator</div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;">
+    <div>
+      <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px;">Instapprijs</label>
+      <input id="calc-entry" type="number" step="0.01" placeholder="bijv. 1128.00"
+        style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:14px;font-weight:600;">
+    </div>
+    <div>
+      <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px;">Stop-loss</label>
+      <input id="calc-sl" type="number" step="0.01" placeholder="bijv. 1118.00"
+        style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:14px;font-weight:600;">
+    </div>
+    <div>
+      <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px;">Max verlies (€)</label>
+      <input id="calc-maxverlies" type="number" step="1" value="150"
+        style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:14px;font-weight:600;">
+    </div>
+  </div>
+  <button onclick="berekenRisico()"
+    style="padding:10px 20px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;margin-bottom:14px;">
+    Bereken
+  </button>
+  <div id="calc-result" style="display:none;background:#f8fafc;border-radius:8px;padding:14px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
+      <div>
+        <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Aantal aandelen</div>
+        <div id="calc-aantal" style="font-size:22px;font-weight:700;color:#2563eb;">—</div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Totaal risico</div>
+        <div id="calc-risico" style="font-size:22px;font-weight:700;color:#dc2626;">—</div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Potentieel doel</div>
+        <div id="calc-doel" style="font-size:22px;font-weight:700;color:#16a34a;">—</div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Investering</div>
+        <div id="calc-investering" style="font-size:22px;font-weight:700;">—</div>
+      </div>
+    </div>
+    <div id="calc-advies" style="margin-top:10px;font-size:13px;color:#374151;padding-top:10px;border-top:1px solid #e2e8f0;"></div>
+  </div>
+</div>
     </div>
   </div>
 </main>
@@ -861,6 +907,8 @@ function renderAI(ai) {
   document.getElementById('ai-extra').style.display    = 'block';
   document.getElementById('ai-result').classList.add('visible');
   slaAnalyseOp(ai, currentSymbol, currentInterval);
+  document.getElementById('calc-entry').value = ai.entry || '';
+  document.getElementById('calc-sl').value = ai.stop_loss || '';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -920,6 +968,36 @@ function renderGeschiedenis() {
 function toggleGeschiedenis(i) {
   const el = document.getElementById('geschiedenis-' + i);
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+function berekenRisico() {
+  const entry = parseFloat(document.getElementById('calc-entry').value);
+  const sl = parseFloat(document.getElementById('calc-sl').value);
+  const maxVerlies = parseFloat(document.getElementById('calc-maxverlies').value) || 150;
+  if (!entry || !sl) return;
+  const risicoPerAandeel = Math.abs(entry - sl);
+  const aantal = Math.floor(maxVerlies / risicoPerAandeel);
+  const totaalRisico = aantal * risicoPerAandeel;
+  const investering = aantal * entry;
+
+  const aiTarget = parseFloat(document.getElementById('ai-target')?.textContent);
+  const potentieelDoel = aiTarget
+    ? aantal * Math.abs(aiTarget - entry)
+    : aantal * risicoPerAandeel * 2;
+  document.getElementById('calc-aantal').textContent = aantal + ' st';
+  document.getElementById('calc-risico').textContent = '€' + totaalRisico.toFixed(0);
+  document.getElementById('calc-doel').textContent = '€' + potentieelDoel.toFixed(0);
+  document.getElementById('calc-investering').textContent = '€' + investering.toFixed(0);
+  let advies = '';
+  const rr = potentieelDoel / totaalRisico;
+  if (rr < 1.5) {
+    advies = '⚠️ R/R ratio van ' + rr.toFixed(1) + ' is te laag. Minimaal 1:2 aanbevolen voor daytrade. Overweeg een betere entry of ruimere target.';
+  } else if (aantal < 1) {
+    advies = '⚠️ Stop-loss te dicht bij entry voor dit maximale verlies. Vergroot je max verlies of kies een ruimere stop.';
+  } else {
+    advies = '✅ R/R ratio ' + rr.toFixed(1) + ' — bij ' + aantal + ' aandelen riskeer je €' + totaalRisico.toFixed(0) + ' voor een potentiële winst van €' + potentieelDoel.toFixed(0) + '.';
+  }
+  document.getElementById('calc-advies').textContent = advies;
+  document.getElementById('calc-result').style.display = 'block';
 }
 </script>
 </body>
