@@ -248,6 +248,137 @@
     .signal-badge { font-size: 16px !important; }
     body { font-size: 14px; }
   }
+  /* ── ALGEMEEN ────────────────────────────────────────────── */
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #f0f2f5;
+         color: #1a1d23; margin: 0; padding: 0; }
+  /* ── HEADER ─────────────────────────────────────────────── */
+  #header {
+    display: flex; align-items: center; flex-wrap: wrap;
+    gap: 8px; padding: 10px 20px;
+    background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    position: sticky; top: 0; z-index: 100;
+  }
+  #snelkeuze { display: flex; gap: 6px; flex-wrap: wrap; }
+  .snel-btn {
+    font-size: 12px; font-weight: 700; padding: 6px 14px;
+    border-radius: 7px; border: 1.5px solid #e2e8f0;
+    background: #fff; color: #64748b; cursor: pointer;
+    transition: all .15s; white-space: nowrap;
+  }
+  .snel-btn:hover { border-color: #2563eb; color: #2563eb; }
+  .snel-btn.actief { background: #2563eb; color: #fff; border-color: #2563eb; }
+  #alert-balk {
+    display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap; font-size: 12px; color: #64748b;
+    padding: 6px 0; border-top: 1px solid #f1f5f9;
+    width: 100%;
+  }
+  /* ── MAIN CONTENT ────────────────────────────────────────── */
+  #main-content { max-width: 1400px; margin: 0 auto; padding: 16px; }
+  /* ── MINI DASHBOARD ──────────────────────────────────────── */
+  #mini-dashboard {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px; margin-bottom: 16px;
+  }
+  #mini-dashboard > div {
+    background: #fff; border-radius: 10px; padding: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    cursor: pointer; border: 2px solid transparent;
+    transition: border-color .15s; min-width: 0;
+  }
+  #mini-dashboard > div:hover { border-color: #2563eb; }
+  /* ── PRE-MARKET ──────────────────────────────────────────── */
+  #premarket {
+    background: #fff; border-radius: 12px; padding: 16px 20px;
+    margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  #premarket-inhoud {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 12px;
+  }
+  /* ── HOOFD LAYOUT: chart links, AI rechts ────────────────── */
+  #dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 16px; align-items: start;
+  }
+  /* ── CHART KAART ─────────────────────────────────────────── */
+  #chart-kaart {
+    background: #fff; border-radius: 12px; padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  /* ── AI PANEL (rechts) ───────────────────────────────────── */
+  #ai-panel {
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  #ai-signaal-kaart {
+    background: #fff; border-radius: 12px; padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    border-left: 5px solid #e2e8f0;
+  }
+  #ai-metrics {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px; margin: 12px 0;
+  }
+  #ai-metrics > div {
+    background: #f8fafc; border-radius: 8px; padding: 10px;
+  }
+  /* ── RISICO CALCULATOR ───────────────────────────────────── */
+  #risico-calc {
+    background: #fff; border-radius: 12px; padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  #risico-inputs {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px; margin-bottom: 12px;
+  }
+  #calc-result-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  /* ── ANALYSE GESCHIEDENIS ────────────────────────────────── */
+  #ai-geschiedenis {
+    background: #fff; border-radius: 12px; padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  /* ══ TABLET (max 1024px) ═════════════════════════════════ */
+  @media (max-width: 1024px) {
+    #mini-dashboard { grid-template-columns: repeat(4, 1fr); }
+    #dashboard-grid { grid-template-columns: 1fr; }
+    #premarket-inhoud { grid-template-columns: 1fr 1fr; }
+    #ai-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    #ai-signaal-kaart { grid-column: 1 / -1; }
+  }
+  /* ══ MOBIEL (max 768px) ══════════════════════════════════ */
+  @media (max-width: 768px) {
+    #main-content { padding: 10px; }
+    #mini-dashboard { grid-template-columns: repeat(2, 1fr); }
+    #premarket-inhoud { grid-template-columns: 1fr; }
+    #dashboard-grid { grid-template-columns: 1fr; }
+    #ai-panel { display: flex; flex-direction: column; }
+    #ai-metrics { grid-template-columns: 1fr 1fr; }
+    #risico-inputs { grid-template-columns: 1fr; }
+    #calc-result-grid { grid-template-columns: 1fr 1fr; }
+    #header { padding: 8px 12px; }
+    .snel-btn { font-size: 11px; padding: 5px 10px; }
+    #alert-balk { font-size: 11px; gap: 6px; }
+    #refresh-countdown { display: none; }
+    .chart-container { height: 260px !important; }
+    .rsi-container { height: 90px !important; }
+    .macd-container { height: 90px !important; }
+    .signal-badge { font-size: 18px !important; padding: 8px 14px !important; }
+    #premarket { padding: 12px; }
+  }
+  /* ══ KLEIN MOBIEL (max 480px) ════════════════════════════ */
+  @media (max-width: 480px) {
+    #mini-dashboard { grid-template-columns: 1fr 1fr; }
+    #ai-metrics { grid-template-columns: 1fr; }
+    #calc-result-grid { grid-template-columns: 1fr 1fr; }
+    h1, .logo { font-size: 15px; }
+  }
   </style>
 </head>
 <body>
