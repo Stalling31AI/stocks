@@ -43,6 +43,7 @@
       transition: border-color .2s;
     }
     .search-wrap input:focus { border-color: #3b82f6; }
+    .snel-btn { font-size:12px; font-weight:600; padding:5px 12px; border-radius:6px; border:1.5px solid #e2e8f0; background:#fff; color:#64748b; cursor:pointer; }
 
     .interval-btns { display: flex; gap: 4px; }
     .interval-btns button {
@@ -245,6 +246,15 @@
   <div class="search-wrap">
     <input id="symbol-input" type="text" placeholder="Symbool, bijv. AAPL" value="AAPL" />
     <button class="btn-load" id="btn-load">Laden</button>
+  </div>
+  <div id="snelkeuze" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+    <button onclick="laadSymbol('ASML.AS')" class="snel-btn">ASML</button>
+    <button onclick="laadSymbol('ADYEN.AS')" class="snel-btn">ADYEN</button>
+    <button onclick="laadSymbol('NVDA')" class="snel-btn">NVDA</button>
+    <button onclick="laadSymbol('TSLA')" class="snel-btn">TSLA</button>
+    <button onclick="laadSymbol('RHIM.L')" class="snel-btn">Rheinmetall</button>
+    <button onclick="laadSymbol('BA')" class="snel-btn">Boeing</button>
+    <button onclick="laadSymbol('LMT')" class="snel-btn">Lockheed</button>
   </div>
   <div class="interval-btns">
     <button data-iv="5m">5m</button>
@@ -831,8 +841,13 @@ function setLoading(on) {
 // Redraw on resize
 window.addEventListener('resize', () => { if (quotes.length) drawAll(); });
 
+function laadSymbol(sym) {
+  document.getElementById('symbol-input').value = sym;
+  loadData(sym);
+}
+
 // Initial load
-loadData();
+window.addEventListener('load', () => laadSymbol('ASML.AS'));
 
 const analyseHistory = [];
 function slaAnalyseOp(ai, symbol, interval) {
