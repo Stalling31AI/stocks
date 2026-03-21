@@ -285,7 +285,21 @@
         style="width:45px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;"
         onchange="alertInstellingen.rsiOverbought=+this.value">
     </label>
-    <span id="alert-status" style="margin-left:auto;font-size:11px;color:#16a34a;"></span>
+    <span id="alert-status" style="font-size:11px;color:#16a34a;"></span>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+      <label style="display:flex;align-items:center;gap:4px;">
+        <input type="checkbox" id="auto-refresh-toggle" checked
+          onchange="this.checked ? startAutoRefresh() : stopAutoRefresh()">
+        Auto-refresh
+      </label>
+      <select id="refresh-interval" onchange="refreshSeconds=+this.value; startAutoRefresh()"
+        style="padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;">
+        <option value="60">1 min</option>
+        <option value="300" selected>5 min</option>
+        <option value="900">15 min</option>
+      </select>
+      <span id="refresh-countdown" style="font-size:11px;color:#2563eb;min-width:120px;"></span>
+    </span>
   </div>
   <div class="interval-btns">
     <button data-iv="5m">5m</button>
@@ -953,7 +967,44 @@ function laadSymbol(sym) {
 }
 
 // Initial load
-window.addEventListener('load', () => laadSymbol('ASML.AS'));
+// Auto-refresh
+let autoRefreshInterval = null;
+let countdownInterval = null;
+let refreshSeconds = 300; // 5 minuten
+function startAutoRefresh() {
+  stopAutoRefresh();
+  let secOver = refreshSeconds;
+
+  countdownInterval = setInterval(() => {
+    secOver--;
+    const min = Math.floor(secOver / 60);
+    const sec = secOver % 60;
+    document.getElementById('refresh-countdown').textContent =
+      'Ververs over ' + min + ':' + String(sec).padStart(2,'0');
+
+    if (secOver <= 0) {
+      secOver = refreshSeconds;
+      loadData(currentSymbol);
+      document.getElementById('refresh-countdown').textContent = '🔄 Data ververst!';
+    }
+  }, 1000);
+}
+function stopAutoRefresh() {
+  if (countdownInterval) clearInterval(countdownInterval);
+  if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+}
+
+window.addEventListener('load', () => { laadSymbol('ASML.AS'); startAutoRefresh(); });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopAutoRefresh();
+  } else {
+    if (document.getElementById('auto-refresh-toggle').checked) {
+      startAutoRefresh();
+    }
+  }
+});
 
 // Notificatie toestemming vragen
 if ('Notification' in window) {
