@@ -330,6 +330,18 @@
     <div id="mini-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px;">
     </div>
 
+    <div id="premarket" style="background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">🌅 Pre-market voorbereiding</div>
+        <button onclick="laadPremarket()" style="font-size:11px;padding:4px 10px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;cursor:pointer;color:#64748b;">↻ Ververs</button>
+      </div>
+      <div id="premarket-inhoud" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
+        <div style="text-align:center;color:#94a3b8;grid-column:1/-1;padding:20px;">
+          Klik op een aandeel om de pre-market analyse te laden
+        </div>
+      </div>
+    </div>
+
     <div class="chart-wrap">
       <div class="indicator-label">Koersgrafiek (Candlestick)</div>
       <canvas id="chart-canvas"></canvas>
@@ -1071,6 +1083,107 @@ window.addEventListener('resize', () => { if (quotes.length) drawAll(); });
 function laadSymbol(sym) {
   document.getElementById('symbol-input').value = sym;
   loadData(sym);
+  laadPremarket();
+}
+async function laadPremarket() {
+  const symbol = currentSymbol || 'ASML.AS';
+  const inhoud = document.getElementById('premarket-inhoud');
+  inhoud.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px;">⏳ Pre-market data laden...</div>';
+  try {
+    // Haal dagdata op voor gisteren vs vandaag vergelijking
+    const res = await fetch(`/api/quote/${symbol}?interval=1d`);
+    const data = await res.json();
+    const quotes = data.quotes || [];
+
+    if (quotes.length < 2) throw new Error('Te weinig data');
+    const gisteren = quotes[quotes.length - 2];
+    const vandaag = quotes[quotes.length - 1];
+    const slotGisteren = gisteren.close;
+    const openVandaag = vandaag.open;
+    const slotVandaag = vandaag.close;
+
+    // Opening gap berekenen
+    const gap = ((openVandaag - slotGisteren) / slotGisteren * 100).toFixed(2);
+    const gapKleur = gap >= 0 ? '#16a34a' : '#dc2626';
+    const gapRichting = gap >= 0 ? '▲' : '▼';
+    // Week trend (laatste 5 dagen)
+    const week = quotes.slice(-5);
+    const weekStart = week[0].close;
+    const weekEind = week[week.length-1].close;
+    const weekPct = ((weekEind - weekStart) / weekStart * 100).toFixed(2);
+    const weekKleur = weekPct >= 0 ? '#16a34a' : '#dc2626';
+    // 52 week high/low
+    const jaar = quotes.slice(-252);
+    const hoogJaar = Math.max(...jaar.map(q => q.high)).toFixed(2);
+    const laagJaar = Math.min(...jaar.map(q => q.low)).toFixed(2);
+    const afstandHoog = ((slotVandaag - hoogJaar) / hoogJaar * 100).toFixed(1);
+    // Gemiddeld dagvolume
+    const gemVolume = Math.floor(quotes.slice(-20).reduce((a,b) => a + (b.volume||0), 0) / 20);
+    // Support en resistance (simpel: recent high/low)
+    const recent = quotes.slice(-10);
+    const resistance = Math.max(...recent.map(q => q.high)).toFixed(2);
+    const support = Math.min(...recent.map(q => q.low)).toFixed(2);
+    // Wat te verwachten vandaag
+    const closes = quotes.map(q => q.close);
+    const rsi = berekenRSI(closes);
+    let verwachting = '';
+    let verwachtingKleur = '#64748b';
+
+    if (gap > 1 && rsi < 60) {
+      verwachting = '📈 Positieve opening gap. Momentum kan aanhouden bij hoog volume.';
+      verwachtingKleur = '#16a34a';
+    } else if (gap < -1 && rsi > 40) {
+      verwachting = '📉 Negatieve opening gap. Kans op gap-fill herstel later op de dag.';
+      verwachtingKleur = '#dc2626';
+    } else if (rsi < 35) {
+      verwachting = '🟡 RSI oversold. Technisch herstelmoment mogelijk na opening.';
+      verwachtingKleur = '#d97706';
+    } else if (rsi > 65) {
+      verwachting = '🟠 RSI overbought. Winstnemingen mogelijk bij opening.';
+      verwachtingKleur = '#ea580c';
+    } else {
+      verwachting = '⚪ Neutrale opening verwacht. Wacht op richting na 09:30.';
+      verwachtingKleur = '#64748b';
+    }
+    inhoud.innerHTML = `
+      <div style="background:#f8fafc;border-radius:8px;padding:12px;">
+        <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Opening gap</div>
+        <div style="font-size:22px;font-weight:700;color:${gapKleur};">${gapRichting} ${gap}%</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Gisteren slot: ${slotGisteren.toFixed(2)}</div>
+        <div style="font-size:11px;color:#64748b;">Open vandaag: ${openVandaag.toFixed(2)}</div>
+      </div>
+      <div style="background:#f8fafc;border-radius:8px;padding:12px;">
+        <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Week trend</div>
+        <div style="font-size:22px;font-weight:700;color:${weekKleur};">${weekPct >= 0 ? '+' : ''}${weekPct}%</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Afstand 52w hoog: ${afstandHoog}%</div>
+        <div style="font-size:11px;color:#64748b;">52w hoog: ${hoogJaar} | laag: ${laagJaar}</div>
+      </div>
+      <div style="background:#f8fafc;border-radius:8px;padding:12px;">
+        <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Support / Resistance</div>
+        <div style="font-size:13px;font-weight:700;color:#dc2626;">R: ${resistance}</div>
+        <div style="font-size:13px;font-weight:700;color:#16a34a;margin-top:4px;">S: ${support}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px;">Gem. volume: ${(gemVolume/1000).toFixed(0)}K</div>
+      </div>
+      <div style="background:#f8fafc;border-radius:8px;padding:12px;">
+        <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Verwachting</div>
+        <div style="font-size:12px;font-weight:600;color:${verwachtingKleur};line-height:1.5;">${verwachting}</div>
+      </div>
+      <div style="grid-column:1/-1;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;font-size:12px;color:#92400e;">
+        💡 <strong>Daytrade tip voor vandaag:</strong>
+        ${rsi < 35
+          ? 'RSI is oversold (' + rsi.toFixed(0) + '). Wacht op eerste groene kaars na 09:15 als bevestiging voor long positie. Stop-loss onder ' + support + '.'
+          : rsi > 65
+          ? 'RSI is overbought (' + rsi.toFixed(0) + '). Vermijd long posities bij opening. Short mogelijk als koers onder ' + support + ' breekt.'
+          : gap > 1
+          ? 'Positieve gap van ' + gap + '%. Koopkans als koers boven opening blijft na eerste 15 minuten. Anders gap-fill mogelijk.'
+          : gap < -1
+          ? 'Negatieve gap van ' + gap + '%. Wacht op bodem vorming. Koopkans bij gap-fill richting ' + slotGisteren.toFixed(2) + '.'
+          : 'Wacht de eerste 30 minuten af (09:00-09:30) voor de markt richting kiest. Handel pas na bevestiging.'}
+      </div>
+    `;
+  } catch(e) {
+    inhoud.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#dc2626;padding:20px;">Kon pre-market data niet laden: ' + e.message + '</div>';
+  }
 }
 
 // Initial load
