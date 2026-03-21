@@ -459,6 +459,10 @@
 let quotes = [];
 let currentSymbol = 'AAPL';
 let currentInterval = '1d';
+let aiInstapPrijs = null;
+let aiStopLoss = null;
+let aiTarget = null;
+let aiSignaal = null;
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const symbolInput  = document.getElementById('symbol-input');
@@ -766,6 +770,101 @@ function drawCandlestick({ bbArr, ema20, ema50 }) {
     ctx.textAlign = 'left';
     ctx.fillText('VOL', pad.left + 4, volTop + 12);
   }
+
+  // AI instapmoment pijlen en lijnen
+  if (aiInstapPrijs && quotes.length > 0) {
+    const chartRight = pad.left + cw;
+
+    // Horizontale instaplijn (groen)
+    if (aiSignaal === 'KOOP') {
+      ctx.strokeStyle = '#16a34a';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 3]);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, yScale(aiInstapPrijs));
+      ctx.lineTo(chartRight, yScale(aiInstapPrijs));
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label rechts
+      ctx.fillStyle = '#16a34a';
+      ctx.fillRect(chartRight + 2, yScale(aiInstapPrijs) - 10, 58, 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px Inter';
+      ctx.textAlign = 'left';
+      ctx.fillText('ENTRY', chartRight + 5, yScale(aiInstapPrijs) + 4);
+      // Grote groene pijl op de laatste kaars
+      const lastX = xPos(quotes.length - 1);
+      const lastY = yScale(aiInstapPrijs) + 30;
+      ctx.fillStyle = '#16a34a';
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY - 20);
+      ctx.lineTo(lastX - 12, lastY);
+      ctx.lineTo(lastX + 12, lastY);
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (aiSignaal === 'VERKOOP') {
+      ctx.strokeStyle = '#dc2626';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 3]);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, yScale(aiInstapPrijs));
+      ctx.lineTo(chartRight, yScale(aiInstapPrijs));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(chartRight + 2, yScale(aiInstapPrijs) - 10, 58, 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px Inter';
+      ctx.textAlign = 'left';
+      ctx.fillText('VERKOOP', chartRight + 5, yScale(aiInstapPrijs) + 4);
+      // Rode pijl omlaag
+      const lastX = xPos(quotes.length - 1);
+      const lastY = yScale(aiInstapPrijs) - 30;
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY + 20);
+      ctx.lineTo(lastX - 12, lastY);
+      ctx.lineTo(lastX + 12, lastY);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Stop-loss lijn (rood gestippeld)
+    if (aiStopLoss) {
+      ctx.strokeStyle = '#dc2626';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, yScale(aiStopLoss));
+      ctx.lineTo(chartRight, yScale(aiStopLoss));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(chartRight + 2, yScale(aiStopLoss) - 10, 42, 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px Inter';
+      ctx.textAlign = 'left';
+      ctx.fillText('SL', chartRight + 5, yScale(aiStopLoss) + 4);
+    }
+    // Target lijn (groen gestippeld)
+    if (aiTarget) {
+      ctx.strokeStyle = '#16a34a';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, yScale(aiTarget));
+      ctx.lineTo(chartRight, yScale(aiTarget));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#16a34a';
+      ctx.fillRect(chartRight + 2, yScale(aiTarget) - 10, 42, 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px Inter';
+      ctx.textAlign = 'left';
+      ctx.fillText('TP', chartRight + 5, yScale(aiTarget) + 4);
+    }
+  }
 }
 
 function drawRSI({ rsiArr }) {
@@ -944,6 +1043,11 @@ function renderAI(ai) {
   slaAnalyseOp(ai, currentSymbol, currentInterval);
   document.getElementById('calc-entry').value = ai.entry || '';
   document.getElementById('calc-sl').value = ai.stop_loss || '';
+  aiInstapPrijs = ai.entry || null;
+  aiStopLoss = ai.stop_loss || null;
+  aiTarget = ai.target || null;
+  aiSignaal = ai.signaal || null;
+  drawAll();
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
