@@ -267,6 +267,26 @@
     <button onclick="laadSymbol('BA')" class="snel-btn">Boeing</button>
     <button onclick="laadSymbol('LMT')" class="snel-btn">Lockheed</button>
   </div>
+  <div id="alert-balk" style="display:flex;align-items:center;gap:12px;padding:8px 0;font-size:12px;color:#64748b;flex-wrap:wrap;">
+    <span style="font-weight:600;">🔔 Alerts:</span>
+    <label style="display:flex;align-items:center;gap:4px;">
+      <input type="checkbox" id="alert-actief" checked onchange="alertInstellingen.actief=this.checked">
+      Actief
+    </label>
+    <label style="display:flex;align-items:center;gap:4px;">
+      RSI oversold onder
+      <input type="number" id="alert-oversold" value="30" min="10" max="40"
+        style="width:45px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;"
+        onchange="alertInstellingen.rsiOversold=+this.value">
+    </label>
+    <label style="display:flex;align-items:center;gap:4px;">
+      RSI overbought boven
+      <input type="number" id="alert-overbought" value="70" min="60" max="90"
+        style="width:45px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;"
+        onchange="alertInstellingen.rsiOverbought=+this.value">
+    </label>
+    <span id="alert-status" style="margin-left:auto;font-size:11px;color:#16a34a;"></span>
+  </div>
   <div class="interval-btns">
     <button data-iv="5m">5m</button>
     <button data-iv="15m">15m</button>
@@ -471,6 +491,7 @@ async function loadData() {
 
     updatePriceDisplay();
     drawAll();
+    checkAlerts(quotes, getIndicators(), currentSymbol);
     document.getElementById('ai-result').classList.remove('visible');
   } catch(err) {
     showError(err.message);
@@ -933,6 +954,59 @@ function laadSymbol(sym) {
 
 // Initial load
 window.addEventListener('load', () => laadSymbol('ASML.AS'));
+
+// Notificatie toestemming vragen
+if ('Notification' in window) {
+  Notification.requestPermission();
+}
+// Alert instellingen
+const alertInstellingen = {
+  rsiOversold: 30,
+  rsiOverbought: 70,
+  actief: true
+};
+let vorigeRSI = null;
+let vorigePrijs = null;
+function checkAlerts(quotes, indicators, symbol) {
+  if (!alertInstellingen.actief) return;
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  const rsi = indicators.rsi;
+  const prijs = quotes[quotes.length-1]?.close;
+  // RSI alerts
+  if (vorigeRSI !== null) {
+    if (vorigeRSI >= 30 && rsi < 30) {
+      stuurNotificatie(
+        '🟢 ' + symbol + ' — RSI OVERSOLD',
+        'RSI gedaald naar ' + rsi.toFixed(1) + '. Mogelijk koopmoment!'
+      );
+    }
+    if (vorigeRSI <= 70 && rsi > 70) {
+      stuurNotificatie(
+        '🔴 ' + symbol + ' — RSI OVERBOUGHT',
+        'RSI gestegen naar ' + rsi.toFixed(1) + '. Mogelijk verkoopmoment!'
+      );
+    }
+  }
+  vorigeRSI = rsi;
+  vorigePrijs = prijs;
+}
+function stuurNotificatie(titel, bericht) {
+  new Notification(titel, {
+    body: bericht,
+    icon: '/favicon.ico'
+  });
+  // Ook geluid
+  const audio = new AudioContext();
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.connect(gain);
+  gain.connect(audio.destination);
+  osc.frequency.value = 440;
+  gain.gain.value = 0.1;
+  osc.start();
+  osc.stop(audio.currentTime + 0.3);
+}
 
 const analyseHistory = [];
 function slaAnalyseOp(ai, symbol, interval) {
