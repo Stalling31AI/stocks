@@ -345,6 +345,10 @@
   <div style="background:#f8fafc;border-radius:8px;padding:12px;font-size:13px;color:#374151;" id="ai-nieuws"></div>
 </div>
       </div>
+      <div id="ai-geschiedenis" style="margin-top:16px;">
+        <div style="font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📋 Analyse geschiedenis</div>
+        <div id="geschiedenis-lijst"></div>
+      </div>
     </div>
   </div>
 </main>
@@ -809,6 +813,7 @@ function renderAI(ai) {
   document.getElementById('ai-nieuws').textContent     = ai.nieuws_samenvatting || '';
   document.getElementById('ai-extra').style.display    = 'block';
   document.getElementById('ai-result').classList.add('visible');
+  slaAnalyseOp(ai, currentSymbol, currentInterval);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -828,6 +833,42 @@ window.addEventListener('resize', () => { if (quotes.length) drawAll(); });
 
 // Initial load
 loadData();
+
+const analyseHistory = [];
+function slaAnalyseOp(ai, symbol, interval) {
+  const entry = {
+    tijdstip: new Date().toLocaleTimeString('nl-NL', {hour:'2-digit', minute:'2-digit'}),
+    symbol, interval,
+    signaal: ai.actie || ai.signaal,
+    data: ai
+  };
+  analyseHistory.unshift(entry);
+  if (analyseHistory.length > 10) analyseHistory.pop();
+  renderGeschiedenis();
+}
+function renderGeschiedenis() {
+  const lijst = document.getElementById('geschiedenis-lijst');
+  if (!analyseHistory.length) { lijst.innerHTML = ''; return; }
+  lijst.innerHTML = analyseHistory.map((e, i) => `
+    <div style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;overflow:hidden;">
+      <div onclick="toggleGeschiedenis(${i})" style="display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;background:#f8fafc;">
+        <span style="font-size:11px;color:#94a3b8;">${e.tijdstip}</span>
+        <span style="font-weight:700;">${e.symbol}</span>
+        <span style="font-size:11px;color:#64748b;">${e.interval}</span>
+        <span style="margin-left:auto;font-weight:700;color:${e.signaal==='KOOP'?'#16a34a':e.signaal==='VERKOOP'?'#dc2626':'#d97706'}">${e.signaal}</span>
+        <span style="color:#94a3b8;">▾</span>
+      </div>
+      <div id="geschiedenis-${i}" style="display:none;padding:12px 14px;font-size:13px;color:#374151;border-top:1px solid #e2e8f0;">
+        ${e.data.redenering || ''}
+        ${e.data.nieuws_samenvatting ? '<br><br><strong>Nieuws:</strong> ' + e.data.nieuws_samenvatting : ''}
+      </div>
+    </div>
+  `).join('');
+}
+function toggleGeschiedenis(i) {
+  const el = document.getElementById('geschiedenis-' + i);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
 </script>
 </body>
 </html>
