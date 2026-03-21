@@ -335,6 +335,15 @@
         </div>
 
         <div class="ai-reasoning" id="ai-reasoning"></div>
+        <div id="ai-extra" style="display:none; margin-top:12px;">
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
+    <div><div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Dagtrend</div><div id="ai-dagtrend" style="font-weight:600;">—</div></div>
+    <div><div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Instaptijd</div><div id="ai-instaptijd" style="font-weight:600;">—</div></div>
+    <div><div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Nieuws sentiment</div><div id="ai-sentiment" style="font-weight:600;">—</div></div>
+    <div><div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Verwacht rendement</div><div id="ai-rendement" style="font-weight:600;">—</div></div>
+  </div>
+  <div style="background:#f8fafc;border-radius:8px;padding:12px;font-size:13px;color:#374151;" id="ai-nieuws"></div>
+</div>
       </div>
     </div>
   </div>
@@ -783,11 +792,9 @@ btnAi.addEventListener('click', async () => {
 
 function renderAI(ai) {
   const badge = document.getElementById('ai-badge');
-  badge.textContent = ai.signaal || '—';
+  badge.textContent = ai.actie || ai.signaal || '—';
   badge.className   = 'signal-badge signal-' + (ai.signaal || 'WACHT');
-
   const fmt = v => v != null ? Number(v).toFixed(2) : '—';
-
   document.getElementById('ai-confidence').textContent = ai.vertrouwen != null ? ai.vertrouwen + '%' : '—';
   document.getElementById('ai-conf-bar').style.width   = (ai.vertrouwen || 0) + '%';
   document.getElementById('ai-entry').textContent      = fmt(ai.entry);
@@ -795,7 +802,12 @@ function renderAI(ai) {
   document.getElementById('ai-target').textContent     = fmt(ai.target);
   document.getElementById('ai-rr').textContent         = ai.rr_ratio != null ? Number(ai.rr_ratio).toFixed(2) : '—';
   document.getElementById('ai-reasoning').textContent  = ai.redenering || '';
-
+  document.getElementById('ai-dagtrend').textContent   = ai.dagtrend || '—';
+  document.getElementById('ai-instaptijd').textContent = ai.instap_tijd || '—';
+  document.getElementById('ai-sentiment').textContent  = ai.nieuws_sentiment || '—';
+  document.getElementById('ai-rendement').textContent  = ai.verwacht_rendement_pct != null ? ai.verwacht_rendement_pct + '%' : '—';
+  document.getElementById('ai-nieuws').textContent     = ai.nieuws_samenvatting || '';
+  document.getElementById('ai-extra').style.display    = 'block';
   document.getElementById('ai-result').classList.add('visible');
 }
 
