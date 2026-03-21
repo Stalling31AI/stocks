@@ -350,14 +350,14 @@
     <hr class="divider" />
 
     <div class="chart-wrap">
-      <div class="indicator-label">RSI (14)</div>
+      <div class="indicator-label">RSI (14)<button onclick="toonUitleg()" style="font-size:10px;padding:2px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;color:#2563eb;margin-left:8px;">? uitleg</button></div>
       <canvas id="rsi-canvas"></canvas>
     </div>
 
     <hr class="divider" />
 
     <div class="chart-wrap">
-      <div class="indicator-label">MACD (12,26,9)</div>
+      <div class="indicator-label">MACD (12,26,9)<button onclick="toonUitleg()" style="font-size:10px;padding:2px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;color:#2563eb;margin-left:8px;">? uitleg</button></div>
       <canvas id="macd-canvas"></canvas>
     </div>
   </div>
@@ -1441,6 +1441,111 @@ function berekenRisico() {
   document.getElementById('calc-advies').textContent = advies;
   document.getElementById('calc-result').style.display = 'block';
 }
+function toonUitleg() {
+  const overlay = document.getElementById('uitleg-overlay');
+  overlay.style.display = 'flex';
+}
+function sluitUitleg() {
+  document.getElementById('uitleg-overlay').style.display = 'none';
+}
+// Sluit ook met Escape toets
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') sluitUitleg();
+});
 </script>
+<div id="uitleg-overlay" onclick="sluitUitleg()"
+  style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+  <div onclick="event.stopPropagation()"
+    style="background:#fff;border-radius:16px;padding:28px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;position:relative;">
+    <button onclick="sluitUitleg()"
+      style="position:absolute;top:12px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:#64748b;">✕</button>
+
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:20px;">📊 Indicator uitleg</h2>
+
+    <div style="margin-bottom:24px;">
+      <h3 style="font-size:15px;font-weight:700;color:#2563eb;margin-bottom:8px;">RSI — Relative Strength Index</h3>
+      <p style="font-size:13px;line-height:1.7;color:#374151;">
+        RSI meet hoe snel en sterk een koers beweegt op een schaal van 0 tot 100.
+        Het idee: als een aandeel heel snel daalt, raken verkopers uitgeput.
+        Op een bepaald moment is iedereen die wilde verkopen al uitgestapt — dan keert de koers vaak om.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px;">
+        <div style="background:#fef2f2;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:18px;font-weight:700;color:#dc2626;">RSI &gt; 70</div>
+          <div style="font-size:11px;font-weight:600;color:#dc2626;margin-top:2px;">OVERBOUGHT</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px;">Te snel gestegen. Verkoopdruk neemt toe. Mogelijk verkoopmoment.</div>
+        </div>
+        <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:18px;font-weight:700;color:#64748b;">30 — 70</div>
+          <div style="font-size:11px;font-weight:600;color:#64748b;margin-top:2px;">NEUTRAAL</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px;">Geen sterk signaal. Wacht op extreme waarde.</div>
+        </div>
+        <div style="background:#f0fdf4;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:18px;font-weight:700;color:#16a34a;">RSI &lt; 30</div>
+          <div style="font-size:11px;font-weight:600;color:#16a34a;margin-top:2px;">OVERSOLD</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px;">Te snel gedaald. Verkopers uitgeput. Mogelijk koopmoment.</div>
+        </div>
+      </div>
+      <div style="background:#eff6ff;border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:#1e40af;">
+        💡 <strong>Daytrade tip:</strong> RSI onder 30 + eerste groene kaars = sterk koopsignaal.
+        RSI boven 70 + eerste rode kaars = sterk verkoopsignaal.
+        Gebruik altijd bevestiging — RSI alleen is niet genoeg.
+      </div>
+    </div>
+    <div style="margin-bottom:24px;">
+      <h3 style="font-size:15px;font-weight:700;color:#2563eb;margin-bottom:8px;">MACD — Moving Average Convergence Divergence</h3>
+      <p style="font-size:13px;line-height:1.7;color:#374151;">
+        MACD meet of een koers aan het versnellen of vertragen is.
+        Het berekent twee gemiddeldes (snel: 12 periodes, traag: 26 periodes)
+        en toont het verschil. De signaallijn (9 periodes) geeft kruispunten aan.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">
+        <div style="background:#f0fdf4;border-radius:8px;padding:10px;">
+          <div style="font-size:12px;font-weight:700;color:#16a34a;margin-bottom:4px;">🟢 Bullish signalen</div>
+          <ul style="font-size:11px;color:#374151;padding-left:14px;line-height:1.8;">
+            <li>MACD kruist signaallijn omhoog</li>
+            <li>Histogram wordt groter (groen)</li>
+            <li>MACD stijgt boven de nullijn</li>
+          </ul>
+        </div>
+        <div style="background:#fef2f2;border-radius:8px;padding:10px;">
+          <div style="font-size:12px;font-weight:700;color:#dc2626;margin-bottom:4px;">🔴 Bearish signalen</div>
+          <ul style="font-size:11px;color:#374151;padding-left:14px;line-height:1.8;">
+            <li>MACD kruist signaallijn omlaag</li>
+            <li>Histogram wordt groter (rood)</li>
+            <li>MACD daalt onder de nullijn</li>
+          </ul>
+        </div>
+      </div>
+      <div style="background:#eff6ff;border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:#1e40af;">
+        💡 <strong>Daytrade tip:</strong> RSI onder 30 + MACD histogram begint te verkleinen =
+        verkoopdruk neemt af. Dit is het sterkste koopsignaal.
+        RSI boven 70 + MACD kruist omlaag = sterkste verkoopsignaal.
+      </div>
+    </div>
+    <div>
+      <h3 style="font-size:15px;font-weight:700;color:#2563eb;margin-bottom:8px;">Bollinger Bands</h3>
+      <p style="font-size:13px;line-height:1.7;color:#374151;">
+        Bollinger Bands tonen een bandbreedte rond de koers gebaseerd op volatiliteit.
+        De middelste lijn is het 20-periode gemiddelde.
+        De banden zijn 2 standaarddeviaties daarvan verwijderd.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px;">
+        <div style="background:#fef2f2;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:12px;font-weight:700;color:#dc2626;">Boven upper band</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px;">Extreem overbought. Terugval verwacht.</div>
+        </div>
+        <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:12px;font-weight:700;color:#64748b;">Binnen de bands</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px;">Normale beweging. Geen extreem signaal.</div>
+        </div>
+        <div style="background:#f0fdf4;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:12px;font-weight:700;color:#16a34a;">Onder lower band</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px;">Extreem oversold. Technisch stuitje mogelijk.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
