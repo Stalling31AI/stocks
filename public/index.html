@@ -354,7 +354,7 @@
   <!-- Rij 1: logo + navigatie + zoek + timeframes -->
   <div style="display:flex;align-items:center;gap:16px;padding:10px 24px;border-bottom:1px solid #f1f5f9;flex-wrap:nowrap;">
     <img src="/logoYA.png" alt="Yappi Analytics"
-      style="height:48px;width:auto;object-fit:contain;flex-shrink:0;mix-blend-mode:multiply;">
+      style="height:48px;width:auto;object-fit:contain;flex-shrink:0;">
     <a href="/" class="nav-tab actief" style="white-space:nowrap;">📈 Dashboard</a>
     <a href="/dagoverzicht.html" class="nav-tab" style="white-space:nowrap;">📋 Dag overzicht</a>
     <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;">
@@ -784,11 +784,18 @@ function getIndicators() {
 function setCanvasSize(canvas) {
   const dpr  = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  canvas.width  = rect.width  * dpr;
-  canvas.height = rect.height * dpr;
+  const w = Math.max(300, rect.width || canvas.parentElement?.clientWidth || 600);
+  let h = rect.height;
+  if (!h) {
+    h = canvas.id === 'chart-canvas' ? 360 : 100;
+    canvas.style.height = h + 'px';
+  }
+  canvas.width  = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.display = 'block';
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
-  return { ctx, w: rect.width, h: rect.height };
+  return { ctx, w, h };
 }
 
 function drawAll() {
