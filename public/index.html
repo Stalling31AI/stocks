@@ -335,66 +335,91 @@
     #ai-metrics { grid-template-columns: 1fr 1fr; }
     .snel-btn { font-size: 10px; padding: 4px 6px; }
   }
+  @media (max-width: 768px) {
+    #alert-balk { display: none !important; }
+    #mobiel-extra { display: block !important; }
+    #refresh-countdown { display: none; }
+  }
   </style>
 </head>
 <body>
 
-<header>
-  <h1>📈 Stock Analyser</h1>
-  <a href="/" class="nav-tab actief">📈 Dashboard</a>
-  <a href="/dagoverzicht.html" class="nav-tab">📋 Dag overzicht</a>
-  <div class="search-wrap">
-    <input id="symbol-input" type="text" placeholder="Symbool, bijv. AAPL" value="AAPL" />
-    <button class="btn-load" id="btn-load">Laden</button>
+<header id="header">
+  <div style="display:flex;align-items:center;gap:20px;padding:10px 24px;border-bottom:1px solid #f1f5f9;">
+    <div class="nav-logo">Stock<span style="color:#2563eb;">Lens</span></div>
+    <a href="/" class="nav-tab actief">📈 Dashboard</a>
+    <a href="/dagoverzicht.html" class="nav-tab">📋 Dag overzicht</a>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+      <input id="symbol-input" type="text" value="ASML.AS"
+        style="padding:7px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;width:120px;">
+      <button onclick="loadData(document.getElementById('symbol-input').value)"
+        style="padding:7px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
+        Laden
+      </button>
+      <div style="display:flex;gap:4px;" id="tf-knoppen">
+        <button class="tf-btn" onclick="selectTf('5m',this)">5m</button>
+        <button class="tf-btn" onclick="selectTf('15m',this)">15m</button>
+        <button class="tf-btn" onclick="selectTf('1h',this)">1u</button>
+        <button class="tf-btn actief" onclick="selectTf('1d',this)">1d</button>
+      </div>
+    </div>
   </div>
-  <div id="snelkeuze" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-    <button onclick="laadSymbol('ASML.AS')" class="snel-btn">ASML</button>
-    <button onclick="laadSymbol('ADYEN.AS')" class="snel-btn">ADYEN</button>
-    <button onclick="laadSymbol('NVDA')" class="snel-btn">NVDA</button>
-    <button onclick="laadSymbol('TSLA')" class="snel-btn">TSLA</button>
-    <button onclick="laadSymbol('RHIM.L')" class="snel-btn">Rheinmetall</button>
-    <button onclick="laadSymbol('BA')" class="snel-btn">Boeing</button>
-    <button onclick="laadSymbol('LMT')" class="snel-btn">Lockheed</button>
-  </div>
-  <div id="alert-balk" style="display:flex;align-items:center;gap:12px;padding:8px 0;font-size:12px;color:#64748b;flex-wrap:wrap;">
-    <span style="font-weight:600;">🔔 Alerts:</span>
-    <label style="display:flex;align-items:center;gap:4px;">
-      <input type="checkbox" id="alert-actief" checked onchange="alertInstellingen.actief=this.checked">
-      Actief
-    </label>
-    <label style="display:flex;align-items:center;gap:4px;">
-      RSI oversold onder
-      <input type="number" id="alert-oversold" value="30" min="10" max="40"
-        style="width:45px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;"
-        onchange="alertInstellingen.rsiOversold=+this.value">
-    </label>
-    <label style="display:flex;align-items:center;gap:4px;">
-      RSI overbought boven
-      <input type="number" id="alert-overbought" value="70" min="60" max="90"
-        style="width:45px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;"
-        onchange="alertInstellingen.rsiOverbought=+this.value">
-    </label>
-    <span id="alert-status" style="font-size:11px;color:#16a34a;"></span>
-    <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-      <label style="display:flex;align-items:center;gap:4px;">
-        <input type="checkbox" id="auto-refresh-toggle" checked
-          onchange="this.checked ? startAutoRefresh() : stopAutoRefresh()">
-        Auto-refresh
+  <div style="display:flex;align-items:center;gap:6px;padding:8px 24px;flex-wrap:nowrap;overflow-x:auto;">
+    <span style="font-size:11px;font-weight:600;color:#94a3b8;white-space:nowrap;">Snel:</span>
+    <div id="snelkeuze" style="display:flex;gap:5px;">
+      <button class="snel-btn actief" onclick="laadSymbol('ASML.AS',this)">ASML</button>
+      <button class="snel-btn" onclick="laadSymbol('ADYEN.AS',this)">ADYEN</button>
+      <button class="snel-btn" onclick="laadSymbol('NVDA',this)">NVDA</button>
+      <button class="snel-btn" onclick="laadSymbol('TSLA',this)">TSLA</button>
+      <button class="snel-btn" onclick="laadSymbol('RHM.DE',this)">Rheinmetall</button>
+      <button class="snel-btn" onclick="laadSymbol('BA',this)">Boeing</button>
+      <button class="snel-btn" onclick="laadSymbol('LMT',this)">Lockheed</button>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11px;color:#64748b;flex-shrink:0;">
+      <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;">
+        <input type="checkbox" id="alert-actief" checked onchange="alertInstellingen.actief=this.checked">
+        🔔 Alerts
       </label>
-      <select id="refresh-interval" onchange="refreshSeconds=+this.value; startAutoRefresh()"
+      <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;">
+        RSI onder <input type="number" id="alert-oversold" value="30" min="10" max="40"
+          style="width:38px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;"
+          onchange="alertInstellingen.rsiOversold=+this.value">
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;">
+        boven <input type="number" id="alert-overbought" value="70" min="60" max="90"
+          style="width:38px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;"
+          onchange="alertInstellingen.rsiOverbought=+this.value">
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;">
+        <input type="checkbox" id="auto-refresh-toggle" checked
+          onchange="this.checked?startAutoRefresh():stopAutoRefresh()">
+        ↻ Auto
+      </label>
+      <select id="refresh-interval" onchange="refreshSeconds=+this.value;startAutoRefresh()"
         style="padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;">
-        <option value="60">1 min</option>
-        <option value="300" selected>5 min</option>
-        <option value="900">15 min</option>
+        <option value="60">1m</option>
+        <option value="300" selected>5m</option>
+        <option value="900">15m</option>
       </select>
-      <span id="refresh-countdown" style="font-size:11px;color:#2563eb;min-width:120px;"></span>
-    </span>
+      <span id="refresh-countdown" style="color:#2563eb;white-space:nowrap;min-width:80px;"></span>
+    </div>
   </div>
-  <div class="interval-btns">
-    <button data-iv="5m">5m</button>
-    <button data-iv="15m">15m</button>
-    <button data-iv="1h">1u</button>
-    <button data-iv="1d" class="active">1d</button>
+  <!-- Mobiel: fold-out voor alerts -->
+  <div id="mobiel-extra" style="display:none;padding:8px 16px;border-top:1px solid #f1f5f9;font-size:11px;">
+    <details>
+      <summary style="cursor:pointer;font-weight:600;color:#64748b;margin-bottom:8px;">⚙️ Instellingen</summary>
+      <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;">
+        <label style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" checked> 🔔 Alerts actief
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;">
+          RSI alert onder <input type="number" value="30" style="width:50px;padding:3px;border:1px solid #e2e8f0;border-radius:4px;">
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" checked> ↻ Auto-refresh
+        </label>
+      </div>
+    </details>
   </div>
 </header>
 
@@ -1241,7 +1266,7 @@ async function laadPremarket() {
       verwachtingKleur = '#d97706';
     } else if (rsi > 65) {
       verwachting = '🟠 RSI overbought. Winstnemingen mogelijk bij opening.';
-      verwachtingKleur = '#ea580c';
+      verwachtingKleur = '#7c3aed';
     } else {
       verwachting = '⚪ Neutrale opening verwacht. Wacht op richting na 09:30.';
       verwachtingKleur = '#64748b';
@@ -1502,7 +1527,7 @@ function renderGeschiedenis() {
         <span style="font-size:11px;color:#94a3b8;">${e.tijdstip}</span>
         <span style="font-weight:700;">${e.symbol}</span>
         <span style="font-size:11px;color:#64748b;">${e.interval}</span>
-        <span style="margin-left:auto;font-weight:700;color:${e.signaal==='KOOP'?'#16a34a':e.signaal==='VERKOOP'?'#dc2626':'#d97706'}">${e.signaal}</span>
+        <span style="margin-left:auto;font-weight:700;color:${e.signaal==='KOOP'?'#16a34a':e.signaal==='VERKOOP'?'#dc2626':'#7c3aed'}">${e.signaal}</span>
         <span style="color:#94a3b8;">▾</span>
       </div>
       <div id="geschiedenis-${i}" style="display:none;padding:12px 14px;font-size:13px;color:#374151;border-top:1px solid #e2e8f0;">
@@ -1726,13 +1751,13 @@ document.addEventListener('keydown', e => {
           Nog niet instappen — wacht op bevestiging.
         </div>
       </div>
-      <div style="background:#fff7ed;border-radius:10px;padding:14px;border-left:4px solid #ea580c;">
-        <div style="font-size:15px;font-weight:700;color:#ea580c;margin-bottom:6px;">🟠 Overbought</div>
+      <div style="background:#f5f3ff;border-radius:10px;padding:14px;border-left:4px solid #7c3aed;">
+        <div style="font-size:15px;font-weight:700;color:#7c3aed;margin-bottom:6px;">🟠 Overbought</div>
         <p style="font-size:13px;color:#374151;line-height:1.6;margin-bottom:6px;">
           Het aandeel is gestegen maar nog geen duidelijke terugval.
           RSI is hoog maar MACD bevestigt nog niet. Wees voorzichtig.
         </p>
-        <div style="font-size:11px;color:#ea580c;font-weight:600;">
+        <div style="font-size:11px;color:#7c3aed;font-weight:600;">
           RSI boven 65 maar MACD nog niet omgedraaid
         </div>
         <div style="font-size:11px;color:#64748b;margin-top:4px;">
