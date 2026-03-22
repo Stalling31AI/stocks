@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Stock Analyser</title>
+  <title>Yappi Analytics — Dashboard</title>
   <style>
   /* ── RESET & BASIS ───────────────────────────────────────── */
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -337,26 +337,33 @@
   }
   @media (max-width: 768px) {
     #alert-balk { display: none !important; }
-    #mobiel-extra { display: block !important; }
+    #mobiel-instellingen { display: block !important; }
     #refresh-countdown { display: none; }
   }
+  .ind-val.amber { color: #7c3aed; }
+  .ind-sub.amber { color: #7c3aed; }
+  .conf-bar-fill.hold { background: #7c3aed; }
+  .signal-name.hold { color: #7c3aed; }
+  .signal-card.hold-card { border-left-color: #7c3aed; }
   </style>
 </head>
 <body>
 
-<header id="header">
-  <div style="display:flex;align-items:center;gap:20px;padding:10px 24px;border-bottom:1px solid #f1f5f9;">
-    <div class="nav-logo">Stock<span style="color:#2563eb;">Lens</span></div>
-    <a href="/" class="nav-tab actief">📈 Dashboard</a>
-    <a href="/dagoverzicht.html" class="nav-tab">📋 Dag overzicht</a>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+<header id="header" style="background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);position:sticky;top:0;z-index:100;">
+
+  <!-- Rij 1: logo + navigatie + zoek + timeframes -->
+  <div style="display:flex;align-items:center;gap:16px;padding:10px 24px;border-bottom:1px solid #f1f5f9;flex-wrap:nowrap;">
+    <img src="/logo.png" alt="Yappi Analytics" style="height:36px;width:auto;object-fit:contain;flex-shrink:0;">
+    <a href="/" class="nav-tab actief" style="white-space:nowrap;">📈 Dashboard</a>
+    <a href="/dagoverzicht.html" class="nav-tab" style="white-space:nowrap;">📋 Dag overzicht</a>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;">
       <input id="symbol-input" type="text" value="ASML.AS"
-        style="padding:7px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;width:120px;">
+        style="padding:7px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;width:110px;">
       <button onclick="loadData(document.getElementById('symbol-input').value)"
         style="padding:7px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">
         Laden
       </button>
-      <div style="display:flex;gap:4px;" id="tf-knoppen">
+      <div style="display:flex;gap:4px;">
         <button class="tf-btn" onclick="selectTf('5m',this)">5m</button>
         <button class="tf-btn" onclick="selectTf('15m',this)">15m</button>
         <button class="tf-btn" onclick="selectTf('1h',this)">1u</button>
@@ -364,9 +371,10 @@
       </div>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:6px;padding:8px 24px;flex-wrap:nowrap;overflow-x:auto;">
-    <span style="font-size:11px;font-weight:600;color:#94a3b8;white-space:nowrap;">Snel:</span>
-    <div id="snelkeuze" style="display:flex;gap:5px;">
+  <!-- Rij 2: snelkeuze + alerts + auto-refresh -->
+  <div style="display:flex;align-items:center;gap:6px;padding:7px 24px;flex-wrap:nowrap;overflow-x:auto;">
+    <span style="font-size:11px;font-weight:600;color:#94a3b8;white-space:nowrap;flex-shrink:0;">Snel:</span>
+    <div id="snelkeuze" style="display:flex;gap:5px;flex-shrink:0;">
       <button class="snel-btn actief" onclick="laadSymbol('ASML.AS',this)">ASML</button>
       <button class="snel-btn" onclick="laadSymbol('ADYEN.AS',this)">ADYEN</button>
       <button class="snel-btn" onclick="laadSymbol('NVDA',this)">NVDA</button>
@@ -375,13 +383,14 @@
       <button class="snel-btn" onclick="laadSymbol('BA',this)">Boeing</button>
       <button class="snel-btn" onclick="laadSymbol('LMT',this)">Lockheed</button>
     </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11px;color:#64748b;flex-shrink:0;">
+    <div id="alert-balk" style="margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11px;color:#64748b;flex-shrink:0;">
       <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;">
-        <input type="checkbox" id="alert-actief" checked onchange="alertInstellingen.actief=this.checked">
+        <input type="checkbox" id="alert-actief" checked
+          onchange="alertInstellingen.actief=this.checked">
         🔔 Alerts
       </label>
       <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;">
-        RSI onder <input type="number" id="alert-oversold" value="30" min="10" max="40"
+        onder <input type="number" id="alert-oversold" value="30" min="10" max="40"
           style="width:38px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;"
           onchange="alertInstellingen.rsiOversold=+this.value">
       </label>
@@ -390,33 +399,40 @@
           style="width:38px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;"
           onchange="alertInstellingen.rsiOverbought=+this.value">
       </label>
+      <div style="width:1px;height:16px;background:#e2e8f0;"></div>
       <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;">
         <input type="checkbox" id="auto-refresh-toggle" checked
           onchange="this.checked?startAutoRefresh():stopAutoRefresh()">
-        ↻ Auto
+        ↻
       </label>
-      <select id="refresh-interval" onchange="refreshSeconds=+this.value;startAutoRefresh()"
+      <select id="refresh-interval"
+        onchange="refreshSeconds=+this.value;startAutoRefresh()"
         style="padding:2px 4px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;">
         <option value="60">1m</option>
         <option value="300" selected>5m</option>
         <option value="900">15m</option>
       </select>
-      <span id="refresh-countdown" style="color:#2563eb;white-space:nowrap;min-width:80px;"></span>
+      <span id="refresh-countdown"
+        style="color:#2563eb;white-space:nowrap;min-width:90px;font-size:11px;"></span>
     </div>
   </div>
-  <!-- Mobiel: fold-out voor alerts -->
-  <div id="mobiel-extra" style="display:none;padding:8px 16px;border-top:1px solid #f1f5f9;font-size:11px;">
+  <!-- Mobiel fold-out instellingen -->
+  <div id="mobiel-instellingen" style="display:none;padding:8px 16px;border-top:1px solid #f1f5f9;">
     <details>
-      <summary style="cursor:pointer;font-weight:600;color:#64748b;margin-bottom:8px;">⚙️ Instellingen</summary>
-      <div style="display:flex;flex-direction:column;gap:8px;padding-top:8px;">
+      <summary style="cursor:pointer;font-size:12px;font-weight:600;color:#64748b;">
+        ⚙️ Alerts & instellingen
+      </summary>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:10px 0;font-size:12px;">
         <label style="display:flex;align-items:center;gap:6px;">
           <input type="checkbox" checked> 🔔 Alerts actief
         </label>
         <label style="display:flex;align-items:center;gap:6px;">
-          RSI alert onder <input type="number" value="30" style="width:50px;padding:3px;border:1px solid #e2e8f0;border-radius:4px;">
+          RSI alert onder
+          <input type="number" value="30"
+            style="width:50px;padding:3px;border:1px solid #e2e8f0;border-radius:4px;">
         </label>
         <label style="display:flex;align-items:center;gap:6px;">
-          <input type="checkbox" checked> ↻ Auto-refresh
+          <input type="checkbox" checked> ↻ Auto-refresh 5 min
         </label>
       </div>
     </details>
@@ -604,6 +620,8 @@ let aiInstapPrijs = null;
 let aiStopLoss = null;
 let aiTarget = null;
 let aiSignaal = null;
+let aiWeerstand = null;
+let aiSteun = null;
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const symbolInput  = document.getElementById('symbol-input');
@@ -1006,6 +1024,40 @@ function drawCandlestick({ bbArr, ema20, ema50 }) {
       ctx.fillText('TP', chartRight + 5, yScale(aiTarget) + 4);
     }
   }
+  if (aiWeerstand) {
+    const chartRight = pad.left + cw;
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, yScale(aiWeerstand));
+    ctx.lineTo(chartRight, yScale(aiWeerstand));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(chartRight+2, yScale(aiWeerstand)-10, 46, 20);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('WEERST', chartRight+5, yScale(aiWeerstand)+4);
+  }
+  if (aiSteun) {
+    const chartRight = pad.left + cw;
+    ctx.strokeStyle = '#16a34a';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, yScale(aiSteun));
+    ctx.lineTo(chartRight, yScale(aiSteun));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#16a34a';
+    ctx.fillRect(chartRight+2, yScale(aiSteun)-10, 46, 20);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('STEUN', chartRight+5, yScale(aiSteun)+4);
+  }
 }
 
 function drawRSI({ rsiArr }) {
@@ -1188,6 +1240,8 @@ function renderAI(ai) {
   aiStopLoss = ai.stop_loss || null;
   aiTarget = ai.target || null;
   aiSignaal = ai.signaal || null;
+  aiWeerstand = ai.weerstand || null;
+  aiSteun = ai.steun || null;
   drawAll();
 }
 
