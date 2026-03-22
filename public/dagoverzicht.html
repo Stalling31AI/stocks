@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dag Overzicht — StockLens</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: #f0f2f5; color: #1a1d23; }
+.nav { background: #fff; padding: 12px 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); display: flex; align-items: center; gap: 8px; }
+.nav-logo { font-size: 16px; font-weight: 700; margin-right: 16px; }
+.nav-logo span { color: #2563eb; }
+.nav-tab { font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 8px; text-decoration: none; color: #64748b; border: 1.5px solid transparent; transition: all .15s; }
+.nav-tab:hover { color: #2563eb; background: #eff6ff; }
+.nav-tab.actief { color: #2563eb; border-color: #2563eb; background: #eff6ff; }
+.main { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.pagina-titel { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+.pagina-subtitel { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-logo">Stock<span>Lens</span></div>
+  <a href="/" class="nav-tab">📈 Dashboard</a>
+  <a href="/dagoverzicht.html" class="nav-tab actief">📋 Dag overzicht</a>
+</nav>
+<div class="main">
+  <div class="pagina-titel">📋 Dag overzicht</div>
+  <div class="pagina-subtitel" id="dag-datum"></div>
+  <p style="color:#94a3b8;">Pagina wordt stap voor stap opgebouwd...</p>
+</div>
+<script>
+const nu = new Date();
+document.getElementById('dag-datum').textContent =
+  nu.toLocaleDateString('nl-NL', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+</script>
+</body>
+</html>
