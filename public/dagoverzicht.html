@@ -359,7 +359,7 @@ async function analyseAlleAandelen() {
            / quotes[quotes.length-1].close * 100).toFixed(2)
         : null;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
       const analyseRes = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -400,12 +400,66 @@ async function analyseAlleAandelen() {
       await new Promise(resolve => setTimeout(resolve, 2500));
     } catch(e) {
       console.error('Fout voor ' + item.symbol + ':', e.message);
+
+      // Bij timeout: probeer opnieuw met kortere analyse
+      if (e.name === 'AbortError') {
+        try {
+          const controller2 = new AbortController();
+          const timeoutId2 = setTimeout(() => controller2.abort(), 30000);
+
+          const retryRes = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller2.signal,
+            body: JSON.stringify({
+              symbol: item.symbol,
+              interval: '15m',
+              quotes: quotes.slice(-10),
+              indicators: { rsi, macd: macdData, bb, trend }
+            })
+          });
+          clearTimeout(timeoutId2);
+          const retryAi = await retryRes.json();
+
+          const resultaat = {
+            symbol: item.symbol,
+            label: item.label,
+            vlag: item.vlag,
+            prijs: last?.close,
+            tijdstip: new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}),
+            datum: new Date().toLocaleDateString('nl-NL'),
+            signaal: retryAi.signaal || 'WACHT',
+            actie: retryAi.actie || retryAi.signaal || 'WACHT',
+            vertrouwen: retryAi.vertrouwen || 0,
+            entry: retryAi.entry,
+            stop_loss: retryAi.stop_loss,
+            target: retryAi.target,
+            rr_ratio: retryAi.rr_ratio,
+            redenering: retryAi.redenering || '',
+            instap_tijd: retryAi.instap_tijd || '',
+            rsi: rsi.toFixed(1),
+            macd: macdData.macd.toFixed(2),
+            resultaat: 'onbekend',
+          };
+          huidigeAnalyses.push(resultaat);
+          updateKaart(i, resultaat);
+          await new Promise(resolve => setTimeout(resolve, 2500));
+          continue;
+        } catch(e2) {
+          console.error('Retry ook mislukt voor ' + item.symbol);
+        }
+      }
       const fout = {
         symbol: item.symbol, label: item.label, vlag: item.vlag,
+        prijs: last?.close,
         signaal: 'FOUT', actie: 'FOUT',
-        redenering: 'Fout: ' + e.message,
+        redenering: e.name === 'AbortError'
+          ? 'Analyse duurde te lang. Probeer later opnieuw tijdens beursopeningstijden.'
+          : 'Fout: ' + e.message,
         tijdstip: new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}),
         datum: new Date().toLocaleDateString('nl-NL'),
+        rsi: rsi?.toFixed(1),
+        macd: macdData?.macd?.toFixed(2),
         resultaat: 'onbekend',
       };
       huidigeAnalyses.push(fout);
