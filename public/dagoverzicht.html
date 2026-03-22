@@ -235,14 +235,24 @@ const WATCHLIST = [
 ];
 let huidigeAnalyses = [];
 function renderLadenKaarten() {
-  document.getElementById('aandelen-grid').innerHTML = WATCHLIST.map((item,i) => `
-    <div class="aandeel-kaart laden" id="kaart-${i}">
-      <div style="font-size:13px;font-weight:700;color:#64748b;margin-bottom:4px;">${item.vlag} ${item.label}</div>
+  const grid = document.getElementById('aandelen-grid');
+  grid.innerHTML = '';
+  WATCHLIST.forEach((item, i) => {
+    const div = document.createElement('div');
+    div.className = 'aandeel-kaart laden';
+    div.id = 'kaart-' + i;
+    div.innerHTML = `
+      <div style="font-size:13px;font-weight:700;color:#64748b;margin-bottom:4px;">
+        ${item.vlag} ${item.label}
+      </div>
       <div style="font-size:20px;font-weight:700;margin-bottom:8px;">—</div>
       <span class="signaal-pill LADEN">⏳ Laden...</span>
-      <div style="font-size:11px;color:#94a3b8;margin-top:8px;">Analyse wordt opgehaald...</div>
-    </div>
-  `).join('');
+      <div style="font-size:11px;color:#94a3b8;margin-top:8px;">
+        Analyse wordt opgehaald...
+      </div>
+    `;
+    grid.appendChild(div);
+  });
 }
 function updateKaart(i, r) {
   const kaart = document.getElementById('kaart-' + i);
@@ -392,6 +402,18 @@ async function analyseAlleAandelen() {
   document.getElementById('voortgang-fill').style.width = '100%';
   document.getElementById('voortgang-titel').textContent = '✅ Alle analyses klaar!';
   updateSamenvatting();
+  sessionStorage.setItem('huidigeAnalyses',
+    JSON.stringify(huidigeAnalyses));
+  sessionStorage.setItem('analyseGrid',
+    document.getElementById('aandelen-grid').innerHTML);
+  sessionStorage.setItem('analyseTijd',
+    document.getElementById('analyse-tijd').textContent);
+  sessionStorage.setItem('telKoop',
+    document.getElementById('tel-koop').textContent);
+  sessionStorage.setItem('telVerkoop',
+    document.getElementById('tel-verkoop').textContent);
+  sessionStorage.setItem('telWacht',
+    document.getElementById('tel-wacht').textContent);
   slaAnalysesOp();
   btn.disabled = false;
   btn.textContent = '🔍 Analyseer alle 7 aandelen';
@@ -674,6 +696,26 @@ function updateWeekAnalyse() {
 function slaNotitiesOp() {
   localStorage.setItem('weeknotities', document.getElementById('week-notities').value);
 }
+function herstelAnalyses() {
+  const grid = sessionStorage.getItem('analyseGrid');
+  const tijd = sessionStorage.getItem('analyseTijd');
+  const koop = sessionStorage.getItem('telKoop');
+  const verkoop = sessionStorage.getItem('telVerkoop');
+  const wacht = sessionStorage.getItem('telWacht');
+  const analyses = sessionStorage.getItem('huidigeAnalyses');
+  if (grid) {
+    document.getElementById('aandelen-grid').innerHTML = grid;
+  }
+  if (tijd) document.getElementById('analyse-tijd').textContent = tijd;
+  if (koop) document.getElementById('tel-koop').textContent = koop;
+  if (verkoop) document.getElementById('tel-verkoop').textContent = verkoop;
+  if (wacht) document.getElementById('tel-wacht').textContent = wacht;
+  if (analyses) {
+    huidigeAnalyses = JSON.parse(analyses);
+    updateScore();
+  }
+}
+herstelAnalyses();
 </script>
 </body>
 </html>
