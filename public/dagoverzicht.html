@@ -17,6 +17,21 @@ body { font-family: 'Inter', sans-serif; background: #f0f2f5; color: #1a1d23; }
 .main { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .pagina-titel { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
 .pagina-subtitel { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+.aandeel-kaart { background:#fff;border-radius:12px;padding:18px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:5px solid #e2e8f0;transition:border-color .3s; }
+.aandeel-kaart.koop { border-left-color:#16a34a; }
+.aandeel-kaart.verkoop { border-left-color:#dc2626; }
+.aandeel-kaart.wacht { border-left-color:#d97706; }
+.aandeel-kaart.laden { border-left-color:#93c5fd;opacity:.7; }
+.signaal-pill { display:inline-block;font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;margin-bottom:10px; }
+.signaal-pill.KOOP { background:#dcfce7;color:#15803d; }
+.signaal-pill.VERKOOP { background:#fee2e2;color:#dc2626; }
+.signaal-pill.WACHT { background:#fef9c3;color:#854d0e; }
+.signaal-pill.LADEN { background:#e0f2fe;color:#0369a1; }
+.signaal-pill.FOUT { background:#f1f5f9;color:#64748b; }
+@media (max-width:768px) {
+  #samenvatting { grid-template-columns:1fr 1fr; }
+  #aandelen-grid { grid-template-columns:1fr; }
+}
 </style>
 </head>
 <body>
@@ -28,12 +43,110 @@ body { font-family: 'Inter', sans-serif; background: #f0f2f5; color: #1a1d23; }
 <div class="main">
   <div class="pagina-titel">📋 Dag overzicht</div>
   <div class="pagina-subtitel" id="dag-datum"></div>
-  <p style="color:#94a3b8;">Pagina wordt stap voor stap opgebouwd...</p>
+  <!-- Samenvatting balk -->
+  <div id="samenvatting" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+    <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;">
+      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Koop signalen</div>
+      <div style="font-size:28px;font-weight:700;color:#16a34a;" id="tel-koop">—</div>
+    </div>
+    <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;">
+      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Verkoop signalen</div>
+      <div style="font-size:28px;font-weight:700;color:#dc2626;" id="tel-verkoop">—</div>
+    </div>
+    <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;">
+      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Wacht signalen</div>
+      <div style="font-size:28px;font-weight:700;color:#d97706;" id="tel-wacht">—</div>
+    </div>
+    <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;">
+      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Geanalyseerd om</div>
+      <div style="font-size:18px;font-weight:700;color:#2563eb;" id="analyse-tijd">—</div>
+    </div>
+  </div>
+  <!-- Analyseer knop -->
+  <button id="analyse-btn" onclick="analyseAlleAandelen()"
+    style="padding:12px 24px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:20px;">
+    🔍 Analyseer alle 7 aandelen
+  </button>
+  <!-- Voortgang -->
+  <div id="voortgang-wrap" style="display:none;background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+    <div style="font-size:13px;font-weight:600;color:#64748b;margin-bottom:8px;" id="voortgang-titel">Bezig...</div>
+    <div style="height:8px;background:#e2e8f0;border-radius:4px;margin-bottom:6px;">
+      <div id="voortgang-fill" style="height:100%;background:#2563eb;border-radius:4px;width:0%;transition:width .5s;"></div>
+    </div>
+    <div style="font-size:11px;color:#94a3b8;" id="voortgang-status"></div>
+  </div>
+  <!-- Aandelen grid -->
+  <div id="aandelen-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;"></div>
 </div>
 <script>
 const nu = new Date();
 document.getElementById('dag-datum').textContent =
   nu.toLocaleDateString('nl-NL', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+const WATCHLIST = [
+  { symbol: 'ASML.AS',  label: 'ASML',        vlag: '🇳🇱' },
+  { symbol: 'ADYEN.AS', label: 'ADYEN',        vlag: '🇳🇱' },
+  { symbol: 'NVDA',     label: 'NVIDIA',       vlag: '🇺🇸' },
+  { symbol: 'TSLA',     label: 'TESLA',        vlag: '🇺🇸' },
+  { symbol: 'RHM.DE',   label: 'Rheinmetall',  vlag: '🇩🇪' },
+  { symbol: 'BA',       label: 'Boeing',       vlag: '🇺🇸' },
+  { symbol: 'LMT',      label: 'Lockheed',     vlag: '🇺🇸' },
+];
+let huidigeAnalyses = [];
+function renderLadenKaarten() {
+  document.getElementById('aandelen-grid').innerHTML = WATCHLIST.map((item,i) => `
+    <div class="aandeel-kaart laden" id="kaart-${i}">
+      <div style="font-size:13px;font-weight:700;color:#64748b;margin-bottom:4px;">${item.vlag} ${item.label}</div>
+      <div style="font-size:20px;font-weight:700;margin-bottom:8px;">—</div>
+      <span class="signaal-pill LADEN">⏳ Laden...</span>
+      <div style="font-size:11px;color:#94a3b8;margin-top:8px;">Analyse wordt opgehaald...</div>
+    </div>
+  `).join('');
+}
+function updateKaart(i, r) {
+  const kaart = document.getElementById('kaart-' + i);
+  if (!kaart) return;
+  const fmt = v => v != null ? Number(v).toFixed(2) : '—';
+  const cls = r.signaal==='KOOP'?'koop':r.signaal==='VERKOOP'?'verkoop':'wacht';
+  kaart.className = 'aandeel-kaart ' + cls;
+  kaart.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <div style="font-size:13px;font-weight:700;color:#64748b;">${r.vlag} ${r.label}</div>
+      <div style="font-size:11px;color:#94a3b8;">${r.tijdstip||''}</div>
+    </div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:6px;">${r.prijs ? '€'+fmt(r.prijs) : '—'}</div>
+    <span class="signaal-pill ${r.signaal}">${r.actie||r.signaal}</span>
+    ${r.entry ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:8px 0;">
+      <div style="background:#f8fafc;border-radius:6px;padding:6px;">
+        <div style="font-size:9px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Entry</div>
+        <div style="font-size:13px;font-weight:700;color:#16a34a;">${fmt(r.entry)}</div>
+      </div>
+      <div style="background:#f8fafc;border-radius:6px;padding:6px;">
+        <div style="font-size:9px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Stop</div>
+        <div style="font-size:13px;font-weight:700;color:#dc2626;">${fmt(r.stop_loss)}</div>
+      </div>
+      <div style="background:#f8fafc;border-radius:6px;padding:6px;">
+        <div style="font-size:9px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Target</div>
+        <div style="font-size:13px;font-weight:700;color:#16a34a;">${fmt(r.target)}</div>
+      </div>
+    </div>` : ''}
+    <div style="font-size:11px;color:#64748b;line-height:1.6;margin-bottom:6px;">${r.redenering||''}</div>
+    ${r.instap_tijd ? `<div style="font-size:11px;font-weight:600;color:#2563eb;">⏰ ${r.instap_tijd}</div>` : ''}
+    <a href="/?symbol=${r.symbol}"
+      style="display:block;text-align:center;margin-top:10px;font-size:11px;color:#2563eb;
+      text-decoration:none;padding:6px;border:1px solid #e2e8f0;border-radius:6px;">
+      → Open in dashboard
+    </a>
+  `;
+}
+function updateSamenvatting() {
+  document.getElementById('tel-koop').textContent = huidigeAnalyses.filter(a=>a.signaal==='KOOP').length;
+  document.getElementById('tel-verkoop').textContent = huidigeAnalyses.filter(a=>a.signaal==='VERKOOP').length;
+  document.getElementById('tel-wacht').textContent = huidigeAnalyses.filter(a=>a.signaal==='WACHT').length;
+  document.getElementById('analyse-tijd').textContent =
+    new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'});
+}
 </script>
 </body>
 </html>
