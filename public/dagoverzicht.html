@@ -147,6 +147,109 @@ function updateSamenvatting() {
   document.getElementById('analyse-tijd').textContent =
     new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'});
 }
+function berekenRSI(closes, period=14) {
+  if (closes.length < period+1) return 50;
+  let g=0, l=0;
+  for (let i=closes.length-period; i<closes.length; i++) {
+    const d=closes[i]-closes[i-1];
+    d>0?g+=d:l-=d;
+  }
+  return 100-100/(1+g/(l||0.001));
+}
+function berekenMACD(closes) {
+  const ema=(arr,p)=>{const k=2/(p+1);let e=arr[0];for(let i=1;i<arr.length;i++)e=arr[i]*k+e*(1-k);return e;};
+  if (closes.length<26) return {macd:0,signal:0,histogram:0};
+  const m=ema(closes.slice(-26),12)-ema(closes.slice(-26),26);
+  return {macd:m,signal:0,histogram:0};
+}
+function berekenBollinger(closes, period=20) {
+  const sl=closes.slice(-period);
+  const avg=sl.reduce((a,b)=>a+b,0)/sl.length;
+  const std=Math.sqrt(sl.map(x=>(x-avg)**2).reduce((a,b)=>a+b,0)/sl.length);
+  return {upper:avg+2*std, middle:avg, lower:avg-2*std};
+}
+async function analyseAlleAandelen() {
+  const btn = document.getElementById('analyse-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Bezig...';
+  document.getElementById('voortgang-wrap').style.display = 'block';
+  huidigeAnalyses = [];
+  renderLadenKaarten();
+  for (let i = 0; i < WATCHLIST.length; i++) {
+    const item = WATCHLIST[i];
+    const pct = Math.round((i / WATCHLIST.length) * 100);
+    document.getElementById('voortgang-fill').style.width = pct + '%';
+    document.getElementById('voortgang-titel').textContent =
+      `Analyseren: ${item.vlag} ${item.label} (${i+1}/${WATCHLIST.length})`;
+    document.getElementById('voortgang-status').textContent =
+      i > 0 ? WATCHLIST.slice(0,i).map(w=>w.label).join(', ') + ' klaar' : '';
+    try {
+      const quoteRes = await fetch(`/api/quote/${item.symbol}?interval=15m`);
+      const quoteData = await quoteRes.json();
+      const quotes = quoteData.quotes || [];
+      if (quotes.length < 10) throw new Error('Te weinig data');
+      const closes = quotes.map(q => q.close);
+      const last = quotes[quotes.length-1];
+      const rsi = berekenRSI(closes);
+      const macdData = berekenMACD(closes);
+      const bb = berekenBollinger(closes);
+      const trend = closes.slice(-5).reduce((a,b)=>a+b,0)/5 >
+                    closes.slice(-10,-5).reduce((a,b)=>a+b,0)/5
+                    ? 'OPWAARTS' : 'NEERWAARTS';
+      const analyseRes = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: item.symbol,
+          interval: '15m',
+          quotes: quotes.slice(-30),
+          indicators: { rsi, macd: macdData, bb, trend }
+        })
+      });
+      const ai = await analyseRes.json();
+      const resultaat = {
+        symbol: item.symbol,
+        label: item.label,
+        vlag: item.vlag,
+        prijs: last.close,
+        tijdstip: new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}),
+        datum: new Date().toLocaleDateString('nl-NL'),
+        signaal: ai.signaal || 'WACHT',
+        actie: ai.actie || ai.signaal || 'WACHT',
+        vertrouwen: ai.vertrouwen || 0,
+        entry: ai.entry,
+        stop_loss: ai.stop_loss,
+        target: ai.target,
+        rr_ratio: ai.rr_ratio,
+        redenering: ai.redenering || '',
+        instap_tijd: ai.instap_tijd || '',
+        dagtrend: ai.dagtrend || '',
+        nieuws_sentiment: ai.nieuws_sentiment || '',
+        rsi: rsi.toFixed(1),
+        macd: macdData.macd.toFixed(2),
+        resultaat: 'onbekend',
+      };
+      huidigeAnalyses.push(resultaat);
+      updateKaart(i, resultaat);
+    } catch(e) {
+      const fout = {
+        symbol: item.symbol, label: item.label, vlag: item.vlag,
+        signaal: 'FOUT', actie: 'FOUT',
+        redenering: 'Fout: ' + e.message,
+        tijdstip: new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}),
+        datum: new Date().toLocaleDateString('nl-NL'),
+        resultaat: 'onbekend',
+      };
+      huidigeAnalyses.push(fout);
+      updateKaart(i, fout);
+    }
+  }
+  document.getElementById('voortgang-fill').style.width = '100%';
+  document.getElementById('voortgang-titel').textContent = '✅ Alle analyses klaar!';
+  updateSamenvatting();
+  btn.disabled = false;
+  btn.textContent = '🔍 Analyseer alle 7 aandelen';
+}
 </script>
 </body>
 </html>
