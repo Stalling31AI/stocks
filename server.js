@@ -64,48 +64,138 @@ app.post('/api/analyze', async (req, res) => {
     const fmt = (v, d = 2) => (v != null ? Number(v).toFixed(d) : 'N/A');
     const nowStr = new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam' });
 
-    const prompt = `Je bent een professionele daytrader en technische analist. Analyseer ${symbol} voor intraday handel.
-
-Aandeel: ${symbol}
-Timeframe: ${interval}
-Huidige koers: ${fmt(last.close)}
-Huidige tijd (Amsterdam): ${nowStr}
-
-Recente OHLCV (laatste 15 kaarsen):
-${recent.slice(-15).map(q => {
-  const d = new Date(q.date);
-  return `${d.toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam', hour: '2-digit', minute: '2-digit' })} | O:${fmt(q.open)} H:${fmt(q.high)} L:${fmt(q.low)} C:${fmt(q.close)} V:${q.volume}`;
-}).join('\n')}
-
-Technische indicatoren:
+    const prompt = `Je bent een elite daytrader analist met 20 jaar ervaring
+in technische analyse. Je taak is een concreet intraday handelsadvies
+geven voor ${symbol} op het ${interval} timeframe.
+REDENEER STAP VOOR STAP VOOR JE EEN CONCLUSIE TREKT:
+STAP 1 - TREND ANALYSE:
+Bepaal de primaire trend van vandaag op basis van de kaarsen.
+- Opent het aandeel boven of onder gisteren slotkoers?
+- Opening gap: ${indicators.openingGap ? indicators.openingGap + '%' : 'onbekend'}
+- Huidige koers: ${fmt(last.close)}
+- EMA trend: ${indicators.trend || 'onbekend'}
+- Beschrijf in 1 zin: is de dagtrend opwaarts, neerwaarts of zijwaarts?
+STAP 2 - MOMENTUM ANALYSE:
+Beoordeel RSI en MACD samen, niet apart.
 - RSI(14): ${fmt(indicators.rsi)}
-- MACD lijn: ${fmt(indicators.macd?.macd, 4)} | Signaal: ${fmt(indicators.macd?.signal, 4)} | Histogram: ${fmt(indicators.macd?.histogram, 4)}
-- Bollinger Bands: Upper ${fmt(indicators.bb?.upper)} | Midden ${fmt(indicators.bb?.middle)} | Lower ${fmt(indicators.bb?.lower)}
-- Trend (EMA20 vs EMA50): ${indicators.trend || 'NEUTRAAL'}
-
-Zoek eerst naar recent nieuws over ${symbol} van vandaag via web search.
-
-Analyseer dan:
-1. Dagtrend: hoe bewoog het aandeel van ochtend naar middag?
-2. Nieuws sentiment: positief of negatief nieuws vandaag?
-3. Concreet instapmoment: wanneer is/was het beste instapmoment vandaag? (geef tijdstip HH:MM)
-4. Actie-advies: KOOP NU / WACHT TOT HH:MM / NIET MEER KOPEN VANDAAG
-
-Geef ALLEEN het volgende JSON-object terug, geen extra tekst:
+  → ${indicators.rsi > 70 ? 'OVERBOUGHT: verkoopdruk waarschijnlijk' : indicators.rsi < 30 ? 'OVERSOLD: koopdruk mogelijk' : 'Neutraal gebied'}
+- MACD lijn: ${fmt(indicators.macd?.macd, 4)}
+- Signaal lijn: ${fmt(indicators.macd?.signal, 4)}
+- Histogram: ${fmt(indicators.macd?.histogram, 4)}
+  → ${indicators.macd?.histogram > 0 ? 'Positief: bullish momentum' : 'Negatief: bearish momentum'}
+- Combinatie oordeel: ${indicators.rsi < 30 && indicators.macd?.histogram > 0 ? 'STERK KOOP: RSI oversold + MACD draait om' : indicators.rsi > 70 && indicators.macd?.histogram < 0 ? 'STERK VERKOOP: RSI overbought + MACD draait om' : 'Gemengd signaal, wees voorzichtig'}
+STAP 3 - BOLLINGER BANDS ANALYSE:
+- Upper band: ${fmt(indicators.bb?.upper)}
+- Midden (MA20): ${fmt(indicators.bb?.middle)}
+- Lower band: ${fmt(indicators.bb?.lower)}
+- Koers vs bands: ${last.close > indicators.bb?.upper ? 'BOVEN upper band: extreem overbought' : last.close < indicators.bb?.lower ? 'ONDER lower band: extreem oversold, stuitje mogelijk' : 'Binnen de bands: normale beweging'}
+STAP 4 - KAARSPATROON ANALYSE:
+Laatste 10 kaarsen (meest recent eerst):
+${recent.slice(-10).reverse().map((q,i) => {
+  const d = new Date(q.date);
+  const tijd = d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'});
+  const body = Math.abs(q.close-q.open);
+  const range = q.high-q.low;
+  const bodyPct = range > 0 ? (body/range*100).toFixed(0) : 0;
+  const type = q.close >= q.open ? '🟢' : '🔴';
+  return `${type} ${tijd} | O:${fmt(q.open)} H:${fmt(q.high)} L:${fmt(q.low)} C:${fmt(q.close)} | Body:${bodyPct}% van range`;
+}).join('\n')}
+Herken je een van deze patronen?
+- Doji (twijfel): body < 10% van range
+- Hammer (mogelijk koop): lange onderstaart, kleine body bovenaan
+- Shooting star (mogelijk verkoop): lange bovenstaart, kleine body onderaan
+- Engulfing bullish: grote groene kaars na kleine rode
+- Engulfing bearish: grote rode kaars na kleine groene
+- 3 opeenvolgende rode kaarsen = sterke neerwaartse druk
+- 3 opeenvolgende groene kaarsen = sterke opwaartse druk
+STAP 5 - VOLUME ANALYSE:
+${recent.slice(-5).map(q => {
+  const d = new Date(q.date);
+  return d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'}) +
+    ': volume ' + (q.volume > 0 ? q.volume.toLocaleString() : 'onbekend');
+}).join(' | ')}
+- Hoog volume bij stijging = bevestiging
+- Hoog volume bij daling = sterke verkoopdruk
+- Laag volume = beweging niet betrouwbaar
+STAP 6 - MARKTCONTEXT:
+Zoek naar recent nieuws over ${symbol} van vandaag.
+Beoordeel:
+- Is er fundamenteel nieuws dat de technische analyse overschrijft?
+- Wat is het algemene marktsentiment vandaag?
+- Zijn er sectorgenoten die sterker/zwakker zijn?
+STAP 7 - RISICO BEOORDELING:
+Bepaal specifieke prijsniveaus:
+- Weerstand: dichtstbijzijnde niveau waar verkopers actief zijn
+- Steun: dichtstbijzijnde niveau waar kopers actief zijn
+- Stop-loss: maximaal 1% onder entry voor long posities
+- Target: minimaal 1.5x risico (R/R minimaal 1:1.5)
+STAP 8 - TIJDSTIP ADVIES:
+Geef specifiek advies voor het huidige moment op de dag.
+Amsterdam tijd is nu: ${new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'})}
+- 09:00-09:30: Eerste 30 min — hoge volatiliteit, wacht op richting
+- 09:30-11:00: Ochtend trend — sterkste signalen van de dag
+- 11:00-13:00: Lunch consolidatie — lagere betrouwbaarheid
+- 13:00-15:30: Middag hervatting — tweede beste periode
+- 15:30-17:30: US opening invloed — verhoogde volatiliteit
+- Na 16:30: Slotveiling opbouw — vermijd nieuwe posities
+AANDEEL-SPECIFIEKE REGELS:
+${symbol.includes('ASML') ? `
+ASML specifiek:
+- Zeer institutioneel aandeel, langzame maar betrouwbare bewegingen
+- Volgt sterk de NASDAQ/chipsektor (NVDA, AMAT)
+- Gemiddeld dagbereik €15-25 op normale dagen
+- Verhoogde volatiliteit na ASML earnings of chipsektor nieuws
+- Minimaal vertrouwen voor signaal: 60%` : ''}
+${symbol.includes('ADYEN') ? `
+ADYEN specifiek:
+- Hoge volatiliteit, grote dagbewegingen mogelijk (€20-50)
+- Gevoelig voor betaalsector nieuws (Visa, Mastercard, PayPal)
+- RSI signalen zijn betrouwbaarder dan MACD voor dit aandeel
+- Minimaal vertrouwen voor signaal: 65%` : ''}
+${symbol === 'NVDA' ? `
+NVIDIA specifiek:
+- Marktleider chips, beïnvloedt hele sektoor
+- Sterk gecorreleerd met AI/tech sentiment
+- Grote dagbewegingen normaal ($3-8)
+- Pre-market bewegingen zijn indicatief voor dagtrend
+- Minimaal vertrouwen voor signaal: 55%` : ''}
+${symbol === 'TSLA' ? `
+TESLA specifiek:
+- Extreem volatiel, grootste dagbewegingen van de lijst
+- Sterk beïnvloed door Elon Musk nieuws en macro sentiment
+- Veel valse signalen — gebruik alleen hoog-vertrouwen signalen (75%+)
+- Stop-loss altijd strikter aanhouden dan andere aandelen` : ''}
+${symbol === 'RHM.DE' ? `
+RHEINMETALL specifiek:
+- Defensie aandeel, stijgt bij geopolitiek nieuws
+- Volg nieuws over Oekraïne/NAVO/defensiebudgetten
+- Minder liquide dan US aandelen, grotere spreads
+- Minimaal vertrouwen voor signaal: 65%` : ''}
+${symbol === 'BA' || symbol === 'LMT' ? `
+Defensie/aerospace specifiek:
+- Gevoelig voor overheidscontracten en defensienieuws
+- US markturen zijn leidend (14:30-21:00 NL tijd)
+- Volg Pentagon aankondigingen en budgetvotes` : ''}
+GEEF NU JE CONCLUSIE:
+Na bovenstaande analyse, geef ALLEEN dit JSON object terug:
 {
   "signaal": "KOOP" of "VERKOOP" of "WACHT",
-  "actie": "KOOP NU" of "WACHT TOT HH:MM" of "NIET MEER KOPEN VANDAAG",
-  "instap_tijd": "<bijv. 14:30 of nu>",
-  "vertrouwen": <integer 0-100>,
-  "dagtrend": "<1-2 zinnen over ochtend vs middag beweging>",
+  "actie": "KOOP NU" of "KOOP BIJ DALING NAAR X" of "VERKOOP NU" of "WACHT TOT XX:XX" of "NIET MEER KOPEN VANDAAG" of "WACHT OP BEVESTIGING",
+  "vertrouwen": getal 0-100,
+  "redenering": "2-3 zinnen: welke combinatie van factoren geeft de doorslag? Noem concrete prijsniveaus en tijdstippen.",
+  "entry": prijsgetal,
+  "stop_loss": prijsgetal,
+  "target": prijsgetal,
+  "rr_ratio": decimaal getal,
+  "dagtrend": "beschrijving ochtend vs middag beweging met concrete prijzen",
+  "instap_tijd": "HH:MM of omschrijving zoals na 14:00 als RSI bevestigt",
   "nieuws_sentiment": "POSITIEF" of "NEGATIEF" of "NEUTRAAL",
-  "nieuws_samenvatting": "<1-2 zinnen over recent nieuws>",
-  "redenering": "<3-4 zinnen volledige onderbouwing in het Nederlands>",
-  "entry": <entry prijs als decimaal>,
-  "stop_loss": <stop-loss prijs als decimaal>,
-  "target": <koersdoel als decimaal>,
-  "verwacht_rendement_pct": <verwacht rendement in % als decimaal>,
-  "rr_ratio": <risk/reward ratio als decimaal>
+  "nieuws_samenvatting": "1-2 zinnen relevant nieuws van vandaag",
+  "verwacht_rendement_pct": decimaal getal,
+  "kaarspatroon": "naam van herkend patroon of geen patroon",
+  "weerstand": prijsgetal,
+  "steun": prijsgetal,
+  "tijdstip_advies": "specifiek advies voor het huidige moment op de dag"
 }`;
 
     const message = await client.messages.create({
