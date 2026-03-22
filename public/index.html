@@ -662,11 +662,13 @@ async function loadData() {
 
   try {
     const res = await fetch(`/api/quote/${sym}?interval=${currentInterval}`);
+    console.log('API response status:', res.status);
     if (!res.ok) { const e = await res.json(); throw new Error(e.error || res.statusText); }
     const data = await res.json();
+    console.log('Aantal candles ontvangen:', data.quotes?.length);
     quotes = data.quotes || [];
 
-    if (quotes.length === 0) throw new Error('Geen koersdata ontvangen.');
+    if (!quotes.length) throw new Error('Geen candles ontvangen van API');
 
     document.getElementById('symbol-title').textContent = sym;
     document.getElementById('symbol-name').textContent  = data.meta?.longName || '';
@@ -676,6 +678,7 @@ async function loadData() {
     checkAlerts(quotes, getIndicators(), currentSymbol);
     document.getElementById('ai-result').classList.remove('visible');
   } catch(err) {
+    console.error('Fout bij laden data:', err);
     showError(err.message);
   } finally {
     setLoading(false);
@@ -1262,7 +1265,7 @@ function showError(msg) {
 
 function setLoading(on) {
   loadOverlay.classList.toggle('visible', on);
-  btnLoad.disabled = on;
+  if (btnLoad) btnLoad.disabled = on;
 }
 
 // Redraw on resize
