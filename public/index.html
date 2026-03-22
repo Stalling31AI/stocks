@@ -345,6 +345,9 @@
   .conf-bar-fill.hold { background: #7c3aed; }
   .signal-name.hold { color: #7c3aed; }
   .signal-card.hold-card { border-left-color: #7c3aed; }
+  #chart-canvas { display: block !important; height: 360px !important; }
+  #rsi-canvas   { display: block !important; height: 100px !important; }
+  #macd-canvas  { display: block !important; height: 100px !important; }
   </style>
 </head>
 <body>
@@ -781,21 +784,14 @@ function getIndicators() {
 }
 
 // ─── Drawing ──────────────────────────────────────────────────────────────────
-function setCanvasSize(canvas) {
-  const dpr  = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  const w = Math.max(300, rect.width || canvas.parentElement?.clientWidth || 600);
-  let h = rect.height;
-  if (!h) {
-    h = canvas.id === 'chart-canvas' ? 360 : 100;
-    canvas.style.height = h + 'px';
-  }
-  canvas.width  = w * dpr;
-  canvas.height = h * dpr;
+function setCanvasSize(canvas, defaultH) {
+  const container = canvas.parentElement;
   canvas.style.display = 'block';
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  return { ctx, w, h };
+  canvas.style.width = '100%';
+  canvas.style.height = defaultH + 'px';
+  canvas.width = Math.max(300, container.offsetWidth || container.clientWidth || 700);
+  canvas.height = defaultH;
+  return { w: canvas.width, h: canvas.height };
 }
 
 function drawAll() {
@@ -807,7 +803,8 @@ function drawAll() {
 }
 
 function drawCandlestick({ bbArr, ema20, ema50 }) {
-  const { ctx, w, h } = setCanvasSize(chartCanvas);
+  const { w, h } = setCanvasSize(chartCanvas, 360);
+  const ctx = chartCanvas.getContext('2d');
   const pad = { top: 12, bottom: 24, left: 8, right: 60 };
   const cw  = w - pad.left - pad.right;
   const ch  = h - pad.top - pad.bottom;
@@ -1070,7 +1067,8 @@ function drawCandlestick({ bbArr, ema20, ema50 }) {
 }
 
 function drawRSI({ rsiArr }) {
-  const { ctx, w, h } = setCanvasSize(rsiCanvas);
+  const { w, h } = setCanvasSize(rsiCanvas, 100);
+  const ctx = rsiCanvas.getContext('2d');
   const pad = { top: 8, bottom: 18, left: 8, right: 60 };
   const cw = w - pad.left - pad.right;
   const ch = h - pad.top - pad.bottom;
@@ -1124,7 +1122,8 @@ function drawRSI({ rsiArr }) {
 
 function drawMACD({ macdObj }) {
   const { macdLine, signalLine, hist } = macdObj;
-  const { ctx, w, h } = setCanvasSize(macdCanvas);
+  const { w, h } = setCanvasSize(macdCanvas, 100);
+  const ctx = macdCanvas.getContext('2d');
   const pad = { top: 8, bottom: 18, left: 8, right: 60 };
   const cw = w - pad.left - pad.right;
   const ch = h - pad.top - pad.bottom;
