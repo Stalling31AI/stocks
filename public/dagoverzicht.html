@@ -87,6 +87,124 @@ tr:hover td { background:#f8fafc; }
   </div>
   <!-- Aandelen grid -->
   <div id="aandelen-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;"></div>
+  <!-- Score sectie -->
+  <div id="score-sectie" style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:14px;font-weight:700;">🏆 Score & Analyse</div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="toonTab('dag')" id="tab-dag"
+          style="font-size:12px;padding:6px 14px;border-radius:7px;border:1.5px solid #2563eb;background:#2563eb;color:#fff;cursor:pointer;font-weight:600;">
+          Dag analyse
+        </button>
+        <button onclick="toonTab('week')" id="tab-week"
+          style="font-size:12px;padding:6px 14px;border-radius:7px;border:1.5px solid #e2e8f0;background:#fff;color:#64748b;cursor:pointer;font-weight:600;">
+          Week analyse
+        </button>
+      </div>
+    </div>
+    <!-- DAG TAB -->
+    <div id="tab-inhoud-dag">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;" id="dag-score-grid">
+        <div style="text-align:center;padding:12px;background:#f8fafc;border-radius:8px;">
+          <div style="font-size:26px;font-weight:700;color:#16a34a;" id="dag-correct">0</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Correct</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#f8fafc;border-radius:8px;">
+          <div style="font-size:26px;font-weight:700;color:#dc2626;" id="dag-incorrect">0</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Incorrect</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#f8fafc;border-radius:8px;">
+          <div style="font-size:26px;font-weight:700;color:#d97706;" id="dag-open">0</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Nog open</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#f8fafc;border-radius:8px;">
+          <div style="font-size:26px;font-weight:700;color:#2563eb;" id="dag-pct">—</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Slagingsrate</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#f8fafc;border-radius:8px;">
+          <div style="font-size:26px;font-weight:700;" id="dag-totaal">0</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Totaal</div>
+        </div>
+      </div>
+      <!-- Winst/verlies invoer -->
+      <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:10px;">💰 Werkelijk resultaat vandaag</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;">
+          <div>
+            <label style="font-size:10px;font-weight:600;color:#94a3b8;display:block;margin-bottom:3px;">AANDEEL</label>
+            <select id="trade-symbol" style="width:100%;padding:7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;">
+              ${['ASML','ADYEN','NVIDIA','TESLA','Rheinmetall','Boeing','Lockheed'].map(s=>`<option>${s}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:600;color:#94a3b8;display:block;margin-bottom:3px;">GEKOCHT OP</label>
+            <input type="number" id="trade-entry" step="0.01" placeholder="1128.00"
+              style="width:100%;padding:7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;">
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:600;color:#94a3b8;display:block;margin-bottom:3px;">VERKOCHT OP</label>
+            <input type="number" id="trade-exit" step="0.01" placeholder="1141.00"
+              style="width:100%;padding:7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;">
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:600;color:#94a3b8;display:block;margin-bottom:3px;">AANTAL</label>
+            <input type="number" id="trade-aantal" placeholder="10"
+              style="width:70px;padding:7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;">
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+          <button onclick="voegTradeIn()"
+            style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:7px;font-weight:600;font-size:12px;cursor:pointer;">
+            + Voeg trade toe
+          </button>
+          <div id="trade-resultaat" style="font-size:13px;font-weight:700;"></div>
+        </div>
+      </div>
+      <!-- Trade lijst vandaag -->
+      <div id="trade-lijst" style="font-size:12px;color:#94a3b8;text-align:center;padding:10px;">
+        Nog geen trades ingevoerd vandaag.
+      </div>
+    </div>
+    <!-- WEEK TAB -->
+    <div id="tab-inhoud-week" style="display:none;">
+      <!-- Week totalen -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+        <div style="text-align:center;padding:12px;background:#f8fafc;border-radius:8px;">
+          <div style="font-size:26px;font-weight:700;color:#2563eb;" id="week-analyses">0</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Analyses</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#f8fafc;border-radius:8px;">
+          <div style="font-size:26px;font-weight:700;color:#16a34a;" id="week-pct">—</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Slagingsrate</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#f8fafc;border-radius:8px;">
+          <div style="font-size:26px;font-weight:700;" id="week-winst">€—</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Totaal winst/verlies</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#f8fafc;border-radius:8px;">
+          <div style="font-size:26px;font-weight:700;color:#d97706;" id="week-beste">—</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Beste aandeel</div>
+        </div>
+      </div>
+      <!-- Per aandeel breakdown -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:8px;">📊 Slagingsrate per aandeel</div>
+        <div id="aandeel-breakdown" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+      <!-- Per signaal breakdown -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:8px;">📈 Slagingsrate per signaal</div>
+        <div id="signaal-breakdown" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;"></div>
+      </div>
+      <!-- Notities -->
+      <div>
+        <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:6px;">📝 Weeknotities</div>
+        <textarea id="week-notities" placeholder="Wat werkte goed? Wat kan beter? Welke patronen vielen op?"
+          style="width:100%;height:80px;padding:10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:Inter,sans-serif;resize:vertical;"
+          onchange="slaNotitiesOp()"></textarea>
+      </div>
+    </div>
+  </div>
   <!-- Geschiedenis sectie -->
   <div id="geschiedenis-sectie" style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
@@ -385,6 +503,172 @@ function slaResultaatOp(datum, idx, waarde) {
   updateScore();
 }
 renderDagTabs();
+renderTrades();
+updateScore();
+function toonTab(tab) {
+  document.getElementById('tab-inhoud-dag').style.display = tab==='dag' ? 'block' : 'none';
+  document.getElementById('tab-inhoud-week').style.display = tab==='week' ? 'block' : 'none';
+  document.getElementById('tab-dag').style.background = tab==='dag' ? '#2563eb' : '#fff';
+  document.getElementById('tab-dag').style.color = tab==='dag' ? '#fff' : '#64748b';
+  document.getElementById('tab-dag').style.borderColor = tab==='dag' ? '#2563eb' : '#e2e8f0';
+  document.getElementById('tab-week').style.background = tab==='week' ? '#2563eb' : '#fff';
+  document.getElementById('tab-week').style.color = tab==='week' ? '#fff' : '#64748b';
+  document.getElementById('tab-week').style.borderColor = tab==='week' ? '#2563eb' : '#e2e8f0';
+  if (tab==='week') updateWeekAnalyse();
+}
+function updateScore() {
+  const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+  const vandaag = new Date().toLocaleDateString('nl-NL');
+  const dagData = opgeslagen[vandaag];
+  let correct=0, incorrect=0, open=0;
+  if (dagData) {
+    dagData.forEach(run => run.analyses.forEach(a => {
+      if (a.resultaat==='correct') correct++;
+      else if (a.resultaat==='incorrect') incorrect++;
+      else open++;
+    }));
+  }
+  const totaal = correct+incorrect;
+  document.getElementById('dag-correct').textContent = correct;
+  document.getElementById('dag-incorrect').textContent = incorrect;
+  document.getElementById('dag-open').textContent = open;
+  document.getElementById('dag-totaal').textContent = totaal+open;
+  document.getElementById('dag-pct').textContent = totaal>0 ? Math.round(correct/totaal*100)+'%' : '—';
+}
+function voegTradeIn() {
+  const symbol = document.getElementById('trade-symbol').value;
+  const entry = parseFloat(document.getElementById('trade-entry').value);
+  const exit = parseFloat(document.getElementById('trade-exit').value);
+  const aantal = parseInt(document.getElementById('trade-aantal').value) || 1;
+  if (!entry || !exit) return;
+  const winst = (exit - entry) * aantal;
+  const pct = ((exit - entry) / entry * 100).toFixed(2);
+  const kleur = winst >= 0 ? '#16a34a' : '#dc2626';
+  document.getElementById('trade-resultaat').innerHTML =
+    `<span style="color:${kleur};">${winst>=0?'+':''}€${winst.toFixed(2)} (${pct}%)</span>`;
+  const trades = JSON.parse(localStorage.getItem('trades') || '[]');
+  trades.push({
+    datum: new Date().toLocaleDateString('nl-NL'),
+    tijdstip: new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}),
+    symbol, entry, exit, aantal, winst, pct
+  });
+  localStorage.setItem('trades', JSON.stringify(trades));
+  renderTrades();
+}
+function renderTrades() {
+  const trades = JSON.parse(localStorage.getItem('trades') || '[]');
+  const vandaag = new Date().toLocaleDateString('nl-NL');
+  const vandaagTrades = trades.filter(t => t.datum === vandaag);
+  const lijst = document.getElementById('trade-lijst');
+  if (!vandaagTrades.length) {
+    lijst.textContent = 'Nog geen trades ingevoerd vandaag.';
+    return;
+  }
+  const totaal = vandaagTrades.reduce((sum, t) => sum + t.winst, 0);
+  const kleur = totaal >= 0 ? '#16a34a' : '#dc2626';
+  lijst.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Tijd</th><th>Aandeel</th><th>Entry</th>
+          <th>Exit</th><th>Aantal</th><th>Winst/Verlies</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${vandaagTrades.map(t => `
+          <tr>
+            <td style="color:#94a3b8;">${t.tijdstip}</td>
+            <td><strong>${t.symbol}</strong></td>
+            <td>${t.entry.toFixed(2)}</td>
+            <td>${t.exit.toFixed(2)}</td>
+            <td>${t.aantal}</td>
+            <td style="font-weight:700;color:${t.winst>=0?'#16a34a':'#dc2626'};">
+              ${t.winst>=0?'+':''}€${t.winst.toFixed(2)} (${t.pct}%)
+            </td>
+          </tr>
+        `).join('')}
+        <tr style="border-top:2px solid #e2e8f0;">
+          <td colspan="5" style="font-weight:700;">Totaal vandaag</td>
+          <td style="font-weight:700;color:${kleur};">
+            ${totaal>=0?'+':''}€${totaal.toFixed(2)}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+function updateWeekAnalyse() {
+  const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+  const trades = JSON.parse(localStorage.getItem('trades') || '[]');
+  let alleAnalyses = [];
+  Object.values(opgeslagen).forEach(dagData => {
+    dagData.forEach(run => alleAnalyses = alleAnalyses.concat(run.analyses));
+  });
+  const totaalWinst = trades.reduce((sum,t) => sum+t.winst, 0);
+  const correct = alleAnalyses.filter(a=>a.resultaat==='correct').length;
+  const totaal = alleAnalyses.filter(a=>a.resultaat!=='onbekend').length;
+  document.getElementById('week-analyses').textContent = alleAnalyses.length;
+  document.getElementById('week-pct').textContent = totaal>0 ? Math.round(correct/totaal*100)+'%' : '—';
+  document.getElementById('week-winst').textContent =
+    (totaalWinst>=0?'+':'') + '€' + totaalWinst.toFixed(2);
+  document.getElementById('week-winst').style.color = totaalWinst>=0?'#16a34a':'#dc2626';
+  const perAandeel = {};
+  WATCHLIST.forEach(w => perAandeel[w.label] = {correct:0,incorrect:0,label:w.label,vlag:w.vlag});
+  alleAnalyses.forEach(a => {
+    if (!perAandeel[a.label]) return;
+    if (a.resultaat==='correct') perAandeel[a.label].correct++;
+    else if (a.resultaat==='incorrect') perAandeel[a.label].incorrect++;
+  });
+  const beste = Object.values(perAandeel).sort((a,b) => {
+    const pctA = (a.correct+a.incorrect)>0 ? a.correct/(a.correct+a.incorrect) : 0;
+    const pctB = (b.correct+b.incorrect)>0 ? b.correct/(b.correct+b.incorrect) : 0;
+    return pctB - pctA;
+  })[0];
+  document.getElementById('week-beste').textContent = beste ? beste.vlag+' '+beste.label : '—';
+  document.getElementById('aandeel-breakdown').innerHTML =
+    Object.values(perAandeel).map(a => {
+      const tot = a.correct+a.incorrect;
+      const pct = tot>0 ? Math.round(a.correct/tot*100) : 0;
+      const kleur = pct>=60?'#16a34a':pct>=40?'#d97706':'#dc2626';
+      return `
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:100px;font-size:12px;font-weight:600;">${a.vlag} ${a.label}</div>
+          <div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px;">
+            <div style="width:${pct}%;height:100%;background:${kleur};border-radius:4px;transition:width .5s;"></div>
+          </div>
+          <div style="width:60px;font-size:12px;font-weight:700;color:${kleur};text-align:right;">
+            ${tot>0?pct+'%':'—'} <span style="color:#94a3b8;font-weight:400;">(${tot})</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  const perSignaal = {KOOP:{correct:0,incorrect:0},VERKOOP:{correct:0,incorrect:0},WACHT:{correct:0,incorrect:0}};
+  alleAnalyses.forEach(a => {
+    if (!perSignaal[a.signaal]) return;
+    if (a.resultaat==='correct') perSignaal[a.signaal].correct++;
+    else if (a.resultaat==='incorrect') perSignaal[a.signaal].incorrect++;
+  });
+  const signaalKleuren = {KOOP:'#16a34a',VERKOOP:'#dc2626',WACHT:'#d97706'};
+  document.getElementById('signaal-breakdown').innerHTML =
+    Object.entries(perSignaal).map(([sig,data]) => {
+      const tot = data.correct+data.incorrect;
+      const pct = tot>0 ? Math.round(data.correct/tot*100) : 0;
+      return `
+        <div style="background:#f8fafc;border-radius:8px;padding:12px;text-align:center;">
+          <span class="signaal-pill ${sig}" style="font-size:11px;">${sig}</span>
+          <div style="font-size:22px;font-weight:700;color:${signaalKleuren[sig]};margin:6px 0;">
+            ${tot>0?pct+'%':'—'}
+          </div>
+          <div style="font-size:11px;color:#94a3b8;">${data.correct}/${tot} correct</div>
+        </div>
+      `;
+    }).join('');
+  const notities = localStorage.getItem('weeknotities') || '';
+  document.getElementById('week-notities').value = notities;
+}
+function slaNotitiesOp() {
+  localStorage.setItem('weeknotities', document.getElementById('week-notities').value);
+}
 </script>
 </body>
 </html>
