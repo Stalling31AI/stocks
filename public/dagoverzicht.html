@@ -351,9 +351,12 @@ async function analyseAlleAandelen() {
         ? ((quotes[0].close - quotes[quotes.length-1].close)
            / quotes[quotes.length-1].close * 100).toFixed(2)
         : null;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
       const analyseRes = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           symbol: item.symbol,
           interval: '15m',
@@ -361,6 +364,7 @@ async function analyseAlleAandelen() {
           indicators: { rsi, macd: macdData, bb, trend, openingGap }
         })
       });
+      clearTimeout(timeoutId);
       const ai = await analyseRes.json();
       const resultaat = {
         symbol: item.symbol,
@@ -386,7 +390,9 @@ async function analyseAlleAandelen() {
       };
       huidigeAnalyses.push(resultaat);
       updateKaart(i, resultaat);
+      await new Promise(resolve => setTimeout(resolve, 1500));
     } catch(e) {
+      console.error('Fout voor ' + item.symbol + ':', e.message);
       const fout = {
         symbol: item.symbol, label: item.label, vlag: item.vlag,
         signaal: 'FOUT', actie: 'FOUT',
