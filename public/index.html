@@ -1348,7 +1348,7 @@ async function laadMiniDashboard() {
       } else if (rsi < 35) {
         signaal = '🟡'; signaalTekst = 'Oversold'; signaalKleur = '#d97706';
       } else if (rsi > 65) {
-        signaal = '🟠'; signaalTekst = 'Overbought'; signaalKleur = '#ea580c';
+        signaal = '🟣'; signaalTekst = 'Overbought'; signaalKleur = '#7c3aed';
       }
       const rsiKleur = rsi < 30 ? '#16a34a' : rsi > 70 ? '#dc2626' : '#2563eb';
       const macdRichting = macdData.macd > 0 ? '↑' : '↓';
