@@ -638,6 +638,18 @@ const rsiCanvas    = document.getElementById('rsi-canvas');
 const macdCanvas   = document.getElementById('macd-canvas');
 
 // ─── Interval buttons ─────────────────────────────────────────────────────────
+function resetSignal() {
+  document.getElementById('ai-result').classList.remove('visible');
+}
+function selectTf(tf, el) {
+  currentInterval = tf;
+  document.querySelectorAll('.tf-btn').forEach(b => {
+    b.classList.remove('actief');
+  });
+  if (el) el.classList.add('actief');
+  resetSignal();
+  loadData(currentSymbol);
+}
 document.querySelectorAll('.interval-btns button').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.interval-btns button').forEach(b => b.classList.remove('active'));
