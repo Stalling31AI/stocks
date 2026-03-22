@@ -28,9 +28,19 @@ body { font-family: 'Inter', sans-serif; background: #f0f2f5; color: #1a1d23; }
 .signaal-pill.WACHT { background:#fef9c3;color:#854d0e; }
 .signaal-pill.LADEN { background:#e0f2fe;color:#0369a1; }
 .signaal-pill.FOUT { background:#f1f5f9;color:#64748b; }
+table { width:100%;border-collapse:collapse;font-size:12px; }
+th { text-align:left;padding:8px 10px;font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #e2e8f0; }
+td { padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top; }
+tr:last-child td { border-bottom:none; }
+tr:hover td { background:#f8fafc; }
+.dag-tab { font-size:12px;padding:5px 12px;border-radius:6px;border:1.5px solid #e2e8f0;background:#fff;color:#64748b;cursor:pointer; }
+.dag-tab.actief { background:#2563eb;color:#fff;border-color:#2563eb; }
+.resultaat-select { font-size:11px;padding:3px 6px;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer; }
 @media (max-width:768px) {
   #samenvatting { grid-template-columns:1fr 1fr; }
   #aandelen-grid { grid-template-columns:1fr; }
+  table { font-size:10px; }
+  td, th { padding:6px 4px; }
 }
 </style>
 </head>
@@ -77,6 +87,18 @@ body { font-family: 'Inter', sans-serif; background: #f0f2f5; color: #1a1d23; }
   </div>
   <!-- Aandelen grid -->
   <div id="aandelen-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;"></div>
+  <!-- Geschiedenis sectie -->
+  <div id="geschiedenis-sectie" style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:14px;font-weight:700;">📅 Analyse geschiedenis</div>
+      <button onclick="wisGeschiedenis()"
+        style="font-size:11px;color:#dc2626;background:none;border:1px solid #fecaca;border-radius:6px;padding:4px 10px;cursor:pointer;">
+        🗑 Wis alles
+      </button>
+    </div>
+    <div id="dag-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
+    <div id="geschiedenis-tabel"></div>
+  </div>
 </div>
 <script>
 const nu = new Date();
@@ -247,9 +269,122 @@ async function analyseAlleAandelen() {
   document.getElementById('voortgang-fill').style.width = '100%';
   document.getElementById('voortgang-titel').textContent = '✅ Alle analyses klaar!';
   updateSamenvatting();
+  slaAnalysesOp();
   btn.disabled = false;
   btn.textContent = '🔍 Analyseer alle 7 aandelen';
 }
+function slaAnalysesOp() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+  if (!opgeslagen[datum]) opgeslagen[datum] = [];
+  opgeslagen[datum].push({
+    tijdstip: new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}),
+    analyses: huidigeAnalyses
+  });
+  localStorage.setItem('daganalyses', JSON.stringify(opgeslagen));
+  renderDagTabs();
+}
+function wisGeschiedenis() {
+  if (!confirm('Weet je zeker dat je alle geschiedenis wilt wissen?')) return;
+  localStorage.removeItem('daganalyses');
+  document.getElementById('dag-tabs').innerHTML = '';
+  document.getElementById('geschiedenis-tabel').innerHTML =
+    '<div style="text-align:center;color:#94a3b8;padding:30px;">Nog geen analyses opgeslagen.</div>';
+}
+function renderDagTabs() {
+  const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+  const dagen = Object.keys(opgeslagen).reverse();
+  const tabs = document.getElementById('dag-tabs');
+  if (!dagen.length) {
+    tabs.innerHTML = '';
+    document.getElementById('geschiedenis-tabel').innerHTML =
+      '<div style="text-align:center;color:#94a3b8;padding:30px;">Nog geen analyses opgeslagen. Klik op Analyseer om te beginnen.</div>';
+    return;
+  }
+  tabs.innerHTML = dagen.map((dag,i) => `
+    <button class="dag-tab ${i===0?'actief':''}"
+      onclick="selecteerDag('${dag}', this)">${dag}</button>
+  `).join('');
+  renderGeschiedenisTabel(dagen[0]);
+}
+function selecteerDag(datum, el) {
+  document.querySelectorAll('.dag-tab').forEach(t=>t.classList.remove('actief'));
+  el.classList.add('actief');
+  renderGeschiedenisTabel(datum);
+}
+function renderGeschiedenisTabel(datum) {
+  const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+  const dagData = opgeslagen[datum];
+  const tabel = document.getElementById('geschiedenis-tabel');
+  if (!dagData || !dagData.length) {
+    tabel.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px;">Geen analyses voor deze dag.</div>';
+    return;
+  }
+  const alleAnalyses = dagData.flatMap(run =>
+    run.analyses.map(a => ({...a, runTijd: run.tijdstip}))
+  );
+  tabel.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Tijd</th>
+          <th>Aandeel</th>
+          <th>Signaal</th>
+          <th>Entry</th>
+          <th>Stop-loss</th>
+          <th>Target</th>
+          <th>R/R</th>
+          <th>Vertrouwen</th>
+          <th>Resultaat</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${alleAnalyses.map((a, idx) => `
+          <tr>
+            <td style="color:#94a3b8;white-space:nowrap;">${a.runTijd}</td>
+            <td><strong>${a.vlag||''} ${a.label}</strong></td>
+            <td><span class="signaal-pill ${a.signaal}" style="font-size:10px;">${a.actie||a.signaal}</span></td>
+            <td style="font-weight:600;color:#16a34a;">${a.entry ? Number(a.entry).toFixed(2) : '—'}</td>
+            <td style="font-weight:600;color:#dc2626;">${a.stop_loss ? Number(a.stop_loss).toFixed(2) : '—'}</td>
+            <td style="font-weight:600;color:#16a34a;">${a.target ? Number(a.target).toFixed(2) : '—'}</td>
+            <td>${a.rr_ratio ? Number(a.rr_ratio).toFixed(1) : '—'}</td>
+            <td>${a.vertrouwen||0}%</td>
+            <td>
+              <select class="resultaat-select"
+                onchange="slaResultaatOp('${datum}', ${idx}, this.value)">
+                <option value="onbekend" ${a.resultaat==='onbekend'?'selected':''}>❓ Open</option>
+                <option value="correct" ${a.resultaat==='correct'?'selected':''}>✅ Correct</option>
+                <option value="incorrect" ${a.resultaat==='incorrect'?'selected':''}>❌ Incorrect</option>
+              </select>
+            </td>
+          </tr>
+          <tr style="background:#f8fafc;">
+            <td colspan="9" style="font-size:11px;color:#64748b;padding:4px 10px 8px;font-style:italic;">
+              ${a.redenering||''}
+              ${a.instap_tijd ? ' | ⏰ '+a.instap_tijd : ''}
+              ${a.nieuws_sentiment ? ' | 📰 '+a.nieuws_sentiment : ''}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+function slaResultaatOp(datum, idx, waarde) {
+  const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+  const dagData = opgeslagen[datum];
+  if (!dagData) return;
+  let teller = 0;
+  for (const run of dagData) {
+    for (const analyse of run.analyses) {
+      if (teller === idx) { analyse.resultaat = waarde; break; }
+      teller++;
+    }
+  }
+  localStorage.setItem('daganalyses', JSON.stringify(opgeslagen));
+  updateScore();
+}
+renderDagTabs();
 </script>
 </body>
 </html>
