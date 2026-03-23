@@ -53,9 +53,9 @@ app.get('/api/quote/:symbol', async (req, res) => {
     const { interval = '1d' } = req.query;
     const intervalMap = {
       '5m':  { interval: '5m',  range: '1d' },
-      '15m': { interval: '15m', range: '1d' },
-      '1h':  { interval: '1h',  range: '1mo' },
-      '1d':  { interval: '1d',  range: '1y' },
+      '15m': { interval: '15m', range: '2d' },
+      '1h':  { interval: '1h',  range: '5d' },
+      '1d':  { interval: '1d',  range: '3mo' },
     };
     const params = intervalMap[interval] || intervalMap['1d'];
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${params.interval}&range=${params.range}&includePrePost=false`;
