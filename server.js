@@ -166,7 +166,12 @@ app.post('/api/analyze', async (req, res) => {
       'BA': 'Aerospace/defensie. US markturen leidend (14:30-21:00 NL). Volg Pentagon nieuws.',
       'LMT': 'Defensie. Gevoelig voor overheidscontracten. US markturen leidend.',
     };
-    const prompt = `Je bent een elite daytrader. Analyseer ${symbol} op ${interval} timeframe. Doel: concreet koop/verkoop advies.
+    const prompt = `STRIKTE REGELS - GEEN UITZONDERINGEN:
+1. Baseer je analyse UITSLUITEND op de meegeleverde prijsdata en indicatoren. Verzin GEEN nieuws.
+2. Als je geen nieuws hebt, zet nieuws_samenvatting op "Geen nieuws beschikbaar - analyse puur technisch"
+3. nieuws_sentiment = "NEUTRAAL" als geen nieuws beschikbaar
+4. Schrijf in de redenering ALLEEN wat je daadwerkelijk ziet in de data.
+Je bent een elite daytrader. Analyseer ${symbol} op ${interval} timeframe. Doel: concreet koop/verkoop advies.
 MARKTDATA:
 - Prijs: ${fmt(last.close)} | Tijd: ${amsterdamTijd} (${dagdeel})
 VOLUME ANALYSE:
