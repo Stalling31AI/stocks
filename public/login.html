@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yappi Analytics — Inloggen</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: #f0f2f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+.card { background: #fff; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,.1); width: 100%; max-width: 380px; text-align: center; }
+img { height: 60px; margin-bottom: 24px; }
+h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+p { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+input { width: 100%; padding: 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; margin-bottom: 12px; outline: none; }
+input:focus { border-color: #2563eb; }
+button { width: 100%; padding: 12px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+button:hover { background: #1d4ed8; }
+.fout { color: #dc2626; font-size: 12px; margin-top: 8px; display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <img src="/logo.png" alt="Yappi Analytics">
+  <h1>Welkom terug</h1>
+  <p>Log in om toegang te krijgen tot je dashboard</p>
+  <input type="password" id="ww" placeholder="Wachtwoord"
+    onkeydown="if(event.key==='Enter')login()">
+  <button onclick="login()">Inloggen</button>
+  <div class="fout" id="fout">Onjuist wachtwoord</div>
+</div>
+<script>
+async function login() {
+  const ww = document.getElementById('ww').value;
+  const res = await fetch('/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wachtwoord: ww })
+  });
+  if (res.ok) {
+    window.location.href = '/';
+  } else {
+    document.getElementById('fout').style.display = 'block';
+  }
+}
+</script>
+</body>
+</html>

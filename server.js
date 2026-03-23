@@ -5,6 +5,45 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const WACHTWOORD = process.env.APP_WACHTWOORD || 'yappi2024';
+app.use((req, res, next) => {
+  // API routes beschermen
+  const auth = req.headers.authorization;
+
+  // Check cookie voor ingelogde gebruikers
+  const cookie = req.headers.cookie || '';
+  if (cookie.includes('yappi_auth=true')) {
+    return next();
+  }
+
+  // Login pagina altijd doorlaten
+  if (req.path === '/login') return next();
+
+  // Statische bestanden met auth check
+  if (!auth && !cookie.includes('yappi_auth=true')) {
+    if (req.path === '/' || req.path.endsWith('.html')) {
+      return res.redirect('/login');
+    }
+    if (req.path.startsWith('/api/')) {
+      return res.status(401).json({ error: 'Niet ingelogd' });
+    }
+  }
+  next();
+});
+
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+app.post('/login', express.json(), (req, res) => {
+  const { wachtwoord } = req.body;
+  if (wachtwoord === WACHTWOORD) {
+    res.setHeader('Set-Cookie', 'yappi_auth=true; Path=/; HttpOnly; Max-Age=86400');
+    res.json({ ok: true });
+  } else {
+    res.status(401).json({ error: 'Fout wachtwoord' });
+  }
+});
+
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
