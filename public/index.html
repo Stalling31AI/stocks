@@ -633,7 +633,8 @@ window.onerror = function(msg, src, line, col, err) {
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let quotes = [];
-let currentSymbol = 'AAPL';
+let candles = [];
+let currentSymbol = 'ASML.AS';
 let currentInterval = '1d';
 let aiInstapPrijs = null;
 let aiStopLoss = null;
@@ -898,6 +899,11 @@ function drawAll() {
 }
 
 function drawChart() {
+  if (typeof candles === 'undefined' || !candles) {
+    candles = [];
+  }
+  if (candles.length === 0) return;
+
   const canvas = document.getElementById('chart-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
