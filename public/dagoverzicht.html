@@ -299,6 +299,24 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     </div>
     <div id="simulatie-tabel"></div>
   </div>
+  <div style="background:#fff;border-radius:12px;padding:20px;
+    box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;
+    border-top:3px solid #7c3aed;">
+    <div style="display:flex;align-items:center;
+      justify-content:space-between;margin-bottom:4px;">
+      <div style="font-size:14px;font-weight:700;">
+        🎯 Simulatie B — Positiebeheer (max 10 per aandeel)
+      </div>
+      <div style="font-size:11px;color:#94a3b8;">
+        Nieuwe analyse = stop/target updaten op bestaande positie
+      </div>
+    </div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:14px;">
+      Realistischer: je hebt maximaal 10 aandelen per ticker.
+      Bij nieuwe analyse wordt stop-loss en target bijgesteld.
+    </div>
+    <div id="simulatie-tabel-b"></div>
+  </div>
   <!-- Geschiedenis sectie -->
   <div id="geschiedenis-sectie" style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
@@ -643,6 +661,7 @@ async function analyseAlleAandelen() {
     document.getElementById('tel-wacht').textContent);
   slaAnalysesOp();
   simuleerTrades(huidigeAnalyses);
+  simuleerTradesB(huidigeAnalyses);
   btn.disabled = false;
   btn.textContent = '🔍 Analyseer geselecteerde aandelen';
 }
@@ -1220,6 +1239,243 @@ function renderSimulaties() {
 }
 
 renderSimulaties();
+
+async function simuleerTradesB(analyses) {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const simulaties = JSON.parse(
+    localStorage.getItem('simulaties_b') || '{}'
+  );
+  if (!simulaties[datum]) simulaties[datum] = [];
+  for (const a of analyses) {
+    if (a.signaal !== 'KOOP' && a.signaal !== 'VERKOOP') continue;
+    if (!a.entry) continue;
+    const openPositie = simulaties[datum].find(s =>
+      s.symbol === a.symbol && s.resultaat === 'open'
+    );
+    if (openPositie) {
+      if (a.signaal === 'KOOP') {
+        // Update stop-loss en target
+        const oudStop = openPositie.stop_loss;
+        const oudTarget = openPositie.target;
+        openPositie.stop_loss = a.stop_loss;
+        openPositie.target = a.target;
+        openPositie.rr_ratio = a.rr_ratio;
+        openPositie.updates = openPositie.updates || [];
+        openPositie.updates.push({
+          tijdstip: a.tijdstip,
+          oud_stop: oudStop,
+          nieuw_stop: a.stop_loss,
+          oud_target: oudTarget,
+          nieuw_target: a.target,
+          redenering: a.redenering
+        });
+      } else if (a.signaal === 'VERKOOP') {
+        // Sluit positie bij verkoop signaal
+        openPositie.resultaat = 'verkoop_signaal';
+        openPositie.slotkoers = a.entry;
+        openPositie.winst = +((a.entry - openPositie.entry) *
+          openPositie.aantal).toFixed(2);
+        openPositie.sluitTijdstip = a.tijdstip;
+      }
+    } else {
+      if (a.signaal === 'KOOP') {
+        simulaties[datum].push({
+          symbol: a.symbol,
+          label: a.label,
+          vlag: a.vlag || '',
+          tijdstip: a.tijdstip,
+          signaal: 'KOOP',
+          entry: a.entry,
+          stop_loss: a.stop_loss,
+          target: a.target,
+          rr_ratio: a.rr_ratio,
+          aantal: 10,
+          redenering: a.redenering,
+          resultaat: 'open',
+          entry_bereikt: null,
+          slotkoers: null,
+          winst: null,
+          updates: [],
+        });
+      }
+    }
+  }
+  localStorage.setItem('simulaties_b', JSON.stringify(simulaties));
+  renderSimulatiesB();
+}
+
+async function sluitSimulatiesB() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const simulaties = JSON.parse(
+    localStorage.getItem('simulaties_b') || '{}'
+  );
+  const dagSims = simulaties[datum] || [];
+  const open = dagSims.filter(s => s.resultaat === 'open');
+  if (open.length === 0) {
+    alert('Geen open posities om af te sluiten.');
+    return;
+  }
+  const btn = document.getElementById('sluit-btn-b');
+  if (btn) { btn.textContent = '⏳ Bezig...'; btn.disabled = true; }
+  for (const sim of open) {
+    try {
+      const res = await fetch(
+        `/api/quote/${sim.symbol}?interval=15m`
+      );
+      const data = await res.json();
+      const quotes = data.quotes || [];
+      if (quotes.length === 0) continue;
+      const slotkoers = quotes[quotes.length-1].close;
+      const hoogste = Math.max(...quotes.map(q => q.high));
+      const laagste = Math.min(...quotes.map(q => q.low));
+      sim.slotkoers = +slotkoers.toFixed(2);
+      sim.entry_bereikt = laagste <= sim.entry;
+      if (!sim.entry_bereikt) {
+        sim.resultaat = 'entry_niet_bereikt';
+        sim.winst = 0;
+      } else if (hoogste >= sim.target) {
+        sim.resultaat = 'target_bereikt';
+        sim.winst = +((sim.target - sim.entry) * sim.aantal).toFixed(2);
+      } else if (laagste <= sim.stop_loss) {
+        sim.resultaat = 'stop_geraakt';
+        sim.winst = +((sim.stop_loss - sim.entry) * sim.aantal).toFixed(2);
+      } else {
+        sim.resultaat = 'einde_dag';
+        sim.winst = +((slotkoers - sim.entry) * sim.aantal).toFixed(2);
+      }
+    } catch(e) {
+      console.error('Fout B voor', sim.symbol, e.message);
+    }
+  }
+  localStorage.setItem('simulaties_b', JSON.stringify(simulaties));
+  renderSimulatiesB();
+  if (btn) { btn.textContent = '📊 Sluit dag af'; btn.disabled = false; }
+}
+
+function renderSimulatiesB() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const simulaties = JSON.parse(
+    localStorage.getItem('simulaties_b') || '{}'
+  );
+  const lijst = simulaties[datum] || [];
+  const el = document.getElementById('simulatie-tabel-b');
+  if (!el) return;
+  if (lijst.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px;">Nog geen posities. Voer een analyse uit.</div>';
+    return;
+  }
+  const gekocht = lijst.filter(s => s.entry_bereikt === true).length;
+  const totaalWinst = lijst
+    .filter(s => s.winst !== null && s.entry_bereikt !== false)
+    .reduce((sum, s) => sum + s.winst, 0);
+  const resultaatLabel = {
+    'target_bereikt':     '✅ Target bereikt',
+    'stop_geraakt':       '🛑 Stop geraakt',
+    'einde_dag':          '📊 Einde dag',
+    'entry_niet_bereikt': '⏭ Entry niet bereikt',
+    'verkoop_signaal':    '🔴 Verkoop signaal',
+    'open':               '⏳ Open',
+  };
+  const resultaatKleur = {
+    'target_bereikt':     '#16a34a',
+    'stop_geraakt':       '#dc2626',
+    'einde_dag':          '#d97706',
+    'entry_niet_bereikt': '#94a3b8',
+    'verkoop_signaal':    '#dc2626',
+    'open':               '#94a3b8',
+  };
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;
+      align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:13px;font-weight:600;">
+        ${lijst.length} posities | ${gekocht} gekocht
+        | Totaal: <span style="color:${totaalWinst>=0?'#16a34a':'#dc2626'};
+          font-weight:700;">
+          ${totaalWinst>=0?'+':''}€${totaalWinst.toFixed(2)}
+        </span>
+      </div>
+      <button id="sluit-btn-b" onclick="sluitSimulatiesB()"
+        style="padding:8px 16px;background:#7c3aed;color:#fff;
+        border:none;border-radius:8px;font-weight:700;
+        font-size:12px;cursor:pointer;">
+        📊 Sluit dag af
+      </button>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="border-bottom:2px solid #e2e8f0;">
+          <th style="padding:8px;text-align:left;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Aandeel</th>
+          <th style="padding:8px;text-align:left;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Entry</th>
+          <th style="padding:8px;text-align:left;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Stop</th>
+          <th style="padding:8px;text-align:left;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Target</th>
+          <th style="padding:8px;text-align:center;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Updates</th>
+          <th style="padding:8px;text-align:center;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Gekocht</th>
+          <th style="padding:8px;text-align:right;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Winst/Verlies</th>
+          <th style="padding:8px;text-align:left;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Resultaat</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lijst.map(s => `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:8px;font-weight:600;">
+              ${s.vlag} ${s.label}
+              <div style="font-size:10px;color:#94a3b8;">
+                ${s.tijdstip}
+              </div>
+            </td>
+            <td style="padding:8px;font-weight:600;">
+              ${s.entry ? Number(s.entry).toFixed(2) : '—'}
+            </td>
+            <td style="padding:8px;color:#dc2626;font-weight:600;">
+              ${s.stop_loss ? Number(s.stop_loss).toFixed(2) : '—'}
+            </td>
+            <td style="padding:8px;color:#16a34a;font-weight:600;">
+              ${s.target ? Number(s.target).toFixed(2) : '—'}
+            </td>
+            <td style="padding:8px;text-align:center;">
+              ${s.updates && s.updates.length > 0 ? `
+                <span style="background:#eff6ff;color:#2563eb;
+                  padding:2px 6px;border-radius:4px;font-size:10px;
+                  font-weight:700;" title="${s.updates.map(u =>
+                    u.tijdstip + ': SL ' + Number(u.oud_stop).toFixed(2) +
+                    '→' + Number(u.nieuw_stop).toFixed(2) +
+                    ' TP ' + Number(u.oud_target).toFixed(2) +
+                    '→' + Number(u.nieuw_target).toFixed(2)
+                  ).join('\n')}">
+                  ${s.updates.length}x bijgewerkt
+                </span>` : '—'}
+            </td>
+            <td style="padding:8px;text-align:center;font-size:13px;">
+              ${s.entry_bereikt === null ? '⏳' :
+                s.entry_bereikt ? '✅ Ja' : '❌ Nee'}
+            </td>
+            <td style="padding:8px;text-align:right;font-weight:700;
+              color:${s.winst === null ? '#94a3b8' :
+                s.winst >= 0 ? '#16a34a' : '#dc2626'};">
+              ${s.winst !== null ?
+                (s.winst>=0?'+':'') + '€' + Number(s.winst).toFixed(2)
+                : '—'}
+            </td>
+            <td style="padding:8px;font-size:11px;font-weight:600;
+              color:${resultaatKleur[s.resultaat]};">
+              ${resultaatLabel[s.resultaat] || s.resultaat}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+renderSimulatiesB();
 </script>
 </body>
 </html>
