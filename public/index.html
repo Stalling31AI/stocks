@@ -923,19 +923,16 @@ function drawChart() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  // Altijd 2 uur aan slots tonen op 15m = 8 slots
-  // Op 5m = 24 slots, op 1h = 2 slots
-  const slotsPerUur = {
-    '5m': 12, '15m': 4, '1h': 1, '1d': 1
+  const maxCandles = {
+    '5m': 48,   // max 4 uur aan 5m candles
+    '15m': 26,  // max ~6.5 uur aan 15m candles
+    '1h': 8,    // max 8 uur aan 1h candles
+    '1d': 60,   // max 60 handelsdagen
   };
-  const uurSlots = slotsPerUur[currentInterval] || 4;
-  // Gebruik beschikbare candles, vul rest met lege slots
+  const maxTonen = maxCandles[currentInterval] || 30;
+  // Gebruik beschikbare candles
   const beschikbaar = (candles || []).filter(c =>
     c.o > 0 && c.h > 0 && c.l > 0 && c.c > 0
-  );
-  const totaalSlots = Math.max(
-    beschikbaar.length + 4,
-    uurSlots * 2
   );
   if (beschikbaar.length === 0) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -945,8 +942,10 @@ function drawChart() {
     ctx.fillText('Wacht op marktdata...', canvas.width / 2, canvas.height / 2);
     return;
   }
-  // Neem laatste N candles passend in tijdvenster
-  const teTonenCandles = beschikbaar.slice(-totaalSlots);
+  // Neem alleen de laatste N candles
+  const teTonenCandles = beschikbaar.slice(-maxTonen);
+  // Slots = exact aantal te tonen candles zodat candles altijd een goede breedte hebben
+  const totaalSlots = teTonenCandles.length;
 
   // Bereken prijsrange alleen op basis van beschikbare candles
   const maxP = Math.max(...teTonenCandles.map(c => c.h));
@@ -964,7 +963,7 @@ function drawChart() {
   ctx.fillStyle = '#fafbfc';
   ctx.fillRect(PAD.left, PAD.top, pW, pH);
   // Teken op basis van totaalSlots zodat candles altijd klein zijn
-  const cW = Math.max(2, Math.floor(pW / totaalSlots * 0.6));
+  const cW = Math.max(3, Math.floor(pW / totaalSlots * 0.7));
   const toX = i => PAD.left + (i + 0.5) * (pW / totaalSlots);
   const toY = p => PAD.top + pH - ((p - pMin) / pRange) * pH;
   // Grid lijnen
@@ -1004,30 +1003,6 @@ function drawChart() {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x - cW / 2, bTop, cW, bH);
   });
-  // Lege slots rechts (toekomst) - stippellijn
-  if (teTonenCandles.length < totaalSlots) {
-    const laatste = teTonenCandles[teTonenCandles.length - 1];
-    const lastX = toX(teTonenCandles.length - 1);
-    const lastY = toY(laatste.c);
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(lastX, lastY);
-    ctx.lineTo(toX(totaalSlots - 1), lastY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // "Wacht op data" tekst rechts
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = '11px Inter';
-    ctx.textAlign = 'center';
-    ctx.fillText(
-      '\u2190 ' + teTonenCandles.length + '/' + totaalSlots + ' candles',
-      toX(Math.floor((teTonenCandles.length + totaalSlots) / 2)),
-      PAD.top + pH / 2
-    );
-  }
   // Volume bars onderaan
   const maxVol = Math.max(...teTonenCandles.map(c => c.v || 0));
   if (maxVol > 0) {
