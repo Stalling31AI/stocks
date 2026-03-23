@@ -148,29 +148,17 @@ app.post('/api/analyze', async (req, res) => {
       'BA': 'Aerospace/defensie. US markturen leidend (14:30-21:00 NL). Volg Pentagon nieuws.',
       'LMT': 'Defensie. Gevoelig voor overheidscontracten. US markturen leidend.',
     };
-    const prompt = `Je bent een elite daytrader analist met 20 jaar ervaring.
-Analyseer ${symbol} op ${interval} timeframe voor een daytrade beslissing.
-Doel: €100-300 winst per dag met minimaal risico.
-HUIDIGE SITUATIE:
-- Koers: ${fmt(last.close)}
-- Tijd Amsterdam: ${amsterdamTijd} (${dagdeel})
-- Opening gap vandaag: ${openingGap ? openingGap + '%' : 'onbekend'}
-AANDEEL REGELS:
-${aandeelRegels[symbol] || 'Standaard regels van toepassing.'}
-REDENEER IN 8 STAPPEN:
-STAP 1 - TREND:
-EMA trend: ${indicators.trend}
-Laatste 5 slotkoersen: ${quotes.slice(-5).map(q => fmt(q.close)).join(' → ')}
-Is de trend opwaarts, neerwaarts of zijwaarts?
-STAP 2 - MOMENTUM (RSI + MACD samen beoordelen):
-RSI(14): ${fmt(indicators.rsi)} → ${Number(indicators.rsi) > 70 ? '🔴 OVERBOUGHT' : Number(indicators.rsi) < 30 ? '🟢 OVERSOLD' : '⚪ Neutraal'}
-MACD: ${fmt(indicators.macd?.macd, 4)} | Signaal: ${fmt(indicators.macd?.signal, 4)} | Histogram: ${fmt(indicators.macd?.histogram, 4)}
-Momentum oordeel: ${Number(indicators.rsi) < 30 && indicators.macd?.histogram > 0 ? '🟢 STERK KOOP signaal' : Number(indicators.rsi) > 70 && indicators.macd?.histogram < 0 ? '🔴 STERK VERKOOP signaal' : '⚪ Gemengd — wees voorzichtig'}
-STAP 3 - BOLLINGER BANDS:
-Upper: ${fmt(indicators.bb?.upper)} | Midden: ${fmt(indicators.bb?.middle)} | Lower: ${fmt(indicators.bb?.lower)}
-Koers positie: ${Number(last.close) > Number(indicators.bb?.upper) ? '🔴 BOVEN upper band' : Number(last.close) < Number(indicators.bb?.lower) ? '🟢 ONDER lower band — stuitje mogelijk' : '⚪ Binnen bands'}
-STAP 4 - KAARSPATRONEN (laatste 8 kaarsen):
-${recent.slice(-8).map(q => {
+    const prompt = `Je bent een elite daytrader. Analyseer ${symbol} op ${interval} timeframe. Doel: concreet koop/verkoop advies.
+MARKTDATA:
+- Prijs: ${fmt(last.close)} | Tijd: ${amsterdamTijd} (${dagdeel})
+- Opening gap: ${openingGap ? openingGap + '%' : 'onbekend'}
+- RSI(14): ${fmt(indicators.rsi)} ${Number(indicators.rsi) > 70 ? '→ OVERBOUGHT' : Number(indicators.rsi) < 30 ? '→ OVERSOLD' : '→ neutraal'}
+- MACD: ${fmt(indicators.macd?.macd, 4)} | Histogram: ${fmt(indicators.macd?.histogram, 4)} ${indicators.macd?.histogram > 0 ? '→ bullish' : '→ bearish'}
+- Bollinger: Upper ${fmt(indicators.bb?.upper)} | Mid ${fmt(indicators.bb?.middle)} | Lower ${fmt(indicators.bb?.lower)}
+- Koers vs Bollinger: ${Number(last.close) > Number(indicators.bb?.upper) ? 'BOVEN upper band' : Number(last.close) < Number(indicators.bb?.lower) ? 'ONDER lower band' : 'Binnen bands'}
+- Trend: ${indicators.trend}
+LAATSTE 5 KAARSEN:
+${recent.slice(-5).map(q => {
   const d = new Date(q.date);
   const t = d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'});
   const body = Math.abs(q.close-q.open);
@@ -180,59 +168,33 @@ ${recent.slice(-8).map(q => {
   const wick_boven = q.high-Math.max(q.open,q.close);
   let patroon = '';
   if (bodyPct < 10) patroon = '(doji)';
-  else if (wick_onder > body*2 && q.close > q.open) patroon = '(hammer 🔨)';
-  else if (wick_boven > body*2 && q.close < q.open) patroon = '(shooting star ⭐)';
-  return `${q.close>=q.open?'🟢':'🔴'} ${t} O:${fmt(q.open)} H:${fmt(q.high)} L:${fmt(q.low)} C:${fmt(q.close)} ${patroon}`;
+  else if (wick_onder > body*2 && q.close > q.open) patroon = '(hammer)';
+  else if (wick_boven > body*2 && q.close < q.open) patroon = '(shooting star)';
+  return t + ': O=' + fmt(q.open) + ' H=' + fmt(q.high) + ' L=' + fmt(q.low) + ' C=' + fmt(q.close) + ' ' + (q.close>=q.open?'▲':'▼') + ' ' + patroon;
 }).join('\n')}
-STAP 5 - VOLUME:
-${recent.slice(-5).map(q => {
-  const d = new Date(q.date);
-  const t = d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'});
-  return t + ': ' + (q.volume > 0 ? q.volume.toLocaleString() : 'n/b');
-}).join(' | ')}
-STAP 6 - NIEUWS & MARKTCONTEXT:
-Zoek naar nieuws over ${symbol} van vandaag.
-Let op: sectortrend, macro sentiment, geopolitiek (voor defensie aandelen).
-STAP 7 - STEUN & WEERSTAND:
-Bereken op basis van de kaarsen:
-- Weerstand: hoogste recente top
-- Steun: laagste recente bodem
-- Stop-loss: maximaal 1% onder entry
-- Target: minimaal 1.5x het risico
-STAP 8 - TIJDSTIP BEOORDELING:
-Het is nu ${amsterdamTijd} — ${dagdeel}.
-${parseInt(amsterdamTijd) < 9 ? 'PRE-MARKET: Geef alleen een voorbereiding advies, nog niet handelen.' : ''}
-${parseInt(amsterdamTijd) >= 9 && parseInt(amsterdamTijd) < 10 ? 'OPENING UUR: Hoge volatiliteit. Alleen handelen bij zeer sterk signaal (vertrouwen 80%+).' : ''}
-${parseInt(amsterdamTijd) >= 16 ? 'LAAT OP DE DAG: Adviseer NIET MEER KOPEN VANDAAG tenzij er een uitzonderlijk sterk signaal is.' : ''}
-Geef ALLEEN dit JSON object terug, geen tekst eromheen:
+AANDEEL: ${aandeelRegels[symbol] || 'Standaard regels.'}
+TIJDSTIP: ${dagdeel}
+Zoek naar nieuws over ${symbol} van vandaag voor context.
+Geef ALLEEN dit JSON object terug (geen tekst eromheen):
 {
   "signaal": "KOOP" of "VERKOOP" of "WACHT",
-  "actie": "KOOP NU" of "KOOP BIJ DALING NAAR [prijs]" of "VERKOOP NU" of "WACHT TOT [HH:MM]" of "NIET MEER KOPEN VANDAAG" of "WACHT OP BEVESTIGING",
+  "actie": "KOOP NU" of "KOOP BIJ DALING NAAR [prijs]" of "VERKOOP NU" of "WACHT TOT [HH:MM]" of "NIET MEER KOPEN VANDAAG",
   "vertrouwen": getal 0-100,
-  "redenering": "2-3 zinnen concreet: welke combinatie geeft de doorslag, met prijsniveaus",
+  "redenering": "2-3 zinnen concreet met prijsniveaus",
   "entry": prijsgetal,
   "stop_loss": prijsgetal,
   "target": prijsgetal,
   "rr_ratio": decimaal,
-  "dagtrend": "beschrijving van ochtend vs middag beweging met prijzen",
+  "dagtrend": "korte beschrijving dagbeweging",
   "instap_tijd": "HH:MM of omschrijving",
   "nieuws_sentiment": "POSITIEF" of "NEGATIEF" of "NEUTRAAL",
-  "nieuws_samenvatting": "1-2 zinnen actueel nieuws",
+  "nieuws_samenvatting": "1 zin actueel nieuws",
   "verwacht_rendement_pct": decimaal,
-  "kaarspatroon": "naam herkend patroon of geen",
+  "kaarspatroon": "naam patroon of geen",
   "weerstand": prijsgetal,
   "steun": prijsgetal,
-  "tijdstip_advies": "specifiek advies voor dit moment op de dag"
-}
-
-BELANGRIJK: Geef UITSLUITEND het JSON object terug.
-Geen inleiding, geen uitleg, geen markdown.
-Begin direct met { en eindig met }.
-
-KRITISCH: Geef ALLEEN het JSON object terug.
-Start met { en eindig met }.
-Geen tekst voor of na het JSON object.
-Geen markdown, geen uitleg, geen inleiding.`;
+  "tijdstip_advies": "specifiek advies voor nu"
+}`;
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
