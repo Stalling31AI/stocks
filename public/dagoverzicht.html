@@ -390,6 +390,31 @@ function getBeursstatus(symbol) {
   return { ...info, isOpen };
 }
 
+const BEURS_OPEN = {
+  'ASML.AS':  { open: '09:00', sluit: '17:30' },
+  'ADYEN.AS': { open: '09:00', sluit: '17:30' },
+  'NVDA':     { open: '15:30', sluit: '22:00' },
+  'TSLA':     { open: '15:30', sluit: '22:00' },
+  'RHM.DE':   { open: '09:00', sluit: '17:30' },
+  'BA':       { open: '15:30', sluit: '22:00' },
+  'LMT':      { open: '15:30', sluit: '22:00' },
+};
+function isBeursOpen(symbol) {
+  const info = BEURS_OPEN[symbol];
+  if (!info) return false;
+  const nu = new Date();
+  const nlTijd = new Date(nu.toLocaleString('en-US', {
+    timeZone: 'Europe/Amsterdam'
+  }));
+  const dag = nlTijd.getDay();
+  if (dag === 0 || dag === 6) return false;
+  const uur = nlTijd.getHours();
+  const min = nlTijd.getMinutes();
+  const nuMin = uur * 60 + min;
+  const [oH, oM] = info.open.split(':').map(Number);
+  const [sH, sM] = info.sluit.split(':').map(Number);
+  return nuMin >= oH * 60 + oM && nuMin < sH * 60 + sM;
+}
 const WATCHLIST = [
   { symbol: 'ASML.AS',  label: 'ASML',        vlag: '🇳🇱' },
   { symbol: 'ADYEN.AS', label: 'ADYEN',        vlag: '🇳🇱' },
@@ -437,6 +462,7 @@ function updateKaart(i, r) {
     </div>
     <div style="font-size:20px;font-weight:700;margin-bottom:6px;">${r.prijs ? '€'+fmt(r.prijs) : '—'}</div>
     <span class="signaal-pill ${r.signaal}">${r.actie||r.signaal}</span>
+    ${(() => { const beursInfo = BEURS_OPEN[r.symbol]; const open = isBeursOpen(r.symbol); if (!open && beursInfo) { return '<div style="font-size:10px;color:#94a3b8;margin-top:4px;">Opens ' + beursInfo.open + '</div>'; } return ''; })()}
     <div style="font-size:11px;color:#64748b;margin-bottom:6px;">
       Vertrouwen: <strong>${r.vertrouwen||0}%</strong>
       ${r.rsi ? '| RSI: <strong>' + r.rsi + '</strong>' : ''}
@@ -1020,6 +1046,13 @@ async function simuleerTrades(analyses) {
   for (const a of analyses) {
     if (a.signaal !== 'KOOP' && a.signaal !== 'VERKOOP') continue;
     if (!a.entry) continue;
+
+    // Controleer of beurs open was ten tijde van analyse
+    if (!isBeursOpen(a.symbol)) {
+      console.log(a.symbol + ' beurs gesloten, geen simulatie');
+      continue;
+    }
+
     // Voorkom exacte duplicaten (zelfde aandeel + tijdstip)
     const bestaat = simulaties[datum].find(s =>
       s.symbol === a.symbol && s.tijdstip === a.tijdstip
@@ -1249,6 +1282,13 @@ async function simuleerTradesB(analyses) {
   for (const a of analyses) {
     if (a.signaal !== 'KOOP' && a.signaal !== 'VERKOOP') continue;
     if (!a.entry) continue;
+
+    // Controleer of beurs open was ten tijde van analyse
+    if (!isBeursOpen(a.symbol)) {
+      console.log(a.symbol + ' beurs gesloten, geen simulatie');
+      continue;
+    }
+
     const openPositie = simulaties[datum].find(s =>
       s.symbol === a.symbol && s.resultaat === 'open'
     );
