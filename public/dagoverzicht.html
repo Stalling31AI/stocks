@@ -224,6 +224,36 @@ const nu = new Date();
 document.getElementById('dag-datum').textContent =
   nu.toLocaleDateString('nl-NL', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 
+const BEURSTIJDEN = {
+  'ASML.AS':  { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇳🇱' },
+  'ADYEN.AS': { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇳🇱' },
+  'NVDA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'TSLA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'RHM.DE':   { naam: 'XETRA Frankfurt',   open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇩🇪' },
+  'BA':       { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+};
+function getBeursstatus(symbol) {
+  const info = BEURSTIJDEN[symbol];
+  if (!info) return null;
+
+  const nlTijd = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+  const uur = nlTijd.getHours();
+  const min = nlTijd.getMinutes();
+  const dagNr = nlTijd.getDay();
+
+  const [openUur, openMin] = info.open.split(':').map(Number);
+  const [sluitUur, sluitMin] = info.sluit.split(':').map(Number);
+
+  const nuMinuten = uur * 60 + min;
+  const openMinuten = openUur * 60 + openMin;
+  const sluitMinuten = sluitUur * 60 + sluitMin;
+
+  const isWeekdag = dagNr >= 1 && dagNr <= 5;
+  const isOpen = isWeekdag && nuMinuten >= openMinuten && nuMinuten < sluitMinuten;
+  return { ...info, isOpen };
+}
+
 const WATCHLIST = [
   { symbol: 'ASML.AS',  label: 'ASML',        vlag: '🇳🇱' },
   { symbol: 'ADYEN.AS', label: 'ADYEN',        vlag: '🇳🇱' },
@@ -260,9 +290,13 @@ function updateKaart(i, r) {
   const fmt = v => v != null ? Number(v).toFixed(2) : '—';
   const cls = r.signaal==='KOOP'?'koop':r.signaal==='VERKOOP'?'verkoop':'wacht';
   kaart.className = 'aandeel-kaart ' + cls;
+  const beurs = getBeursstatus(r.symbol);
+  const statusDot = beurs?.isOpen
+    ? '<span style="width:7px;height:7px;border-radius:50%;background:#16a34a;display:inline-block;margin-left:4px;" title="Beurs open"></span>'
+    : '<span style="width:7px;height:7px;border-radius:50%;background:#dc2626;display:inline-block;margin-left:4px;" title="Beurs gesloten"></span>';
   kaart.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-      <div style="font-size:13px;font-weight:700;color:#64748b;">${r.vlag} ${r.label}</div>
+      <div style="font-size:13px;font-weight:700;color:#64748b;">${r.vlag} ${r.label}${statusDot}</div>
       <div style="font-size:11px;color:#94a3b8;">${r.tijdstip||''}</div>
     </div>
     <div style="font-size:20px;font-weight:700;margin-bottom:6px;">${r.prijs ? '€'+fmt(r.prijs) : '—'}</div>

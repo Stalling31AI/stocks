@@ -455,6 +455,7 @@
       <h2 id="symbol-title">—</h2>
       <span id="symbol-name" style="font-size:.85rem;color:#6b7280;"></span>
     </div>
+    <div id="beurs-status" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;"></div>
 
     <div class="price-info">
       <span id="price-value">—</span>
@@ -625,6 +626,49 @@ let aiStopLoss = null;
 let aiTarget = null;
 let aiSignaal = null;
 let aiWeerstand = null;
+
+// ─── Beurstijden ─────────────────────────────────────────────────────────────
+const BEURSTIJDEN = {
+  'ASML.AS':  { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇳🇱' },
+  'ADYEN.AS': { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇳🇱' },
+  'NVDA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'TSLA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'RHM.DE':   { naam: 'XETRA Frankfurt',   open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇩🇪' },
+  'BA':       { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+};
+function getBeursstatus(symbol) {
+  const info = BEURSTIJDEN[symbol];
+  if (!info) return null;
+
+  const nu = new Date();
+  const nlTijd = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+  const uur = nlTijd.getHours();
+  const min = nlTijd.getMinutes();
+  const dagNr = nlTijd.getDay();
+
+  const [openUur, openMin] = info.open.split(':').map(Number);
+  const [sluitUur, sluitMin] = info.sluit.split(':').map(Number);
+
+  const nuMinuten = uur * 60 + min;
+  const openMinuten = openUur * 60 + openMin;
+  const sluitMinuten = sluitUur * 60 + sluitMin;
+
+  const isWeekdag = dagNr >= 1 && dagNr <= 5;
+  const isOpen = isWeekdag && nuMinuten >= openMinuten && nuMinuten < sluitMinuten;
+  const isPreMarket = isWeekdag && nuMinuten < openMinuten;
+  const isNaMarkt = isWeekdag && nuMinuten >= sluitMinuten;
+
+  return {
+    ...info,
+    isOpen,
+    isPreMarket,
+    isNaMarkt,
+    isWeekend: !isWeekdag,
+    minutenTotOpen: isPreMarket ? openMinuten - nuMinuten : 0,
+    minutenTotSluit: isOpen ? sluitMinuten - nuMinuten : 0,
+  };
+}
 let aiSteun = null;
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
@@ -703,6 +747,7 @@ async function loadData() {
     drawAll();
     checkAlerts(quotes, getIndicators(), currentSymbol);
     document.getElementById('ai-result').classList.remove('visible');
+    updateBeursStatus(currentSymbol);
   } catch(err) {
     console.error('Fout bij laden data:', err);
     showError(err.message);
@@ -1302,6 +1347,7 @@ function laadSymbol(sym) {
   document.getElementById('symbol-input').value = sym;
   loadData(sym);
   laadPremarket();
+  updateBeursStatus(sym);
 }
 async function laadPremarket() {
   const symbol = currentSymbol || 'ASML.AS';
@@ -1528,6 +1574,73 @@ function berekenMACD(closes) {
   const prevHistogram = prevMacd - signal;
   return { macd: macdVal, histogram, prevHistogram };
 }
+
+function updateBeursStatus(symbol) {
+  const status = getBeursstatus(symbol);
+  const el = document.getElementById('beurs-status');
+  if (!status || !el) return;
+
+  let html = '';
+
+  if (status.isOpen) {
+    const uren = Math.floor(status.minutenTotSluit / 60);
+    const min = status.minutenTotSluit % 60;
+    html = `
+      <span style="display:inline-flex;align-items:center;gap:5px;
+        background:#dcfce7;color:#15803d;padding:4px 10px;
+        border-radius:20px;font-weight:600;">
+        <span style="width:7px;height:7px;border-radius:50%;
+          background:#16a34a;animation:pulse 1.5s infinite;
+          display:inline-block;"></span>
+        ${status.vlag} ${status.naam} OPEN
+      </span>
+      <span style="color:#64748b;">
+        Sluit om ${status.sluit}
+        (nog ${uren > 0 ? uren + 'u ' : ''}${min}m)
+      </span>
+    `;
+  } else if (status.isPreMarket) {
+    const uren = Math.floor(status.minutenTotOpen / 60);
+    const min = status.minutenTotOpen % 60;
+    html = `
+      <span style="display:inline-flex;align-items:center;gap:5px;
+        background:#fef9c3;color:#854d0e;padding:4px 10px;
+        border-radius:20px;font-weight:600;">
+        ⏳ ${status.vlag} ${status.naam} Pre-market
+      </span>
+      <span style="color:#64748b;">
+        Opent om ${status.open}
+        (over ${uren > 0 ? uren + 'u ' : ''}${min}m)
+      </span>
+    `;
+  } else if (status.isNaMarkt) {
+    html = `
+      <span style="display:inline-flex;align-items:center;gap:5px;
+        background:#f1f5f9;color:#64748b;padding:4px 10px;
+        border-radius:20px;font-weight:600;">
+        🔴 ${status.vlag} ${status.naam} GESLOTEN
+      </span>
+      <span style="color:#94a3b8;">
+        Opent morgen om ${status.open}
+      </span>
+    `;
+  } else if (status.isWeekend) {
+    html = `
+      <span style="display:inline-flex;align-items:center;gap:5px;
+        background:#f1f5f9;color:#64748b;padding:4px 10px;
+        border-radius:20px;font-weight:600;">
+        🔴 ${status.vlag} ${status.naam} WEEKEND
+      </span>
+      <span style="color:#94a3b8;">
+        Opent maandag om ${status.open}
+      </span>
+    `;
+  }
+
+  el.innerHTML = html;
+}
+
+setInterval(() => { updateBeursStatus(currentSymbol); }, 60000);
 
 window.addEventListener('load', () => { laadSymbol('ASML.AS'); laadMiniDashboard(); startAutoRefresh(); });
 
