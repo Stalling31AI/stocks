@@ -67,10 +67,21 @@ app.get('/api/quote/:symbol', async (req, res) => {
     });
     if (!response.ok) throw new Error(`Yahoo returned ${response.status}`);
     const data = await response.json();
+    console.log('Fetching:', symbol, interval, params.range);
     const result = data?.chart?.result?.[0];
     if (!result) throw new Error('Geen data van Yahoo');
     const ts = result.timestamp;
-    const q = result.indicators.quote[0];
+    const q = result.indicators?.quote?.[0];
+    console.log('Quotes ontvangen:', ts?.length);
+    if (!ts || ts.length === 0 || !q) {
+      return res.json({
+        symbol,
+        interval,
+        quotes: [],
+        meta: result.meta || {},
+        bericht: 'Geen data beschikbaar voor dit timeframe. Beurs mogelijk gesloten.'
+      });
+    }
     const quotes = ts.map((t, i) => ({
       date: new Date(t * 1000).toISOString(),
       open:   q.open[i]   != null ? +q.open[i].toFixed(4)   : null,
@@ -79,6 +90,15 @@ app.get('/api/quote/:symbol', async (req, res) => {
       close:  q.close[i]  != null ? +q.close[i].toFixed(4)  : null,
       volume: q.volume[i] || 0,
     })).filter(q => q.open && q.close && q.high && q.low);
+    if (!quotes || quotes.length === 0) {
+      return res.json({
+        symbol,
+        interval,
+        quotes: [],
+        meta: result.meta || {},
+        bericht: 'Geen data beschikbaar voor dit timeframe. Beurs mogelijk gesloten.'
+      });
+    }
     res.json({ symbol, interval, meta: result.meta, quotes });
   } catch (err) {
     console.error('Quote error:', err.message);

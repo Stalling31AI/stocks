@@ -680,7 +680,21 @@ async function loadData() {
     console.log('Aantal candles ontvangen:', data.quotes?.length);
     quotes = data.quotes || [];
 
-    if (!quotes.length) throw new Error('Geen candles ontvangen van API');
+    if (!quotes || quotes.length === 0) {
+      console.warn('Geen quotes ontvangen voor', currentSymbol, currentInterval);
+      document.getElementById('loading-overlay')?.classList.remove('show');
+      const chartEl = document.getElementById('chart-canvas');
+      if (chartEl) {
+        const ctx = chartEl.getContext('2d');
+        ctx.clearRect(0, 0, chartEl.width, chartEl.height);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '14px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText('Geen data beschikbaar \u2014 beurs mogelijk gesloten',
+          chartEl.width / 2, chartEl.height / 2);
+      }
+      return;
+    }
 
     document.getElementById('symbol-title').textContent = sym;
     document.getElementById('symbol-name').textContent  = data.meta?.longName || '';
@@ -773,7 +787,7 @@ function calcBollinger(closes, period = 20, mult = 2) {
 
 function getIndicators() {
   if (!quotes.length) return {};
-  const closes = quotes.map(q => q.close);
+  const closes = (quotes || []).map(q => q.close);
   const rsiArr  = calcRSI(closes);
   const macdObj = calcMACD(closes);
   const bbArr   = calcBollinger(closes);
@@ -828,8 +842,8 @@ function drawCandlestick({ bbArr, ema20, ema50 }) {
   const barW    = Math.max(1, Math.floor(cw / n) - 1);
   const spacing = cw / n;
 
-  const highs  = quotes.map(q => q.high);
-  const lows   = quotes.map(q => q.low);
+  const highs  = (quotes || []).map(q => q.high);
+  const lows   = (quotes || []).map(q => q.low);
   const minY   = Math.min(...lows);
   const maxY   = Math.max(...highs);
   const rangeY = maxY - minY || 1;
@@ -926,7 +940,7 @@ function drawCandlestick({ bbArr, ema20, ema50 }) {
   }
 
   // Volume bars
-  const maxVol = Math.max(...quotes.map(c => c.volume || 0));
+  const maxVol = Math.max(...(quotes || []).map(c => c.volume || 0));
   if (maxVol > 0) {
     const volHeight = ch * 0.15;
     const volTop = pad.top + ch - volHeight;
@@ -1317,18 +1331,18 @@ async function laadPremarket() {
     const weekPct = ((weekEind - weekStart) / weekStart * 100).toFixed(2);
     const weekKleur = weekPct >= 0 ? '#16a34a' : '#dc2626';
     // 52 week high/low
-    const jaar = quotes.slice(-252);
+    const jaar = (quotes || []).slice(-252);
     const hoogJaar = Math.max(...jaar.map(q => q.high)).toFixed(2);
     const laagJaar = Math.min(...jaar.map(q => q.low)).toFixed(2);
     const afstandHoog = ((slotVandaag - hoogJaar) / hoogJaar * 100).toFixed(1);
     // Gemiddeld dagvolume
     const gemVolume = Math.floor(quotes.slice(-20).reduce((a,b) => a + (b.volume||0), 0) / 20);
     // Support en resistance (simpel: recent high/low)
-    const recent = quotes.slice(-10);
+    const recent = (quotes || []).slice(-10);
     const resistance = Math.max(...recent.map(q => q.high)).toFixed(2);
     const support = Math.min(...recent.map(q => q.low)).toFixed(2);
     // Wat te verwachten vandaag
-    const closes = quotes.map(q => q.close);
+    const closes = (quotes || []).map(q => q.close);
     const rsi = berekenRSI(closes);
     let verwachting = '';
     let verwachtingKleur = '#64748b';
@@ -1437,7 +1451,7 @@ async function laadMiniDashboard() {
       const data = await res.json();
       const quotes = data.quotes || [];
       if (quotes.length < 2) continue;
-      const closes = quotes.map(q => q.close);
+      const closes = (quotes || []).map(q => q.close);
       const last = quotes[quotes.length - 1];
       const prev = quotes[quotes.length - 2];
       const pct = ((last.close - prev.close) / prev.close * 100).toFixed(2);
