@@ -1516,6 +1516,53 @@ function renderSimulatiesB() {
 }
 
 renderSimulatiesB();
+
+function verwijderBuitenBeursSimulaties() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+
+  // Optie A
+  const simA = JSON.parse(
+    localStorage.getItem('simulaties') || '{}'
+  );
+  if (simA[datum]) {
+    simA[datum] = simA[datum].filter(s => {
+      const info = BEURS_OPEN[s.symbol];
+      if (!info) return true;
+      // Check of tijdstip van analyse binnen beursopeningstijden valt
+      const [uur, min] = s.tijdstip.split(':').map(Number);
+      const nuMin = uur * 60 + min;
+      const [oH, oM] = info.open.split(':').map(Number);
+      const [sH, sM] = info.sluit.split(':').map(Number);
+      const wasOpen = nuMin >= oH * 60 + oM && nuMin < sH * 60 + sM;
+      if (!wasOpen) {
+        console.log('Verwijderd:', s.symbol, s.tijdstip, '(beurs gesloten)');
+      }
+      return wasOpen;
+    });
+    localStorage.setItem('simulaties', JSON.stringify(simA));
+  }
+  // Optie B
+  const simB = JSON.parse(
+    localStorage.getItem('simulaties_b') || '{}'
+  );
+  if (simB[datum]) {
+    simB[datum] = simB[datum].filter(s => {
+      const info = BEURS_OPEN[s.symbol];
+      if (!info) return true;
+      const [uur, min] = s.tijdstip.split(':').map(Number);
+      const nuMin = uur * 60 + min;
+      const [oH, oM] = info.open.split(':').map(Number);
+      const [sH, sM] = info.sluit.split(':').map(Number);
+      return nuMin >= oH * 60 + oM && nuMin < sH * 60 + sM;
+    });
+    localStorage.setItem('simulaties_b', JSON.stringify(simB));
+  }
+  renderSimulaties();
+  renderSimulatiesB();
+  console.log('Opschonen klaar');
+}
+// Direct uitvoeren bij laden van de pagina
+verwijderBuitenBeursSimulaties();
 </script>
 </body>
 </html>
