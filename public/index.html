@@ -620,12 +620,15 @@
 
 <script>
 window.onerror = function(msg, src, line, col, err) {
-  console.error('JS Fout regel ' + line + ': ' + msg);
+  console.error('FOUT regel ' + line + ': ' + msg);
+  console.error('Stack:', err?.stack);
   const banner = document.getElementById('fout-banner');
   if (banner) {
-    banner.textContent = 'Fout: ' + msg + ' (regel ' + line + ')';
+    banner.innerHTML = '⚠️ Fout op regel ' + line + ': ' + msg +
+      '<br><small>' + (err?.stack?.split('\n')[1] || '') + '</small>';
     banner.style.display = 'block';
   }
+  return false;
 };
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -889,7 +892,7 @@ function setCanvasSize(canvas, defaultH) {
 function drawAll() {
   if (!quotes.length) return;
   const ind = getIndicators();
-  drawCandlestick(ind);
+  drawChart();
   drawRSI(ind);
   drawMACD(ind);
 }
@@ -1033,274 +1036,6 @@ function drawChart() {
   ctx.strokeRect(PAD.left, PAD.top, pW, pH);
   // AI lijnen tekenen (entry, stop, target, steun, weerstand)
   // ... behoud bestaande AI lijnen code hier
-}
-
-function drawCandlestick({ bbArr, ema20, ema50 }) {
-  if (!quotes || quotes.length === 0) return;
-  const validCandles = quotes.filter(c => c.o > 0 && c.h > 0 && c.l > 0 && c.c > 0 || c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
-  if (validCandles.length === 0) return;
-
-  const { w, h } = setCanvasSize(chartCanvas, 360);
-  const ctx = chartCanvas.getContext('2d');
-  const pad = { top: 12, bottom: 24, left: 8, right: 60 };
-  const cw  = w - pad.left - pad.right;
-  const ch  = h - pad.top - pad.bottom;
-
-  const n       = quotes.length;
-  const barW    = Math.max(1, Math.floor(cw / n) - 1);
-  const spacing = cw / n;
-
-  const highs  = (quotes || []).map(q => q.high);
-  const lows   = (quotes || []).map(q => q.low);
-  const minY   = Math.min(...lows);
-  const maxY   = Math.max(...highs);
-  const rangeY = maxY - minY || 1;
-
-  const yScale = v => pad.top + ch - ((v - minY) / rangeY) * ch;
-  const xPos   = i => pad.left + i * spacing + spacing / 2;
-
-  // BG
-  ctx.fillStyle = '#fafbfc';
-  ctx.fillRect(0, 0, w, h);
-
-  // Grid
-  ctx.strokeStyle = '#eaecf0';
-  ctx.lineWidth   = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad.top + (ch / 4) * i;
-    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
-    const val = maxY - (rangeY / 4) * i;
-    ctx.fillStyle = '#9ca3af';
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(val.toFixed(2), w - pad.right + 4, y + 4);
-  }
-
-  // Bollinger Bands
-  const drawBB = (arr, color) => {
-    ctx.beginPath();
-    let first = true;
-    arr.forEach((v, i) => {
-      if (v == null) return;
-      const x = xPos(i), y = yScale(v);
-      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      first = false;
-    });
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  };
-  drawBB(bbArr.map(b => b.upper),  'rgba(99,102,241,.35)');
-  drawBB(bbArr.map(b => b.middle), 'rgba(99,102,241,.6)');
-  drawBB(bbArr.map(b => b.lower),  'rgba(99,102,241,.35)');
-
-  // EMAs
-  const drawLine = (arr, color, dash = []) => {
-    ctx.beginPath();
-    ctx.setLineDash(dash);
-    let f = true;
-    arr.forEach((v, i) => {
-      if (v == null) return;
-      const x = xPos(i), y = yScale(v);
-      f ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      f = false;
-    });
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.setLineDash([]);
-  };
-  drawLine(ema20, 'rgba(245,158,11,.75)');
-  drawLine(ema50, 'rgba(239,68,68,.65)', [5,3]);
-
-  // Candles
-  quotes.forEach((q, i) => {
-    const x = xPos(i);
-    const isUp = q.close >= q.open;
-    const bullColor = '#16a34a', bearColor = '#dc2626';
-    ctx.fillStyle   = isUp ? bullColor : bearColor;
-    ctx.strokeStyle = isUp ? bullColor : bearColor;
-
-    // Wick
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, yScale(q.high));
-    ctx.lineTo(x, yScale(q.low));
-    ctx.stroke();
-
-    // Body
-    const bodyTop = yScale(Math.max(q.open, q.close));
-    const bodyH   = Math.max(1, Math.abs(yScale(q.open) - yScale(q.close)));
-    ctx.fillRect(x - barW / 2, bodyTop, barW, bodyH);
-  });
-
-  // Date labels
-  ctx.fillStyle = '#9ca3af';
-  ctx.font = '10px sans-serif';
-  ctx.textAlign = 'center';
-  const step = Math.ceil(n / 6);
-  for (let i = 0; i < n; i += step) {
-    const d = new Date(quotes[i].date);
-    const label = currentInterval === '1d'
-      ? d.toLocaleDateString('nl-NL', { month: 'short', day: 'numeric' })
-      : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
-    ctx.fillText(label, xPos(i), h - 6);
-  }
-
-  // Volume bars
-  const maxVol = Math.max(...(quotes || []).map(c => c.volume || 0));
-  if (maxVol > 0) {
-    const volHeight = ch * 0.15;
-    const volTop = pad.top + ch - volHeight;
-
-    for (let i = 0; i < quotes.length; i++) {
-      const c = quotes[i];
-      if (!c.volume) continue;
-      const x = xPos(i);
-      const isUp = c.close >= c.open;
-      const barH = (c.volume / maxVol) * volHeight;
-
-      ctx.fillStyle = isUp
-        ? 'rgba(22, 163, 74, 0.3)'
-        : 'rgba(220, 38, 38, 0.3)';
-      ctx.fillRect(x - barW/2, volTop + volHeight - barH, barW, barH);
-    }
-
-    // Volume label
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '10px Inter';
-    ctx.textAlign = 'left';
-    ctx.fillText('VOL', pad.left + 4, volTop + 12);
-  }
-
-  // AI instapmoment pijlen en lijnen
-  if (aiInstapPrijs && quotes.length > 0) {
-    const chartRight = pad.left + cw;
-
-    // Horizontale instaplijn (groen)
-    if (aiSignaal === 'KOOP') {
-      ctx.strokeStyle = '#16a34a';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([6, 3]);
-      ctx.beginPath();
-      ctx.moveTo(pad.left, yScale(aiInstapPrijs));
-      ctx.lineTo(chartRight, yScale(aiInstapPrijs));
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Label rechts
-      ctx.fillStyle = '#16a34a';
-      ctx.fillRect(chartRight + 2, yScale(aiInstapPrijs) - 10, 58, 20);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 10px Inter';
-      ctx.textAlign = 'left';
-      ctx.fillText('ENTRY', chartRight + 5, yScale(aiInstapPrijs) + 4);
-      // Grote groene pijl op de laatste kaars
-      const lastX = xPos(quotes.length - 1);
-      const lastY = yScale(aiInstapPrijs) + 30;
-      ctx.fillStyle = '#16a34a';
-      ctx.beginPath();
-      ctx.moveTo(lastX, lastY - 20);
-      ctx.lineTo(lastX - 12, lastY);
-      ctx.lineTo(lastX + 12, lastY);
-      ctx.closePath();
-      ctx.fill();
-    }
-    if (aiSignaal === 'VERKOOP') {
-      ctx.strokeStyle = '#dc2626';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([6, 3]);
-      ctx.beginPath();
-      ctx.moveTo(pad.left, yScale(aiInstapPrijs));
-      ctx.lineTo(chartRight, yScale(aiInstapPrijs));
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#dc2626';
-      ctx.fillRect(chartRight + 2, yScale(aiInstapPrijs) - 10, 58, 20);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 10px Inter';
-      ctx.textAlign = 'left';
-      ctx.fillText('VERKOOP', chartRight + 5, yScale(aiInstapPrijs) + 4);
-      // Rode pijl omlaag
-      const lastX = xPos(quotes.length - 1);
-      const lastY = yScale(aiInstapPrijs) - 30;
-      ctx.fillStyle = '#dc2626';
-      ctx.beginPath();
-      ctx.moveTo(lastX, lastY + 20);
-      ctx.lineTo(lastX - 12, lastY);
-      ctx.lineTo(lastX + 12, lastY);
-      ctx.closePath();
-      ctx.fill();
-    }
-    // Stop-loss lijn (rood gestippeld)
-    if (aiStopLoss) {
-      ctx.strokeStyle = '#dc2626';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(pad.left, yScale(aiStopLoss));
-      ctx.lineTo(chartRight, yScale(aiStopLoss));
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#dc2626';
-      ctx.fillRect(chartRight + 2, yScale(aiStopLoss) - 10, 42, 20);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 10px Inter';
-      ctx.textAlign = 'left';
-      ctx.fillText('SL', chartRight + 5, yScale(aiStopLoss) + 4);
-    }
-    // Target lijn (groen gestippeld)
-    if (aiTarget) {
-      ctx.strokeStyle = '#16a34a';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(pad.left, yScale(aiTarget));
-      ctx.lineTo(chartRight, yScale(aiTarget));
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#16a34a';
-      ctx.fillRect(chartRight + 2, yScale(aiTarget) - 10, 42, 20);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 10px Inter';
-      ctx.textAlign = 'left';
-      ctx.fillText('TP', chartRight + 5, yScale(aiTarget) + 4);
-    }
-  }
-  if (aiWeerstand) {
-    const chartRight = pad.left + cw;
-    ctx.strokeStyle = '#dc2626';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(pad.left, yScale(aiWeerstand));
-    ctx.lineTo(chartRight, yScale(aiWeerstand));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#dc2626';
-    ctx.fillRect(chartRight+2, yScale(aiWeerstand)-10, 46, 20);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 9px Inter';
-    ctx.textAlign = 'left';
-    ctx.fillText('WEERST', chartRight+5, yScale(aiWeerstand)+4);
-  }
-  if (aiSteun) {
-    const chartRight = pad.left + cw;
-    ctx.strokeStyle = '#16a34a';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(pad.left, yScale(aiSteun));
-    ctx.lineTo(chartRight, yScale(aiSteun));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#16a34a';
-    ctx.fillRect(chartRight+2, yScale(aiSteun)-10, 46, 20);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 9px Inter';
-    ctx.textAlign = 'left';
-    ctx.fillText('STEUN', chartRight+5, yScale(aiSteun)+4);
-  }
 }
 
 function drawRSI({ rsiArr }) {
@@ -1840,13 +1575,13 @@ function checkAlerts(quotes, indicators, symbol) {
     if (vorigeRSI >= 30 && rsi < 30) {
       stuurNotificatie(
         '🟢 ' + symbol + ' — RSI OVERSOLD',
-        'RSI gedaald naar ' + rsi.toFixed(1) + '. Mogelijk koopmoment!'
+        'RSI gedaald naar ' + Number(rsi || 0).toFixed(1) + '. Mogelijk koopmoment!'
       );
     }
     if (vorigeRSI <= 70 && rsi > 70) {
       stuurNotificatie(
         '🔴 ' + symbol + ' — RSI OVERBOUGHT',
-        'RSI gestegen naar ' + rsi.toFixed(1) + '. Mogelijk verkoopmoment!'
+        'RSI gestegen naar ' + Number(rsi || 0).toFixed(1) + '. Mogelijk verkoopmoment!'
       );
     }
   }
@@ -1935,17 +1670,17 @@ function berekenRisico() {
     ? aantal * Math.abs(aiTarget - entry)
     : aantal * risicoPerAandeel * 2;
   document.getElementById('calc-aantal').textContent = aantal + ' st';
-  document.getElementById('calc-risico').textContent = '€' + totaalRisico.toFixed(0);
-  document.getElementById('calc-doel').textContent = '€' + potentieelDoel.toFixed(0);
-  document.getElementById('calc-investering').textContent = '€' + investering.toFixed(0);
+  document.getElementById('calc-risico').textContent = '€' + Number(totaalRisico || 0).toFixed(0);
+  document.getElementById('calc-doel').textContent = '€' + Number(potentieelDoel || 0).toFixed(0);
+  document.getElementById('calc-investering').textContent = '€' + Number(investering || 0).toFixed(0);
   let advies = '';
-  const rr = potentieelDoel / totaalRisico;
+  const rr = totaalRisico ? potentieelDoel / totaalRisico : 0;
   if (rr < 1.5) {
-    advies = '⚠️ R/R ratio van ' + rr.toFixed(1) + ' is te laag. Minimaal 1:2 aanbevolen voor daytrade. Overweeg een betere entry of ruimere target.';
+    advies = '⚠️ R/R ratio van ' + Number(rr || 0).toFixed(1) + ' is te laag. Minimaal 1:2 aanbevolen voor daytrade. Overweeg een betere entry of ruimere target.';
   } else if (aantal < 1) {
     advies = '⚠️ Stop-loss te dicht bij entry voor dit maximale verlies. Vergroot je max verlies of kies een ruimere stop.';
   } else {
-    advies = '✅ R/R ratio ' + rr.toFixed(1) + ' — bij ' + aantal + ' aandelen riskeer je €' + totaalRisico.toFixed(0) + ' voor een potentiële winst van €' + potentieelDoel.toFixed(0) + '.';
+    advies = '✅ R/R ratio ' + Number(rr || 0).toFixed(1) + ' — bij ' + aantal + ' aandelen riskeer je €' + Number(totaalRisico || 0).toFixed(0) + ' voor een potentiële winst van €' + Number(potentieelDoel || 0).toFixed(0) + '.';
   }
   document.getElementById('calc-advies').textContent = advies;
   document.getElementById('calc-result').style.display = 'block';
