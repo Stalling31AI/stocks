@@ -7,27 +7,26 @@ const PORT = process.env.PORT || 3000;
 
 const WACHTWOORD = process.env.APP_WACHTWOORD || 'yappi2024';
 app.use((req, res, next) => {
-  // API routes beschermen
-  const auth = req.headers.authorization;
-
-  // Check cookie voor ingelogde gebruikers
   const cookie = req.headers.cookie || '';
-  if (cookie.includes('yappi_auth=true')) {
+  const ingelogd = cookie.includes('yappi_auth=true');
+
+  // Altijd doorlaten:
+  if (req.path === '/login') return next();
+  if (req.path.startsWith('/logo')) return next();
+  if (req.path.endsWith('.png')) return next();
+  if (req.path.endsWith('.ico')) return next();
+
+  // API routes
+  if (req.path.startsWith('/api/')) {
+    if (!ingelogd) return res.status(401).json({ error: 'Niet ingelogd' });
     return next();
   }
 
-  // Login pagina altijd doorlaten
-  if (req.path === '/login') return next();
-
-  // Statische bestanden met auth check
-  if (!auth && !cookie.includes('yappi_auth=true')) {
-    if (req.path === '/' || req.path.endsWith('.html')) {
-      return res.redirect('/login');
-    }
-    if (req.path.startsWith('/api/')) {
-      return res.status(401).json({ error: 'Niet ingelogd' });
-    }
+  // HTML paginas
+  if (!ingelogd) {
+    return res.redirect('/login');
   }
+
   next();
 });
 

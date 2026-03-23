@@ -447,7 +447,7 @@
   <div id="error-msg"></div>
 
   <div class="card" style="position:relative;">
-    <div id="loading-overlay" class="loading-overlay">
+    <div id="loading-overlay">
       <div class="lds-ring"><div></div><div></div><div></div></div>
     </div>
 
@@ -1277,6 +1277,7 @@ function showError(msg) {
 
 function setLoading(on) {
   loadOverlay.classList.toggle('visible', on);
+  if (!on) document.getElementById('loading-overlay')?.classList.remove('show');
   if (btnLoad) btnLoad.disabled = on;
 }
 
