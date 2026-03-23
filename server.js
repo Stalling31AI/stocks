@@ -157,24 +157,12 @@ MARKTDATA:
 - Bollinger: Upper ${fmt(indicators.bb?.upper)} | Mid ${fmt(indicators.bb?.middle)} | Lower ${fmt(indicators.bb?.lower)}
 - Koers vs Bollinger: ${Number(last.close) > Number(indicators.bb?.upper) ? 'BOVEN upper band' : Number(last.close) < Number(indicators.bb?.lower) ? 'ONDER lower band' : 'Binnen bands'}
 - Trend: ${indicators.trend}
-LAATSTE 5 KAARSEN:
-${recent.slice(-5).map(q => {
-  const d = new Date(q.date);
-  const t = d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'});
-  const body = Math.abs(q.close-q.open);
-  const range = q.high-q.low || 0.01;
-  const bodyPct = Math.round(body/range*100);
-  const wick_onder = Math.min(q.open,q.close)-q.low;
-  const wick_boven = q.high-Math.max(q.open,q.close);
-  let patroon = '';
-  if (bodyPct < 10) patroon = '(doji)';
-  else if (wick_onder > body*2 && q.close > q.open) patroon = '(hammer)';
-  else if (wick_boven > body*2 && q.close < q.open) patroon = '(shooting star)';
-  return t + ': O=' + fmt(q.open) + ' H=' + fmt(q.high) + ' L=' + fmt(q.low) + ' C=' + fmt(q.close) + ' ' + (q.close>=q.open?'▲':'▼') + ' ' + patroon;
-}).join('\n')}
+Laatste koers: ${fmt(last.close)} om ${amsterdamTijd}
+Trend laatste 3 kaarsen: ${recent.slice(-3).map(q =>
+  (q.close >= q.open ? '▲' : '▼') + fmt(q.close)
+).join(' ')}
 AANDEEL: ${aandeelRegels[symbol] || 'Standaard regels.'}
 TIJDSTIP: ${dagdeel}
-Zoek naar nieuws over ${symbol} van vandaag voor context.
 Geef ALLEEN dit JSON object terug (geen tekst eromheen):
 {
   "signaal": "KOOP" of "VERKOOP" of "WACHT",
@@ -196,13 +184,11 @@ Geef ALLEEN dit JSON object terug (geen tekst eromheen):
   "tijdstip_advies": "specifiek advies voor nu"
 }`;
 
+    // web_search tijdelijk uitgeschakeld vanwege rate limits
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      max_tokens: 600,
       messages: [{ role: 'user', content: prompt }],
-    }, {
-      headers: { 'anthropic-beta': 'web-search-2025-03-05' },
     });
 
     // Find the last text block (web_search may produce tool_use blocks before the final answer)
@@ -223,7 +209,7 @@ Geef ALLEEN dit JSON object terug (geen tekst eromheen):
   } catch (err) {
     console.error('Analyze error:', err.message);
     console.error('Analyze error stack:', err.stack);
-    console.error('Symbol:', symbol, 'Interval:', interval);
+    console.error('Symbol:', req.body?.symbol, 'Interval:', req.body?.interval);
     console.error('Quotes length:', quotes?.length);
     console.error('Last candle:', last);
     res.status(500).json({ error: err.message, details: err.stack?.split('\n')[1] });
