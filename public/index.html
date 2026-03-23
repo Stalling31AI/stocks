@@ -929,10 +929,13 @@ function drawChart() {
     '5m': 12, '15m': 4, '1h': 1, '1d': 1
   };
   const uurSlots = slotsPerUur[currentInterval] || 4;
-  const totaalSlots = uurSlots * 2; // altijd 2 uur
   // Gebruik beschikbare candles, vul rest met lege slots
   const beschikbaar = (candles || []).filter(c =>
     c.o > 0 && c.h > 0 && c.l > 0 && c.c > 0
+  );
+  const totaalSlots = Math.max(
+    beschikbaar.length + 4,
+    uurSlots * 2
   );
   if (beschikbaar.length === 0) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
