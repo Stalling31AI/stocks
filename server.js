@@ -223,7 +223,11 @@ Geef ALLEEN dit JSON object terug, geen tekst eromheen:
   "weerstand": prijsgetal,
   "steun": prijsgetal,
   "tijdstip_advies": "specifiek advies voor dit moment op de dag"
-}`;
+}
+
+BELANGRIJK: Geef UITSLUITEND het JSON object terug.
+Geen inleiding, geen uitleg, geen markdown.
+Begin direct met { en eindig met }.`;
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -238,9 +242,17 @@ Geef ALLEEN dit JSON object terug, geen tekst eromheen:
     const textBlock = [...message.content].reverse().find(b => b.type === 'text');
     if (!textBlock) throw new Error('AI gaf geen tekst terug');
     const match = textBlock.text.trim().match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('AI gaf geen valide JSON terug');
-
-    res.json(JSON.parse(match[0]));
+    if (!match) {
+      console.error('AI response:', textBlock.text.substring(0, 500));
+      throw new Error('AI gaf geen valide JSON terug');
+    }
+    try {
+      const parsed = JSON.parse(match[0]);
+      res.json(parsed);
+    } catch(e) {
+      console.error('JSON parse fout:', match[0].substring(0, 200));
+      throw new Error('JSON kon niet geparsed worden: ' + e.message);
+    }
   } catch (err) {
     console.error('Analyze error:', err.message);
     res.status(500).json({ error: err.message });
