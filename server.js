@@ -227,7 +227,12 @@ Geef ALLEEN dit JSON object terug, geen tekst eromheen:
 
 BELANGRIJK: Geef UITSLUITEND het JSON object terug.
 Geen inleiding, geen uitleg, geen markdown.
-Begin direct met { en eindig met }.`;
+Begin direct met { en eindig met }.
+
+KRITISCH: Geef ALLEEN het JSON object terug.
+Start met { en eindig met }.
+Geen tekst voor of na het JSON object.
+Geen markdown, geen uitleg, geen inleiding.`;
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
