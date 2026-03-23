@@ -914,59 +914,44 @@ function drawAll() {
 }
 
 function drawChart() {
-  if (typeof candles === 'undefined' || !candles) {
-    candles = [];
-  }
-  if (candles.length === 0) return;
-
   const canvas = document.getElementById('chart-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const maxCandles = {
-    '5m': 48,   // max 4 uur aan 5m candles
-    '15m': 26,  // max ~6.5 uur aan 15m candles
-    '1h': 8,    // max 8 uur aan 1h candles
-    '1d': 60,   // max 60 handelsdagen
-  };
-  const maxTonen = maxCandles[currentInterval] || 30;
-  // Gebruik beschikbare candles
-  const beschikbaar = (candles || []).filter(c =>
+  const validCandles = (candles || []).filter(c =>
     c.o > 0 && c.h > 0 && c.l > 0 && c.c > 0
   );
-  if (beschikbaar.length === 0) {
+
+  if (validCandles.length === 0) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#94a3b8';
     ctx.font = '13px Inter';
     ctx.textAlign = 'center';
-    ctx.fillText('Wacht op marktdata...', canvas.width / 2, canvas.height / 2);
+    ctx.fillText('Wacht op marktdata...', canvas.width/2, canvas.height/2);
     return;
   }
-  // Neem alleen de laatste N candles
-  const teTonenCandles = beschikbaar.slice(-maxTonen);
-  // Slots = exact aantal te tonen candles zodat candles altijd een goede breedte hebben
-  const totaalSlots = teTonenCandles.length;
-
-  // Bereken prijsrange alleen op basis van beschikbare candles
-  const maxP = Math.max(...teTonenCandles.map(c => c.h));
-  const minP = Math.min(...teTonenCandles.map(c => c.l));
-  const pad = (maxP - minP) * 0.1 || 1;
-  const pMax = maxP + pad;
-  const pMin = minP - pad;
-  const pRange = pMax - pMin;
+  const maxCandles = {
+    '5m': 48, '15m': 26, '1h': 8, '1d': 30
+  };
+  const data = validCandles.slice(-(maxCandles[currentInterval] || 30));
+  const n = data.length;
   const W = canvas.width;
   const H = canvas.height;
   const PAD = { top: 24, right: 72, bottom: 28, left: 8 };
   const pW = W - PAD.left - PAD.right;
   const pH = H - PAD.top - PAD.bottom;
+  const maxP = Math.max(...data.map(c => c.h));
+  const minP = Math.min(...data.map(c => c.l));
+  const pad = (maxP - minP) * 0.06 || 1;
+  const pMax = maxP + pad;
+  const pMin = minP - pad;
+  const pRange = pMax - pMin;
+  const toX = i => PAD.left + (i + 0.5) * (pW / n);
+  const toY = p => PAD.top + pH - ((p - pMin) / pRange) * pH;
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#fafbfc';
   ctx.fillRect(PAD.left, PAD.top, pW, pH);
-  // Teken op basis van totaalSlots zodat candles altijd klein zijn
-  const cW = Math.max(3, Math.floor(pW / totaalSlots * 0.7));
-  const toX = i => PAD.left + (i + 0.5) * (pW / totaalSlots);
-  const toY = p => PAD.top + pH - ((p - pMin) / pRange) * pH;
-  // Grid lijnen
+  // Grid
   for (let i = 0; i <= 5; i++) {
     const y = PAD.top + (pH / 5) * i;
     const price = pMax - (pRange / 5) * i;
@@ -981,60 +966,166 @@ function drawChart() {
     ctx.textAlign = 'left';
     ctx.fillText(price.toFixed(1), W - PAD.right + 6, y + 4);
   }
-  // Teken candles op de juiste positie in het tijdvenster
-  teTonenCandles.forEach((c, i) => {
+  // Candles
+  const cW = Math.max(3, Math.floor(pW / n * 0.65));
+  data.forEach((c, i) => {
     const x = toX(i);
     const isUp = c.c >= c.o;
-
-    // Wick
     ctx.strokeStyle = isUp ? '#15803d' : '#b91c1c';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x, toY(c.h));
     ctx.lineTo(x, toY(c.l));
     ctx.stroke();
-    // Body
     const bTop = toY(Math.max(c.o, c.c));
     const bBot = toY(Math.min(c.o, c.c));
     const bH = Math.max(1.5, bBot - bTop);
     ctx.fillStyle = isUp ? '#dcfce7' : '#fee2e2';
-    ctx.fillRect(x - cW / 2, bTop, cW, bH);
+    ctx.fillRect(x - cW/2, bTop, cW, bH);
     ctx.strokeStyle = isUp ? '#16a34a' : '#dc2626';
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(x - cW / 2, bTop, cW, bH);
+    ctx.strokeRect(x - cW/2, bTop, cW, bH);
   });
-  // Volume bars onderaan
-  const maxVol = Math.max(...teTonenCandles.map(c => c.v || 0));
+  // Volume
+  const maxVol = Math.max(...data.map(c => c.v || 0));
   if (maxVol > 0) {
     const volH = pH * 0.12;
-    teTonenCandles.forEach((c, i) => {
+    data.forEach((c, i) => {
       if (!c.v) return;
       const x = toX(i);
       const isUp = c.c >= c.o;
       const bH = (c.v / maxVol) * volH;
-      ctx.fillStyle = isUp ? 'rgba(22,163,74,.25)' : 'rgba(220,38,38,.25)';
-      ctx.fillRect(x - cW / 2, PAD.top + pH - bH, cW, bH);
+      ctx.fillStyle = isUp
+        ? 'rgba(22,163,74,.25)'
+        : 'rgba(220,38,38,.25)';
+      ctx.fillRect(x - cW/2, PAD.top + pH - bH, cW, bH);
     });
   }
-  // Tijdlabels x-as
+  // Tijdlabels
+  const step = Math.max(1, Math.floor(n / 6));
   ctx.fillStyle = '#94a3b8';
   ctx.font = '10px Inter';
   ctx.textAlign = 'center';
-  const labelStap = Math.max(1, Math.floor(totaalSlots / 6));
-  teTonenCandles.forEach((c, i) => {
-    if (i % labelStap !== 0) return;
+  data.forEach((c, i) => {
+    if (i % step !== 0) return;
     const d = new Date(c.t);
     const lbl = currentInterval === '1d'
-      ? d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
-      : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' });
+      ? d.toLocaleDateString('nl-NL', {day:'numeric', month:'short'})
+      : d.toLocaleTimeString('nl-NL', {
+          hour:'2-digit', minute:'2-digit',
+          timeZone:'Europe/Amsterdam'
+        });
     ctx.fillText(lbl, toX(i), H - 6);
   });
   // Border
   ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 1;
   ctx.strokeRect(PAD.left, PAD.top, pW, pH);
-  // AI lijnen tekenen (entry, stop, target, steun, weerstand)
-  // ... behoud bestaande AI lijnen code hier
+  // AI lijnen
+  const chartRight = PAD.left + pW;
+
+  if (aiInstapPrijs && aiSignaal === 'KOOP') {
+    ctx.strokeStyle = '#16a34a';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, toY(aiInstapPrijs));
+    ctx.lineTo(chartRight, toY(aiInstapPrijs));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#16a34a';
+    roundRect(ctx, chartRight+2, toY(aiInstapPrijs)-10, 46, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('ENTRY', chartRight+5, toY(aiInstapPrijs)+4);
+  }
+  if (aiInstapPrijs && aiSignaal === 'VERKOOP') {
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, toY(aiInstapPrijs));
+    ctx.lineTo(chartRight, toY(aiInstapPrijs));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#dc2626';
+    roundRect(ctx, chartRight+2, toY(aiInstapPrijs)-10, 52, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('VERKOOP', chartRight+5, toY(aiInstapPrijs)+4);
+  }
+  if (aiStopLoss) {
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, toY(aiStopLoss));
+    ctx.lineTo(chartRight, toY(aiStopLoss));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#dc2626';
+    roundRect(ctx, chartRight+2, toY(aiStopLoss)-10, 28, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('SL', chartRight+5, toY(aiStopLoss)+4);
+  }
+  if (aiTarget) {
+    ctx.strokeStyle = '#16a34a';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, toY(aiTarget));
+    ctx.lineTo(chartRight, toY(aiTarget));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#16a34a';
+    roundRect(ctx, chartRight+2, toY(aiTarget)-10, 28, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('TP', chartRight+5, toY(aiTarget)+4);
+  }
+  if (aiWeerstand) {
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, toY(aiWeerstand));
+    ctx.lineTo(chartRight, toY(aiWeerstand));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#dc2626';
+    roundRect(ctx, chartRight+2, toY(aiWeerstand)-10, 48, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('WEERST', chartRight+5, toY(aiWeerstand)+4);
+  }
+  if (aiSteun) {
+    ctx.strokeStyle = '#16a34a';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, toY(aiSteun));
+    ctx.lineTo(chartRight, toY(aiSteun));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#16a34a';
+    roundRect(ctx, chartRight+2, toY(aiSteun)-10, 40, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText('STEUN', chartRight+5, toY(aiSteun)+4);
+  }
 }
 
 function drawRSI({ rsiArr }) {
