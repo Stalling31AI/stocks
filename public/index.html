@@ -644,13 +644,13 @@ let aiWeerstand = null;
 
 // ─── Beurstijden ─────────────────────────────────────────────────────────────
 const BEURSTIJDEN = {
-  'ASML.AS':  { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇳🇱' },
-  'ADYEN.AS': { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇳🇱' },
-  'NVDA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
-  'TSLA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
-  'RHM.DE':   { naam: 'XETRA Frankfurt',   open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇩🇪' },
-  'BA':       { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
-  'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'ASML.AS':  { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', vlag: '🇳🇱' },
+  'ADYEN.AS': { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', vlag: '🇳🇱' },
+  'NVDA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
+  'TSLA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
+  'RHM.DE':   { naam: 'XETRA Frankfurt',   open: '09:00', sluit: '17:30', vlag: '🇩🇪' },
+  'BA':       { naam: 'NYSE',               open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
+  'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
 };
 function getBeursstatus(symbol) {
   const info = BEURSTIJDEN[symbol];

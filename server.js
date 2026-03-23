@@ -167,7 +167,7 @@ app.post('/api/analyze', async (req, res) => {
       'LMT': 'Defensie. Gevoelig voor overheidscontracten. US markturen leidend.',
     };
     const isEuropees = ['ASML.AS','ADYEN.AS','RHM.DE'].includes(symbol);
-    const handelVenster = isEuropees ? '09:30-17:30' : '15:30-22:00';
+    const handelVenster = isEuropees ? '09:00-17:30' : '15:30-22:00';
     const binnenVenster = (() => {
       const [open, sluit] = handelVenster.split('-');
       const [oH, oM] = open.split(':').map(Number);
