@@ -1038,18 +1038,28 @@ function herstelAnalyses() {
 herstelAnalyses();
 
 async function simuleerTrades(analyses) {
+  console.log('simuleerTrades aangeroepen met', analyses.length, 'analyses');
   const datum = new Date().toLocaleDateString('nl-NL');
   const simulaties = JSON.parse(
     localStorage.getItem('simulaties') || '{}'
   );
   if (!simulaties[datum]) simulaties[datum] = [];
   for (const a of analyses) {
-    if (a.signaal !== 'KOOP' && a.signaal !== 'VERKOOP') continue;
-    if (!a.entry) continue;
+    console.log('Check:', a.symbol, a.signaal, a.entry,
+      'beursOpen:', isBeursOpen(a.symbol));
+
+    if (a.signaal !== 'KOOP' && a.signaal !== 'VERKOOP') {
+      console.log('Skip: geen KOOP/VERKOOP signaal');
+      continue;
+    }
+    if (!a.entry) {
+      console.log('Skip: geen entry prijs');
+      continue;
+    }
 
     // Controleer of beurs open was ten tijde van analyse
     if (!isBeursOpen(a.symbol)) {
-      console.log(a.symbol + ' beurs gesloten, geen simulatie');
+      console.log('Skip: beurs gesloten voor', a.symbol);
       continue;
     }
 
