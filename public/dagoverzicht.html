@@ -696,6 +696,7 @@ function renderGeschiedenisTabel(datum) {
   const alleAnalyses = dagData.flatMap(run =>
     run.analyses.map(a => ({...a, runTijd: run.tijdstip}))
   );
+  alleAnalyses.reverse();
   tabel.innerHTML = `
     <table>
       <thead>
