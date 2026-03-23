@@ -222,7 +222,11 @@ Geef ALLEEN dit JSON object terug (geen tekst eromheen):
     }
   } catch (err) {
     console.error('Analyze error:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('Analyze error stack:', err.stack);
+    console.error('Symbol:', symbol, 'Interval:', interval);
+    console.error('Quotes length:', quotes?.length);
+    console.error('Last candle:', last);
+    res.status(500).json({ error: err.message, details: err.stack?.split('\n')[1] });
   }
 });
 
