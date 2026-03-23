@@ -709,6 +709,8 @@ function renderGeschiedenisTabel(datum) {
           <th>R/R</th>
           <th>Vertrouwen</th>
           <th>Resultaat</th>
+          <th style="padding:8px;text-align:center;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Wis</th>
         </tr>
       </thead>
       <tbody>
@@ -730,9 +732,18 @@ function renderGeschiedenisTabel(datum) {
                 <option value="incorrect" ${a.resultaat==='incorrect'?'selected':''}>❌ Incorrect</option>
               </select>
             </td>
+            <td style="padding:8px;text-align:center;">
+              <button onclick="wisRegel('${datum}', ${idx})"
+                style="background:none;border:1px solid #fecaca;
+                border-radius:4px;color:#dc2626;font-size:11px;
+                padding:2px 8px;cursor:pointer;"
+                title="Verwijder deze analyse">
+                🗑
+              </button>
+            </td>
           </tr>
           <tr style="background:#f8fafc;">
-            <td colspan="9" style="font-size:11px;color:#64748b;padding:4px 10px 8px;font-style:italic;">
+            <td colspan="10" style="font-size:11px;color:#64748b;padding:4px 10px 8px;font-style:italic;">
               ${a.redenering||''}
               ${a.instap_tijd ? ' | ⏰ '+a.instap_tijd : ''}
               ${a.nieuws_sentiment ? ' | 📰 '+a.nieuws_sentiment : ''}
@@ -743,6 +754,41 @@ function renderGeschiedenisTabel(datum) {
     </table>
   `;
 }
+function wisRegel(datum, idx) {
+  if (!confirm('Deze analyse verwijderen?')) return;
+
+  const opgeslagen = JSON.parse(
+    localStorage.getItem('daganalyses') || '{}'
+  );
+  const dagData = opgeslagen[datum];
+  if (!dagData) return;
+  let teller = 0;
+  let gevonden = false;
+
+  for (let r = 0; r < dagData.length; r++) {
+    const run = dagData[r];
+    for (let a = 0; a < run.analyses.length; a++) {
+      if (teller === idx) {
+        run.analyses.splice(a, 1);
+        gevonden = true;
+        break;
+      }
+      teller++;
+    }
+    if (gevonden) break;
+  }
+  // Verwijder lege runs
+  opgeslagen[datum] = dagData.filter(r => r.analyses.length > 0);
+
+  // Verwijder dag als leeg
+  if (opgeslagen[datum].length === 0) {
+    delete opgeslagen[datum];
+  }
+  localStorage.setItem('daganalyses', JSON.stringify(opgeslagen));
+  renderDagTabs();
+  updateScore();
+}
+
 function slaResultaatOp(datum, idx, waarde) {
   const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
   const dagData = opgeslagen[datum];
