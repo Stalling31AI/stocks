@@ -285,6 +285,20 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
       </div>
     </div>
   </div>
+  <!-- Simulatie sectie -->
+  <div style="background:#fff;border-radius:12px;padding:20px;
+    box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;">
+    <div style="display:flex;align-items:center;
+      justify-content:space-between;margin-bottom:16px;">
+      <div style="font-size:14px;font-weight:700;">
+        🤖 Automatische simulatie (10 aandelen per trade)
+      </div>
+      <div style="font-size:11px;color:#94a3b8;">
+        Simuleert alsof je elk KOOP/VERKOOP advies opvolgt
+      </div>
+    </div>
+    <div id="simulatie-tabel"></div>
+  </div>
   <!-- Geschiedenis sectie -->
   <div id="geschiedenis-sectie" style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
@@ -628,6 +642,7 @@ async function analyseAlleAandelen() {
   sessionStorage.setItem('telWacht',
     document.getElementById('tel-wacht').textContent);
   slaAnalysesOp();
+  simuleerTrades(huidigeAnalyses);
   btn.disabled = false;
   btn.textContent = '🔍 Analyseer geselecteerde aandelen';
 }
@@ -929,6 +944,202 @@ function herstelAnalyses() {
   }
 }
 herstelAnalyses();
+
+async function simuleerTrades(analyses) {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const simulaties = JSON.parse(
+    localStorage.getItem('simulaties') || '{}'
+  );
+  if (!simulaties[datum]) simulaties[datum] = [];
+  for (const a of analyses) {
+    if (a.signaal !== 'KOOP' && a.signaal !== 'VERKOOP') continue;
+    if (!a.entry) continue;
+    // Voorkom dubbele simulaties voor zelfde aandeel/tijdstip
+    const bestaat = simulaties[datum].find(s =>
+      s.symbol === a.symbol && s.tijdstip === a.tijdstip
+    );
+    if (bestaat) continue;
+    simulaties[datum].push({
+      symbol: a.symbol,
+      label: a.label,
+      vlag: a.vlag || '',
+      tijdstip: a.tijdstip,
+      signaal: a.signaal,
+      actie: a.actie,
+      entry: a.entry,
+      stop_loss: a.stop_loss,
+      target: a.target,
+      rr_ratio: a.rr_ratio,
+      aantal: 10,
+      redenering: a.redenering,
+      resultaat: 'open',
+      slotkoers: null,
+      winst: null,
+    });
+  }
+  localStorage.setItem('simulaties', JSON.stringify(simulaties));
+  renderSimulaties();
+}
+
+async function sluitSimulaties() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const simulaties = JSON.parse(
+    localStorage.getItem('simulaties') || '{}'
+  );
+  const daagSimulaties = simulaties[datum] || [];
+  const openSimulaties = daagSimulaties.filter(s => s.resultaat === 'open');
+
+  if (openSimulaties.length === 0) return;
+  document.getElementById('sluit-btn').textContent = '⏳ Bezig...';
+  document.getElementById('sluit-btn').disabled = true;
+  for (const sim of openSimulaties) {
+    try {
+      const res = await fetch(`/api/quote/${sim.symbol}?interval=1d`);
+      const data = await res.json();
+      const quotes = data.quotes || [];
+      if (quotes.length === 0) continue;
+
+      const slotkoers = quotes[quotes.length-1].close;
+      sim.slotkoers = slotkoers;
+      // Bepaal resultaat
+      if (sim.signaal === 'KOOP') {
+        if (slotkoers >= sim.target) {
+          sim.resultaat = 'target_bereikt';
+          sim.winst = (sim.target - sim.entry) * sim.aantal;
+        } else if (slotkoers <= sim.stop_loss) {
+          sim.resultaat = 'stop_geraakt';
+          sim.winst = (sim.stop_loss - sim.entry) * sim.aantal;
+        } else {
+          sim.resultaat = 'open_einde_dag';
+          sim.winst = (slotkoers - sim.entry) * sim.aantal;
+        }
+      } else if (sim.signaal === 'VERKOOP') {
+        if (slotkoers <= sim.target) {
+          sim.resultaat = 'target_bereikt';
+          sim.winst = (sim.entry - sim.target) * sim.aantal;
+        } else if (slotkoers >= sim.stop_loss) {
+          sim.resultaat = 'stop_geraakt';
+          sim.winst = (sim.entry - sim.stop_loss) * sim.aantal;
+        } else {
+          sim.resultaat = 'open_einde_dag';
+          sim.winst = (sim.entry - slotkoers) * sim.aantal;
+        }
+      }
+    } catch(e) {
+      console.error('Sluit fout voor', sim.symbol, e);
+    }
+  }
+  localStorage.setItem('simulaties', JSON.stringify(simulaties));
+  renderSimulaties();
+  document.getElementById('sluit-btn').textContent = '📊 Sluit dag af';
+  document.getElementById('sluit-btn').disabled = false;
+}
+
+function renderSimulaties() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const simulaties = JSON.parse(
+    localStorage.getItem('simulaties') || '{}'
+  );
+  const lijst = simulaties[datum] || [];
+  const el = document.getElementById('simulatie-tabel');
+  if (!el) return;
+  if (lijst.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px;">Nog geen gesimuleerde trades vandaag. Voer een analyse uit met KOOP/VERKOOP signalen.</div>';
+    return;
+  }
+  const totaalWinst = lijst
+    .filter(s => s.winst !== null)
+    .reduce((sum, s) => sum + s.winst, 0);
+  const resultaatKleur = {
+    'target_bereikt': '#16a34a',
+    'stop_geraakt': '#dc2626',
+    'open_einde_dag': '#d97706',
+    'open': '#94a3b8',
+  };
+  const resultaatLabel = {
+    'target_bereikt': '✅ Target bereikt',
+    'stop_geraakt': '🛑 Stop geraakt',
+    'open_einde_dag': '📊 Einde dag',
+    'open': '⏳ Open',
+  };
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;
+      align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:13px;font-weight:600;">
+        ${lijst.length} gesimuleerde trades
+        ${totaalWinst !== 0 ? '| Totaal: <span style="color:' +
+          (totaalWinst>=0?'#16a34a':'#dc2626') + ';font-weight:700;">' +
+          (totaalWinst>=0?'+':'') + '€' + totaalWinst.toFixed(2) + '</span>' : ''}
+      </div>
+      <button id="sluit-btn" onclick="sluitSimulaties()"
+        style="padding:8px 16px;background:#2563eb;color:#fff;
+        border:none;border-radius:8px;font-weight:700;font-size:12px;
+        cursor:pointer;">
+        📊 Sluit dag af & bereken resultaat
+      </button>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="border-bottom:2px solid #e2e8f0;">
+          <th style="padding:8px;text-align:left;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Tijd</th>
+          <th style="padding:8px;text-align:left;">Aandeel</th>
+          <th style="padding:8px;text-align:left;">Signaal</th>
+          <th style="padding:8px;text-align:right;">Entry</th>
+          <th style="padding:8px;text-align:right;">Stop</th>
+          <th style="padding:8px;text-align:right;">Target</th>
+          <th style="padding:8px;text-align:right;">Slotkoers</th>
+          <th style="padding:8px;text-align:right;">Winst/Verlies</th>
+          <th style="padding:8px;text-align:left;">Resultaat</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lijst.map(s => `
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:8px;color:#94a3b8;">${s.tijdstip}</td>
+            <td style="padding:8px;font-weight:600;">${s.vlag} ${s.label}</td>
+            <td style="padding:8px;">
+              <span style="padding:2px 8px;border-radius:4px;font-size:10px;
+                font-weight:700;background:${s.signaal==='KOOP'?'#dcfce7':'#fee2e2'};
+                color:${s.signaal==='KOOP'?'#15803d':'#dc2626'};">
+                ${s.signaal}
+              </span>
+            </td>
+            <td style="padding:8px;text-align:right;font-weight:600;">
+              ${s.entry ? Number(s.entry).toFixed(2) : '—'}
+            </td>
+            <td style="padding:8px;text-align:right;color:#dc2626;">
+              ${s.stop_loss ? Number(s.stop_loss).toFixed(2) : '—'}
+            </td>
+            <td style="padding:8px;text-align:right;color:#16a34a;">
+              ${s.target ? Number(s.target).toFixed(2) : '—'}
+            </td>
+            <td style="padding:8px;text-align:right;color:#64748b;">
+              ${s.slotkoers ? Number(s.slotkoers).toFixed(2) : '—'}
+            </td>
+            <td style="padding:8px;text-align:right;font-weight:700;
+              color:${s.winst === null ? '#94a3b8' : s.winst >= 0 ? '#16a34a' : '#dc2626'};">
+              ${s.winst !== null ? (s.winst>=0?'+':'') + '€' +
+                Number(s.winst).toFixed(2) : '—'}
+            </td>
+            <td style="padding:8px;font-size:11px;font-weight:600;
+              color:${resultaatKleur[s.resultaat]};">
+              ${resultaatLabel[s.resultaat]}
+            </td>
+          </tr>
+          <tr style="background:#f8fafc;">
+            <td colspan="9" style="padding:4px 8px 8px;font-size:11px;
+              color:#64748b;font-style:italic;">
+              ${s.redenering || ''}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+renderSimulaties();
 </script>
 </body>
 </html>
