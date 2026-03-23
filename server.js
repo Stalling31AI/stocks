@@ -116,8 +116,26 @@ app.post('/api/analyze', async (req, res) => {
     }
 
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const recent = quotes.slice(-30);
+    const recent = quotes.slice(-10).map(q => ({
+      date: q.date,
+      open: q.open,
+      high: q.high,
+      low: q.low,
+      close: q.close,
+      volume: q.volume || 0
+    }));
     const last   = recent[recent.length - 1];
+
+    const gemVolume = quotes.slice(-20)
+      .reduce((sum, q) => sum + (q.volume || 0), 0) / 20;
+    const lastVolume = quotes[quotes.length-1].volume || 0;
+    const volumeRatio = gemVolume > 0
+      ? (lastVolume / gemVolume).toFixed(2)
+      : 'onbekend';
+
+    const dagHoog = Math.max(...quotes.map(q => q.high));
+    const dagLaag = Math.min(...quotes.map(q => q.low));
+    const vorigeSlot = quotes.length > 1 ? quotes[0].close : null;
 
     const fmt = (v, d = 2) => (v != null ? Number(v).toFixed(d) : 'N/A');
     const nowStr = new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam' });
@@ -151,6 +169,19 @@ app.post('/api/analyze', async (req, res) => {
     const prompt = `Je bent een elite daytrader. Analyseer ${symbol} op ${interval} timeframe. Doel: concreet koop/verkoop advies.
 MARKTDATA:
 - Prijs: ${fmt(last.close)} | Tijd: ${amsterdamTijd} (${dagdeel})
+VOLUME ANALYSE:
+- Huidig volume: ${lastVolume.toLocaleString()}
+- Gemiddeld volume (20 periodes): ${Math.round(gemVolume).toLocaleString()}
+- Volume ratio: ${volumeRatio}x gemiddeld
+${Number(volumeRatio) > 1.5 ? '→ HOOG volume: beweging wordt bevestigd' : Number(volumeRatio) < 0.5 ? '→ LAAG volume: beweging niet betrouwbaar' : '→ Normaal volume'}
+KEY PRICE LEVELS VANDAAG:
+- Dag hoog: ${dagHoog.toFixed(2)}
+- Dag laag: ${dagLaag.toFixed(2)}
+- Vorige slotkoers: ${vorigeSlot ? vorigeSlot.toFixed(2) : 'onbekend'}
+- Psychologisch niveau: ${Math.round(last.close / 50) * 50} (dichtstbijzijnde ronde €50)
+MULTI-TIMEFRAME CONTEXT:
+- Huidig timeframe: ${interval}
+- Voor betrouwbaar daytrade signaal: controleer of trend op 1u timeframe overeenkomt
 - Opening gap: ${openingGap ? openingGap + '%' : 'onbekend'}
 - RSI(14): ${fmt(indicators.rsi)} ${Number(indicators.rsi) > 70 ? '→ OVERBOUGHT' : Number(indicators.rsi) < 30 ? '→ OVERSOLD' : '→ neutraal'}
 - MACD: ${fmt(indicators.macd?.macd, 4)} | Histogram: ${fmt(indicators.macd?.histogram, 4)} ${indicators.macd?.histogram > 0 ? '→ bullish' : '→ bearish'}
