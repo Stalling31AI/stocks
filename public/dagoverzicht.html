@@ -1266,6 +1266,14 @@ function renderSimulaties() {
         cursor:pointer;">
         📊 Sluit dag af & bereken resultaat
       </button>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="auto-sluit-toggle" checked
+            onchange="if(this.checked) startAutoSluit(); else clearTimeout(window.autoSluitTimer);">
+          Auto-sluit om 22:05
+        </label>
+        <span id="auto-sluit-status" style="color:#94a3b8;font-size:11px;"></span>
+      </div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
@@ -1626,6 +1634,57 @@ function verwijderBuitenBeursSimulaties() {
 }
 // Direct uitvoeren bij laden van de pagina
 verwijderBuitenBeursSimulaties();
+function startAutoSluit() {
+  const nu = new Date();
+  const nlTijd = new Date(nu.toLocaleString('en-US', {
+    timeZone: 'Europe/Amsterdam'
+  }));
+  const uur = nlTijd.getHours();
+  const min = nlTijd.getMinutes();
+  const doelUur = 22;
+  const doelMin = 5;
+  let msecTotSluit = (
+    (doelUur - uur) * 60 + (doelMin - min)
+  ) * 60 * 1000 - nlTijd.getSeconds() * 1000;
+  if (msecTotSluit < 0) {
+    msecTotSluit += 24 * 60 * 60 * 1000;
+  }
+  const minuten = Math.round(msecTotSluit / 60000);
+  console.log('Auto-sluit gepland over', minuten, 'minuten (22:05)');
+  const el = document.getElementById('auto-sluit-status');
+  if (el) {
+    el.textContent = '⏰ Automatisch afsluiten om 22:05';
+  }
+  window.autoSluitTimer = setTimeout(async () => {
+    console.log('Auto-sluit gestart om 22:05');
+    const simA = JSON.parse(localStorage.getItem('simulaties') || '{}');
+    const datum = new Date().toLocaleDateString('nl-NL');
+    const openA = (simA[datum] || []).filter(s => s.resultaat === 'open');
+    if (openA.length > 0) {
+      await sluitSimulaties();
+      await sluitSimulatiesB();
+      if (Notification.permission === 'granted') {
+        new Notification('📊 Yappi Analytics', {
+          body: 'Dag afgesloten! Check je simulatie resultaten.',
+          icon: '/logo.png'
+        });
+      }
+      const el = document.getElementById('auto-sluit-status');
+      if (el) {
+        el.textContent = '✅ Dag automatisch afgesloten om 22:05';
+        el.style.color = '#16a34a';
+      }
+    } else {
+      const el = document.getElementById('auto-sluit-status');
+      if (el) {
+        el.textContent = '✅ 22:05 — geen open posities';
+        el.style.color = '#94a3b8';
+      }
+    }
+    startAutoSluit();
+  }, msecTotSluit);
+}
+startAutoSluit();
 </script>
 </body>
 </html>
