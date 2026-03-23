@@ -898,6 +898,7 @@ function initCanvas(canvasId, height) {
   const container = canvas.parentElement;
   const width = container.clientWidth;
 
+  const dpr = 1; // geen device pixel ratio scaling
   canvas.style.width = width + 'px';
   canvas.style.height = height + 'px';
   canvas.width = width;
@@ -1040,108 +1041,31 @@ function drawChart() {
   // AI lijnen
   const chartRight = PAD.left + pW;
 
-  if (aiInstapPrijs && aiSignaal === 'KOOP') {
-    ctx.strokeStyle = '#16a34a';
+  function tekenAILijn(ctx, y, kleur, label, chartRight, gestreept) {
+    if (gestreept) ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = kleur;
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 3]);
     ctx.beginPath();
-    ctx.moveTo(PAD.left, toY(aiInstapPrijs));
-    ctx.lineTo(chartRight, toY(aiInstapPrijs));
+    ctx.moveTo(PAD.left, y);
+    ctx.lineTo(chartRight, y);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = '#16a34a';
-    roundRect(ctx, chartRight+2, toY(aiInstapPrijs)-10, 46, 20, 4);
+    const lblW = ctx.measureText(label).width + 12;
+    ctx.fillStyle = kleur;
+    roundRect(ctx, chartRight + 4, y - 11, lblW, 22, 4);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 9px Inter';
+    ctx.font = 'bold 11px Inter';
     ctx.textAlign = 'left';
-    ctx.fillText('ENTRY', chartRight+5, toY(aiInstapPrijs)+4);
+    ctx.fillText(label, chartRight + 10, y + 4);
   }
-  if (aiInstapPrijs && aiSignaal === 'VERKOOP') {
-    ctx.strokeStyle = '#dc2626';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 3]);
-    ctx.beginPath();
-    ctx.moveTo(PAD.left, toY(aiInstapPrijs));
-    ctx.lineTo(chartRight, toY(aiInstapPrijs));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#dc2626';
-    roundRect(ctx, chartRight+2, toY(aiInstapPrijs)-10, 52, 20, 4);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 9px Inter';
-    ctx.textAlign = 'left';
-    ctx.fillText('VERKOOP', chartRight+5, toY(aiInstapPrijs)+4);
-  }
-  if (aiStopLoss) {
-    ctx.strokeStyle = '#dc2626';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(PAD.left, toY(aiStopLoss));
-    ctx.lineTo(chartRight, toY(aiStopLoss));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#dc2626';
-    roundRect(ctx, chartRight+2, toY(aiStopLoss)-10, 28, 20, 4);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 9px Inter';
-    ctx.textAlign = 'left';
-    ctx.fillText('SL', chartRight+5, toY(aiStopLoss)+4);
-  }
-  if (aiTarget) {
-    ctx.strokeStyle = '#16a34a';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(PAD.left, toY(aiTarget));
-    ctx.lineTo(chartRight, toY(aiTarget));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#16a34a';
-    roundRect(ctx, chartRight+2, toY(aiTarget)-10, 28, 20, 4);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 9px Inter';
-    ctx.textAlign = 'left';
-    ctx.fillText('TP', chartRight+5, toY(aiTarget)+4);
-  }
-  if (aiWeerstand) {
-    ctx.strokeStyle = '#dc2626';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(PAD.left, toY(aiWeerstand));
-    ctx.lineTo(chartRight, toY(aiWeerstand));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#dc2626';
-    roundRect(ctx, chartRight+2, toY(aiWeerstand)-10, 48, 20, 4);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 9px Inter';
-    ctx.textAlign = 'left';
-    ctx.fillText('WEERST', chartRight+5, toY(aiWeerstand)+4);
-  }
-  if (aiSteun) {
-    ctx.strokeStyle = '#16a34a';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(PAD.left, toY(aiSteun));
-    ctx.lineTo(chartRight, toY(aiSteun));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#16a34a';
-    roundRect(ctx, chartRight+2, toY(aiSteun)-10, 40, 20, 4);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 9px Inter';
-    ctx.textAlign = 'left';
-    ctx.fillText('STEUN', chartRight+5, toY(aiSteun)+4);
-  }
+
+  if (aiWeerstand) tekenAILijn(ctx, toY(aiWeerstand), '#dc2626', 'Weerstand', chartRight, true);
+  if (aiSteun) tekenAILijn(ctx, toY(aiSteun), '#16a34a', 'Steun', chartRight, true);
+  if (aiStopLoss) tekenAILijn(ctx, toY(aiStopLoss), '#dc2626', 'Stop-loss', chartRight, false);
+  if (aiTarget) tekenAILijn(ctx, toY(aiTarget), '#16a34a', 'Target', chartRight, false);
+  if (aiInstapPrijs) tekenAILijn(ctx, toY(aiInstapPrijs), '#2563eb',
+    aiSignaal === 'KOOP' ? 'Koop entry' : 'Verkoop entry', chartRight, false);
 }
 
 function drawRSI({ rsiArr }) {
