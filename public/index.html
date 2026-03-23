@@ -1473,6 +1473,18 @@ async function laadMiniDashboard() {
         <div style="margin-top:6px;font-size:11px;font-weight:600;color:${signaalKleur};">${signaalTekst}</div>
       `;
       container.appendChild(kaart);
+      if (item.symbol === currentSymbol) {
+        const prijs = last.close;
+        const prijsEl = document.getElementById('price-value');
+        if (prijsEl && prijs) {
+          prijsEl.textContent =
+            (TICKER_META[currentSymbol]?.cur || '') + ' ' +
+            prijs.toLocaleString('nl-NL', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+        }
+      }
     } catch(e) {
       console.error('Mini dashboard fout voor ' + item.symbol, e);
     }
