@@ -352,6 +352,8 @@
 </head>
 <body>
 
+<div id="fout-banner" style="display:none;background:#fee2e2;color:#dc2626;padding:8px 16px;font-size:12px;border-bottom:1px solid #fecaca;"></div>
+
 <header id="header" style="background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);position:sticky;top:0;z-index:100;">
 
   <!-- Rij 1: logo + navigatie + zoek + timeframes -->
@@ -617,6 +619,15 @@
 </main>
 
 <script>
+window.onerror = function(msg, src, line, col, err) {
+  console.error('JS Fout regel ' + line + ': ' + msg);
+  const banner = document.getElementById('fout-banner');
+  if (banner) {
+    banner.textContent = 'Fout: ' + msg + ' (regel ' + line + ')';
+    banner.style.display = 'block';
+  }
+};
+
 // ─── State ───────────────────────────────────────────────────────────────────
 let quotes = [];
 let currentSymbol = 'AAPL';
@@ -881,6 +892,147 @@ function drawAll() {
   drawCandlestick(ind);
   drawRSI(ind);
   drawMACD(ind);
+}
+
+function drawChart() {
+  const canvas = document.getElementById('chart-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Altijd 2 uur aan slots tonen op 15m = 8 slots
+  // Op 5m = 24 slots, op 1h = 2 slots
+  const slotsPerUur = {
+    '5m': 12, '15m': 4, '1h': 1, '1d': 1
+  };
+  const uurSlots = slotsPerUur[currentInterval] || 4;
+  const totaalSlots = uurSlots * 2; // altijd 2 uur
+  // Gebruik beschikbare candles, vul rest met lege slots
+  const beschikbaar = (candles || []).filter(c =>
+    c.o > 0 && c.h > 0 && c.l > 0 && c.c > 0
+  );
+  if (beschikbaar.length === 0) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '13px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText('Wacht op marktdata...', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+  // Neem laatste N candles passend in tijdvenster
+  const teTonenCandles = beschikbaar.slice(-totaalSlots);
+
+  // Bereken prijsrange alleen op basis van beschikbare candles
+  const maxP = Math.max(...teTonenCandles.map(c => c.h));
+  const minP = Math.min(...teTonenCandles.map(c => c.l));
+  const pad = (maxP - minP) * 0.1 || 1;
+  const pMax = maxP + pad;
+  const pMin = minP - pad;
+  const pRange = pMax - pMin;
+  const W = canvas.width;
+  const H = canvas.height;
+  const PAD = { top: 24, right: 72, bottom: 28, left: 8 };
+  const pW = W - PAD.left - PAD.right;
+  const pH = H - PAD.top - PAD.bottom;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#fafbfc';
+  ctx.fillRect(PAD.left, PAD.top, pW, pH);
+  // Teken op basis van totaalSlots zodat candles altijd klein zijn
+  const cW = Math.max(2, Math.floor(pW / totaalSlots * 0.6));
+  const toX = i => PAD.left + (i + 0.5) * (pW / totaalSlots);
+  const toY = p => PAD.top + pH - ((p - pMin) / pRange) * pH;
+  // Grid lijnen
+  for (let i = 0; i <= 5; i++) {
+    const y = PAD.top + (pH / 5) * i;
+    const price = pMax - (pRange / 5) * i;
+    ctx.strokeStyle = '#e8ecf0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, y);
+    ctx.lineTo(W - PAD.right, y);
+    ctx.stroke();
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px Inter';
+    ctx.textAlign = 'left';
+    ctx.fillText(price.toFixed(1), W - PAD.right + 6, y + 4);
+  }
+  // Teken candles op de juiste positie in het tijdvenster
+  teTonenCandles.forEach((c, i) => {
+    const x = toX(i);
+    const isUp = c.c >= c.o;
+
+    // Wick
+    ctx.strokeStyle = isUp ? '#15803d' : '#b91c1c';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, toY(c.h));
+    ctx.lineTo(x, toY(c.l));
+    ctx.stroke();
+    // Body
+    const bTop = toY(Math.max(c.o, c.c));
+    const bBot = toY(Math.min(c.o, c.c));
+    const bH = Math.max(1.5, bBot - bTop);
+    ctx.fillStyle = isUp ? '#dcfce7' : '#fee2e2';
+    ctx.fillRect(x - cW / 2, bTop, cW, bH);
+    ctx.strokeStyle = isUp ? '#16a34a' : '#dc2626';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x - cW / 2, bTop, cW, bH);
+  });
+  // Lege slots rechts (toekomst) - stippellijn
+  if (teTonenCandles.length < totaalSlots) {
+    const laatste = teTonenCandles[teTonenCandles.length - 1];
+    const lastX = toX(teTonenCandles.length - 1);
+    const lastY = toY(laatste.c);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(toX(totaalSlots - 1), lastY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // "Wacht op data" tekst rechts
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '11px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      '\u2190 ' + teTonenCandles.length + '/' + totaalSlots + ' candles',
+      toX(Math.floor((teTonenCandles.length + totaalSlots) / 2)),
+      PAD.top + pH / 2
+    );
+  }
+  // Volume bars onderaan
+  const maxVol = Math.max(...teTonenCandles.map(c => c.v || 0));
+  if (maxVol > 0) {
+    const volH = pH * 0.12;
+    teTonenCandles.forEach((c, i) => {
+      if (!c.v) return;
+      const x = toX(i);
+      const isUp = c.c >= c.o;
+      const bH = (c.v / maxVol) * volH;
+      ctx.fillStyle = isUp ? 'rgba(22,163,74,.25)' : 'rgba(220,38,38,.25)';
+      ctx.fillRect(x - cW / 2, PAD.top + pH - bH, cW, bH);
+    });
+  }
+  // Tijdlabels x-as
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '10px Inter';
+  ctx.textAlign = 'center';
+  const labelStap = Math.max(1, Math.floor(totaalSlots / 6));
+  teTonenCandles.forEach((c, i) => {
+    if (i % labelStap !== 0) return;
+    const d = new Date(c.t);
+    const lbl = currentInterval === '1d'
+      ? d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
+      : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' });
+    ctx.fillText(lbl, toX(i), H - 6);
+  });
+  // Border
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(PAD.left, PAD.top, pW, pH);
+  // AI lijnen tekenen (entry, stop, target, steun, weerstand)
+  // ... behoud bestaande AI lijnen code hier
 }
 
 function drawCandlestick({ bbArr, ema20, ema50 }) {
