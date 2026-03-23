@@ -722,7 +722,14 @@ async function loadData() {
     if (!res.ok) { const e = await res.json(); throw new Error(e.error || res.statusText); }
     const data = await res.json();
     console.log('Aantal candles ontvangen:', data.quotes?.length);
-    quotes = data.quotes || [];
+    quotes = (data.quotes || []).filter(q =>
+      q.open != null &&
+      q.close != null &&
+      q.high != null &&
+      q.low != null &&
+      q.open > 0 &&
+      q.close > 0
+    );
 
     if (!quotes || quotes.length === 0) {
       console.warn('Geen quotes ontvangen voor', currentSymbol, currentInterval);
@@ -760,13 +767,13 @@ function updatePriceDisplay() {
   if (!quotes.length) return;
   const last  = quotes[quotes.length - 1];
   const prev  = quotes.length > 1 ? quotes[quotes.length - 2] : last;
-  const diff  = last.close - prev.close;
-  const pct   = (diff / prev.close * 100).toFixed(2);
+  const diff  = (last.close != null && prev.close != null) ? last.close - prev.close : 0;
+  const pct   = prev.close ? (diff / prev.close * 100).toFixed(2) : '0.00';
   const sign  = diff >= 0 ? '+' : '';
 
-  document.getElementById('price-value').textContent  = last.close.toFixed(2);
+  document.getElementById('price-value').textContent  = (last.close != null ? Number(last.close).toFixed(2) : '—');
   const ch = document.getElementById('price-change');
-  ch.textContent  = `${sign}${diff.toFixed(2)} (${sign}${pct}%)`;
+  ch.textContent  = `${sign}${(diff != null ? Number(diff).toFixed(2) : '—')} (${sign}${pct}%)`;
   ch.className    = diff >= 0 ? 'up' : 'down';
 }
 
@@ -877,6 +884,10 @@ function drawAll() {
 }
 
 function drawCandlestick({ bbArr, ema20, ema50 }) {
+  if (!quotes || quotes.length === 0) return;
+  const validCandles = quotes.filter(c => c.o > 0 && c.h > 0 && c.l > 0 && c.c > 0 || c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
+  if (validCandles.length === 0) return;
+
   const { w, h } = setCanvasSize(chartCanvas, 360);
   const ctx = chartCanvas.getContext('2d');
   const pad = { top: 12, bottom: 24, left: 8, right: 60 };
@@ -1367,26 +1378,26 @@ async function laadPremarket() {
     const slotVandaag = vandaag.close;
 
     // Opening gap berekenen
-    const gap = ((openVandaag - slotGisteren) / slotGisteren * 100).toFixed(2);
+    const gap = (slotGisteren && openVandaag ? ((openVandaag - slotGisteren) / slotGisteren * 100) : 0).toFixed(2);
     const gapKleur = gap >= 0 ? '#16a34a' : '#dc2626';
     const gapRichting = gap >= 0 ? '▲' : '▼';
     // Week trend (laatste 5 dagen)
     const week = quotes.slice(-5);
     const weekStart = week[0].close;
     const weekEind = week[week.length-1].close;
-    const weekPct = ((weekEind - weekStart) / weekStart * 100).toFixed(2);
+    const weekPct = (weekStart ? ((weekEind - weekStart) / weekStart * 100) : 0).toFixed(2);
     const weekKleur = weekPct >= 0 ? '#16a34a' : '#dc2626';
     // 52 week high/low
-    const jaar = (quotes || []).slice(-252);
-    const hoogJaar = Math.max(...jaar.map(q => q.high)).toFixed(2);
-    const laagJaar = Math.min(...jaar.map(q => q.low)).toFixed(2);
-    const afstandHoog = ((slotVandaag - hoogJaar) / hoogJaar * 100).toFixed(1);
+    const jaar = (quotes || []).slice(-252).filter(q => q.high != null && q.low != null);
+    const hoogJaar = jaar.length ? Math.max(...jaar.map(q => q.high)).toFixed(2) : '—';
+    const laagJaar = jaar.length ? Math.min(...jaar.map(q => q.low)).toFixed(2) : '—';
+    const afstandHoog = (slotVandaag != null && hoogJaar !== '—' && hoogJaar > 0 ? ((slotVandaag - hoogJaar) / hoogJaar * 100) : 0).toFixed(1);
     // Gemiddeld dagvolume
     const gemVolume = Math.floor(quotes.slice(-20).reduce((a,b) => a + (b.volume||0), 0) / 20);
     // Support en resistance (simpel: recent high/low)
-    const recent = (quotes || []).slice(-10);
-    const resistance = Math.max(...recent.map(q => q.high)).toFixed(2);
-    const support = Math.min(...recent.map(q => q.low)).toFixed(2);
+    const recent = (quotes || []).slice(-10).filter(q => q.high != null && q.low != null);
+    const resistance = recent.length ? Math.max(...recent.map(q => q.high)).toFixed(2) : '—';
+    const support = recent.length ? Math.min(...recent.map(q => q.low)).toFixed(2) : '—';
     // Wat te verwachten vandaag
     const closes = (quotes || []).map(q => q.close);
     const rsi = berekenRSI(closes);
@@ -1413,8 +1424,8 @@ async function laadPremarket() {
       <div style="background:#f8fafc;border-radius:8px;padding:12px;">
         <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Opening gap</div>
         <div style="font-size:22px;font-weight:700;color:${gapKleur};">${gapRichting} ${gap}%</div>
-        <div style="font-size:11px;color:#64748b;margin-top:2px;">Gisteren slot: ${slotGisteren.toFixed(2)}</div>
-        <div style="font-size:11px;color:#64748b;">Open vandaag: ${openVandaag.toFixed(2)}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Gisteren slot: ${slotGisteren != null ? Number(slotGisteren).toFixed(2) : '—'}</div>
+        <div style="font-size:11px;color:#64748b;">Open vandaag: ${openVandaag != null ? Number(openVandaag).toFixed(2) : '—'}</div>
       </div>
       <div style="background:#f8fafc;border-radius:8px;padding:12px;">
         <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Week trend</div>
@@ -1434,14 +1445,14 @@ async function laadPremarket() {
       </div>
       <div style="grid-column:1/-1;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;font-size:12px;color:#92400e;">
         💡 <strong>Daytrade tip voor vandaag:</strong>
-        ${rsi < 35
-          ? 'RSI is oversold (' + rsi.toFixed(0) + '). Wacht op eerste groene kaars na 09:15 als bevestiging voor long positie. Stop-loss onder ' + support + '.'
-          : rsi > 65
-          ? 'RSI is overbought (' + rsi.toFixed(0) + '). Vermijd long posities bij opening. Short mogelijk als koers onder ' + support + ' breekt.'
+        ${rsi != null && rsi < 35
+          ? 'RSI is oversold (' + Number(rsi).toFixed(0) + '). Wacht op eerste groene kaars na 09:15 als bevestiging voor long positie. Stop-loss onder ' + support + '.'
+          : rsi != null && rsi > 65
+          ? 'RSI is overbought (' + Number(rsi).toFixed(0) + '). Vermijd long posities bij opening. Short mogelijk als koers onder ' + support + ' breekt.'
           : gap > 1
           ? 'Positieve gap van ' + gap + '%. Koopkans als koers boven opening blijft na eerste 15 minuten. Anders gap-fill mogelijk.'
           : gap < -1
-          ? 'Negatieve gap van ' + gap + '%. Wacht op bodem vorming. Koopkans bij gap-fill richting ' + slotGisteren.toFixed(2) + '.'
+          ? 'Negatieve gap van ' + gap + '%. Wacht op bodem vorming. Koopkans bij gap-fill richting ' + (slotGisteren != null ? Number(slotGisteren).toFixed(2) : '—') + '.'
           : 'Wacht de eerste 30 minuten af (09:00-09:30) voor de markt richting kiest. Handel pas na bevestiging.'}
       </div>
     `;
@@ -1495,12 +1506,12 @@ async function laadMiniDashboard() {
     try {
       const res = await fetch(`/api/quote/${item.symbol}?interval=15m`);
       const data = await res.json();
-      const quotes = data.quotes || [];
+      const quotes = (data.quotes || []).filter(q => q.close != null && q.close > 0);
       if (quotes.length < 2) continue;
       const closes = (quotes || []).map(q => q.close);
       const last = quotes[quotes.length - 1];
       const prev = quotes[quotes.length - 2];
-      const pct = ((last.close - prev.close) / prev.close * 100).toFixed(2);
+      const pct = (last.close != null && prev.close ? ((last.close - prev.close) / prev.close * 100) : 0).toFixed(2);
       const rsi = berekenRSI(closes);
       const macdData = berekenMACD(closes);
 
@@ -1533,11 +1544,11 @@ async function laadMiniDashboard() {
           <span style="font-size:13px;font-weight:700;">${item.vlag} ${item.label}</span>
           <span style="font-size:16px;" title="${signaalTekst}">${signaal}</span>
         </div>
-        <div style="font-size:18px;font-weight:700;margin-bottom:2px;">${last.close.toFixed(2)}</div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:2px;">${last.close != null ? Number(last.close).toFixed(2) : '—'}</div>
         <div style="font-size:12px;font-weight:600;color:${prijsKleur};margin-bottom:8px;">${pct >= 0 ? '▲ +' : '▼ '}${pct}%</div>
         <div style="display:flex;justify-content:space-between;font-size:11px;">
-          <span>RSI <strong style="color:${rsiKleur}">${rsi.toFixed(0)}</strong></span>
-          <span>MACD <strong style="color:${macdKleur}">${macdRichting} ${macdData.macd.toFixed(1)}</strong></span>
+          <span>RSI <strong style="color:${rsiKleur}">${rsi != null ? Number(rsi).toFixed(0) : '—'}</strong></span>
+          <span>MACD <strong style="color:${macdKleur}">${macdRichting} ${macdData.macd != null ? Number(macdData.macd).toFixed(1) : '—'}</strong></span>
         </div>
         <div style="margin-top:6px;font-size:11px;font-weight:600;color:${signaalKleur};">${signaalTekst}</div>
       `;
