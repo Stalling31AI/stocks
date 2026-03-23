@@ -73,11 +73,84 @@ tr:hover td { background:#f8fafc; }
       <div style="font-size:18px;font-weight:700;color:#2563eb;" id="analyse-tijd">—</div>
     </div>
   </div>
-  <!-- Analyseer knop -->
-  <button id="analyse-btn" onclick="analyseAlleAandelen()"
-    style="padding:12px 24px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;margin-bottom:20px;">
-    🔍 Analyseer alle 7 aandelen
-  </button>
+  <!-- Aandeel selectie -->
+  <div style="background:#fff;border-radius:12px;padding:16px 20px;
+margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+  <div style="font-size:12px;font-weight:600;color:#94a3b8;
+    text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">
+    Selecteer aandelen voor analyse
+  </div>
+  <div id="aandeel-selectie" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-ASML.AS">
+      <input type="checkbox" value="ASML.AS" checked
+        onchange="updateSelectie(this)"> 🇳🇱 ASML
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-ADYEN.AS">
+      <input type="checkbox" value="ADYEN.AS" checked
+        onchange="updateSelectie(this)"> 🇳🇱 ADYEN
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-NVDA">
+      <input type="checkbox" value="NVDA" checked
+        onchange="updateSelectie(this)"> 🇺🇸 NVDA
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-TSLA">
+      <input type="checkbox" value="TSLA" checked
+        onchange="updateSelectie(this)"> 🇺🇸 TSLA
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-RHM.DE">
+      <input type="checkbox" value="RHM.DE" checked
+        onchange="updateSelectie(this)"> 🇩🇪 Rheinmetall
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-BA">
+      <input type="checkbox" value="BA"
+        onchange="updateSelectie(this)"> 🇺🇸 Boeing
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-LMT">
+      <input type="checkbox" value="LMT"
+        onchange="updateSelectie(this)"> 🇺🇸 Lockheed
+    </label>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <button id="analyse-btn" onclick="analyseAlleAandelen()"
+      style="padding:10px 20px;background:#2563eb;color:#fff;
+      border:none;border-radius:10px;font-weight:700;font-size:13px;
+      cursor:pointer;">
+      🔍 Analyseer geselecteerde aandelen
+    </button>
+    <button onclick="selecteerAlle(true)"
+      style="font-size:12px;padding:6px 12px;border:1.5px solid #e2e8f0;
+      border-radius:7px;background:#fff;cursor:pointer;color:#64748b;">
+      Alles aan
+    </button>
+    <button onclick="selecteerAlle(false)"
+      style="font-size:12px;padding:6px 12px;border:1.5px solid #e2e8f0;
+      border-radius:7px;background:#fff;cursor:pointer;color:#64748b;">
+      Alles uit
+    </button>
+    <span id="selectie-info" style="font-size:12px;color:#94a3b8;"></span>
+  </div>
+</div>
   <!-- Voortgang -->
   <div id="voortgang-wrap" style="display:none;background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     <div style="font-size:13px;font-weight:600;color:#64748b;margin-bottom:8px;" id="voortgang-titel">Bezig...</div>
@@ -233,6 +306,31 @@ const BEURSTIJDEN = {
   'BA':       { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
   'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
 };
+let geselecteerdeAandelen = ['ASML.AS','ADYEN.AS','NVDA','TSLA','RHM.DE'];
+function updateSelectie(cb) {
+  const lbl = document.getElementById('lbl-' + cb.value);
+  if (cb.checked) {
+    if (!geselecteerdeAandelen.includes(cb.value)) {
+      geselecteerdeAandelen.push(cb.value);
+    }
+    if (lbl) lbl.style.borderColor = '#2563eb';
+    if (lbl) lbl.style.color = '#2563eb';
+  } else {
+    geselecteerdeAandelen = geselecteerdeAandelen.filter(s => s !== cb.value);
+    if (lbl) lbl.style.borderColor = '#e2e8f0';
+    if (lbl) lbl.style.color = '#64748b';
+  }
+  document.getElementById('selectie-info').textContent =
+    geselecteerdeAandelen.length + ' aandelen geselecteerd';
+}
+function selecteerAlle(aan) {
+  geselecteerdeAandelen = aan ? WATCHLIST.map(w => w.symbol) : [];
+  document.querySelectorAll('#aandeel-selectie input[type=checkbox]')
+    .forEach(cb => {
+      cb.checked = aan;
+      updateSelectie(cb);
+    });
+}
 function getBeursstatus(symbol) {
   const info = BEURSTIJDEN[symbol];
   if (!info) return null;
@@ -367,14 +465,18 @@ async function analyseAlleAandelen() {
   document.getElementById('voortgang-wrap').style.display = 'block';
   huidigeAnalyses = [];
   renderLadenKaarten();
-  for (let i = 0; i < WATCHLIST.length; i++) {
-    const item = WATCHLIST[i];
-    const pct = Math.round((i / WATCHLIST.length) * 100);
+  const teAnalyseren = WATCHLIST.filter(w =>
+    geselecteerdeAandelen.includes(w.symbol)
+  );
+  for (let i = 0; i < teAnalyseren.length; i++) {
+    const item = teAnalyseren[i];
+    const pct = Math.round((i / teAnalyseren.length) * 100);
     document.getElementById('voortgang-fill').style.width = pct + '%';
     document.getElementById('voortgang-titel').textContent =
-      `Analyseren: ${item.vlag} ${item.label} (${i+1}/${WATCHLIST.length})`;
+      'Analyseren: ' + item.vlag + ' ' + item.label +
+      ' (' + (i+1) + '/' + teAnalyseren.length + ')';
     document.getElementById('voortgang-status').textContent =
-      i > 0 ? WATCHLIST.slice(0,i).map(w=>w.label).join(', ') + ' klaar' : '';
+      i > 0 ? teAnalyseren.slice(0,i).map(w=>w.label).join(', ') + ' klaar' : '';
     try {
       const quoteRes = await fetch(`/api/quote/${item.symbol}?interval=15m`);
       const quoteData = await quoteRes.json();
@@ -521,7 +623,7 @@ async function analyseAlleAandelen() {
     document.getElementById('tel-wacht').textContent);
   slaAnalysesOp();
   btn.disabled = false;
-  btn.textContent = '🔍 Analyseer alle 7 aandelen';
+  btn.textContent = '🔍 Analyseer geselecteerde aandelen';
 }
 function slaAnalysesOp() {
   const datum = new Date().toLocaleDateString('nl-NL');
