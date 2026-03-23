@@ -703,7 +703,6 @@ function selectTf(tf, el) {
     b.classList.remove('actief');
   });
   if (el) el.classList.add('actief');
-  resetSignal();
   loadData(currentSymbol);
 }
 document.querySelectorAll('.interval-btns button').forEach(btn => {
