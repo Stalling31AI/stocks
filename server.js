@@ -163,6 +163,15 @@ Trend laatste 3 kaarsen: ${recent.slice(-3).map(q =>
 ).join(' ')}
 AANDEEL: ${aandeelRegels[symbol] || 'Standaard regels.'}
 TIJDSTIP: ${dagdeel}
+BELANGRIJK - WANNEER WELK SIGNAAL:
+KOOP: alleen als er een concreet en betrouwbaar instapmoment is op basis van de technische analyse. Geef dan een specifieke entry prijs, stop-loss en target.
+VERKOOP: alleen als je een bestaande longpositie zou sluiten of een short zou openen op basis van duidelijke verkoopsignalen.
+WACHT: als het signaal onduidelijk is, de betrouwbaarheid te laag is, of als het beter is om de markt af te wachten. Bij WACHT: geef GEEN entry, stop-loss of target. Zet entry, stop_loss, target op null. Leg in de redenering uit WANNEER je wel zou instappen (bijv "wacht op RSI onder 30" of "instappen als koers boven 1155 breekt met volume").
+NIET MEER KOPEN VANDAAG: als de dag al te ver gevorderd is of de kans op een goed instapmoment voorbij is. Geef ook geen entry meer.
+Zo weet de gebruiker altijd:
+- KOOP/VERKOOP = nu actie ondernemen met concrete prijzen
+- WACHT = wachten op betere omstandigheden, uitleg waarom
+- NIET MEER KOPEN VANDAAG = dag afschrijven voor dit aandeel
 Geef ALLEEN dit JSON object terug (geen tekst eromheen):
 {
   "signaal": "KOOP" of "VERKOOP" of "WACHT",
