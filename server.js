@@ -166,6 +166,17 @@ app.post('/api/analyze', async (req, res) => {
       'BA': 'Aerospace/defensie. US markturen leidend (14:30-21:00 NL). Volg Pentagon nieuws.',
       'LMT': 'Defensie. Gevoelig voor overheidscontracten. US markturen leidend.',
     };
+    const isEuropees = ['ASML.AS','ADYEN.AS','RHM.DE'].includes(symbol);
+    const handelVenster = isEuropees ? '09:30-17:30' : '15:30-22:00';
+    const binnenVenster = (() => {
+      const [open, sluit] = handelVenster.split('-');
+      const [oH, oM] = open.split(':').map(Number);
+      const [sH, sM] = sluit.split(':').map(Number);
+      const nlUur = parseInt(amsterdamTijd.split(':')[0]);
+      const nlMin = parseInt(amsterdamTijd.split(':')[1]);
+      const nuMin = nlUur * 60 + nlMin;
+      return nuMin >= oH * 60 + oM && nuMin < sH * 60 + sM;
+    })();
     const prompt = `STRIKTE REGELS - GEEN UITZONDERINGEN:
 1. Baseer je analyse UITSLUITEND op de meegeleverde prijsdata en indicatoren. Verzin GEEN nieuws.
 2. Als je geen nieuws hebt, zet nieuws_samenvatting op "Geen nieuws beschikbaar - analyse puur technisch"
@@ -199,6 +210,8 @@ Trend laatste 3 kaarsen: ${recent.slice(-3).map(q =>
 ).join(' ')}
 AANDEEL: ${aandeelRegels[symbol] || 'Standaard regels.'}
 TIJDSTIP: ${dagdeel}
+HANDELVENSTER: ${handelVenster} NL tijd
+Status: ${binnenVenster ? '✅ Binnen handelvenster' : '❌ Buiten handelvenster - geef NIET MEER KOPEN VANDAAG'}
 BELANGRIJK - WANNEER WELK SIGNAAL:
 KOOP: alleen als er een concreet en betrouwbaar instapmoment is op basis van de technische analyse. Geef dan een specifieke entry prijs, stop-loss en target.
 VERKOOP: alleen als je een bestaande longpositie zou sluiten of een short zou openen op basis van duidelijke verkoopsignalen.
