@@ -765,8 +765,23 @@ async function loadData() {
     document.getElementById('symbol-title').textContent = sym;
     document.getElementById('symbol-name').textContent  = data.meta?.longName || '';
 
+    document.getElementById('loading-overlay')?.classList.remove('show');
+    document.getElementById('chart-canvas').style.display = 'block';
+
+    candles = quotes.map(q => ({
+      t: new Date(q.date).getTime(),
+      o: +q.open,
+      h: +q.high,
+      l: +q.low,
+      c: +q.close,
+      v: q.volume || 0
+    })).filter(c => c.o > 0 && c.h > 0 && c.l > 0 && c.c > 0);
+    console.log('Candles klaar voor chart:', candles.length);
+
     updatePriceDisplay();
-    drawAll();
+    drawChart();
+    drawRSI(getIndicators());
+    drawMACD(getIndicators());
     checkAlerts(quotes, getIndicators(), currentSymbol);
     document.getElementById('ai-result').classList.remove('visible');
     updateBeursStatus(currentSymbol);
