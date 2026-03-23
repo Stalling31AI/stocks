@@ -227,16 +227,16 @@ KOOP signaal alleen als ALLE van deze punten gelden:
 2. MACD histogram positief OF aan het omkeren
 3. Volume ratio boven 0.8 (minimaal normaal volume)
 4. Koers NIET al gestegen meer dan 1% vandaag
-5. Tijdstip tussen 09:30 en 15:30
+5. Tijdstip tussen ${handelVenster}
 VERKOOP signaal alleen als ALLE van deze punten gelden:
 1. RSI boven 60 (overbought of richting overbought)
 2. MACD histogram negatief OF aan het omkeren
 3. Volume ratio boven 0.8
 4. Koers NIET al gedaald meer dan 1.5% vandaag
-5. Tijdstip tussen 09:30 en 15:30
+5. Tijdstip tussen ${handelVenster}
 WACHT altijd als:
 - Volume ratio onder 0.5 (te weinig volume)
-- Tijdstip voor 09:30 of na 15:30
+- Tijdstip voor ${handelVenster.split('-')[0]} of na ${handelVenster.split('-')[1]}
 - RSI tussen 40 en 60 zonder duidelijk momentum
 - Opening gap groter dan 2% (te volatiel)
 - Niet aan bovenstaande KOOP of VERKOOP criteria voldaan
