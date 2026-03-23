@@ -203,6 +203,38 @@ Zo weet de gebruiker altijd:
 - KOOP/VERKOOP = nu actie ondernemen met concrete prijzen
 - WACHT = wachten op betere omstandigheden, uitleg waarom
 - NIET MEER KOPEN VANDAAG = dag afschrijven voor dit aandeel
+STRIKTE REGELS - GEEN UITZONDERINGEN:
+KOOP signaal alleen als ALLE van deze punten gelden:
+1. RSI onder 40 (oversold of richting oversold)
+2. MACD histogram positief OF aan het omkeren
+3. Volume ratio boven 0.8 (minimaal normaal volume)
+4. Koers NIET al gestegen meer dan 1% vandaag
+5. Tijdstip tussen 09:30 en 15:30
+VERKOOP signaal alleen als ALLE van deze punten gelden:
+1. RSI boven 60 (overbought of richting overbought)
+2. MACD histogram negatief OF aan het omkeren
+3. Volume ratio boven 0.8
+4. Koers NIET al gedaald meer dan 1.5% vandaag
+5. Tijdstip tussen 09:30 en 15:30
+WACHT altijd als:
+- Volume ratio onder 0.5 (te weinig volume)
+- Tijdstip voor 09:30 of na 15:30
+- RSI tussen 40 en 60 zonder duidelijk momentum
+- Opening gap groter dan 2% (te volatiel)
+- Niet aan bovenstaande KOOP of VERKOOP criteria voldaan
+ENTRY REGELS:
+- Entry maximaal 0.3% van huidige koers
+- Stop-loss maximaal 1% onder entry
+- Target minimaal 2x stop-loss afstand (R/R minimaal 1:2)
+- Geen entry als R/R onder 1:1.5
+NIEUWS:
+- Verzin GEEN nieuws
+- Als geen nieuws beschikbaar: nieuws_samenvatting = "Analyse puur technisch"
+- nieuws_sentiment = "NEUTRAAL" als geen nieuws
+VERTROUWEN:
+- Onder 50%: altijd WACHT
+- 50-65%: KOOP of VERKOOP mogelijk maar voorzichtig
+- Boven 65%: sterke bevestiging van alle criteria vereist
 Geef ALLEEN dit JSON object terug (geen tekst eromheen):
 {
   "signaal": "KOOP" of "VERKOOP" of "WACHT",
