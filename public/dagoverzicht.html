@@ -379,9 +379,11 @@ async function analyseAlleAandelen() {
       const quoteRes = await fetch(`/api/quote/${item.symbol}?interval=15m`);
       const quoteData = await quoteRes.json();
       const quotes = quoteData.quotes || [];
-      if (quotes.length < 10) throw new Error('Te weinig data');
+      const last = quotes.length > 0
+        ? quotes[quotes.length - 1]
+        : null;
+      if (quotes.length < 2) throw new Error('Te weinig data');
       const closes = quotes.map(q => q.close);
-      const last = quotes[quotes.length-1];
       const rsi = berekenRSI(closes);
       const macdData = berekenMACD(closes);
       const bb = berekenBollinger(closes);
@@ -393,7 +395,7 @@ async function analyseAlleAandelen() {
            / quotes[quotes.length-1].close * 100).toFixed(2)
         : null;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 90000);
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
       const analyseRes = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -485,7 +487,9 @@ async function analyseAlleAandelen() {
       }
       const fout = {
         symbol: item.symbol, label: item.label, vlag: item.vlag,
-        prijs: last?.close,
+        prijs: quotes?.length > 0
+          ? quotes[quotes.length-1]?.close
+          : null,
         signaal: 'FOUT', actie: 'FOUT',
         redenering: e.name === 'AbortError'
           ? 'Analyse duurde te lang. Probeer later opnieuw tijdens beursopeningstijden.'
