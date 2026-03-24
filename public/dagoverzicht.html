@@ -1968,10 +1968,6 @@ async function voerAutoAnalyseUit() {
     updateAutoAnalyseStatus();
     return;
   }
-  if (document.hidden) {
-    console.log('Auto-analyse: pagina niet zichtbaar');
-    return;
-  }
   const tijdstip = new Date().toLocaleTimeString('nl-NL', {
     hour: '2-digit', minute: '2-digit'
   });
