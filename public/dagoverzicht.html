@@ -1208,74 +1208,125 @@ async function sluitSimulaties() {
   const simulaties = JSON.parse(
     localStorage.getItem('simulaties') || '{}'
   );
-  const dagSimulaties = simulaties[datum] || [];
-  const openSimulaties = dagSimulaties.filter(s =>
-    s.resultaat === 'open'
-  );
-  if (openSimulaties.length === 0) {
+  const dagSims = simulaties[datum] || [];
+  const open = dagSims.filter(s => s.resultaat === 'open');
+  if (open.length === 0) {
     alert('Geen open simulaties om af te sluiten.');
     return;
   }
   const btn = document.getElementById('sluit-btn');
   if (btn) { btn.textContent = '⏳ Bezig...'; btn.disabled = true; }
-  for (const sim of openSimulaties) {
+  for (const sim of open) {
     try {
-      // Haal dagkoersen op
       const res = await fetch(
         `/api/quote/${sim.symbol}?interval=15m`
       );
       const data = await res.json();
       const quotes = data.quotes || [];
       if (quotes.length === 0) continue;
-      const slotkoers = quotes[quotes.length-1].close;
-      const hoogsteKoers = Math.max(...quotes.map(q => q.high));
-      const laagsteKoers = Math.min(...quotes.map(q => q.low));
-      sim.slotkoers = +slotkoers.toFixed(2);
-      // Check of entry bereikt is
-      if (sim.signaal === 'KOOP') {
-        const entryBereikt = laagsteKoers <= sim.entry;
-        sim.entry_bereikt = entryBereikt;
+      // Vind candles NA het tijdstip van de analyse
+      const [simUur, simMin] = sim.tijdstip.split(':').map(Number);
+      const simMinuten = simUur * 60 + simMin;
+      // Filter candles die na de analyse zijn
+      const relevantCandles = quotes.filter(q => {
+        const d = new Date(q.date);
+        const nlTijd = new Date(d.toLocaleString('en-US', {
+          timeZone: 'Europe/Amsterdam'
+        }));
+        const candleMinuten = nlTijd.getHours() * 60 +
+          nlTijd.getMinutes();
+        return candleMinuten >= simMinuten;
+      });
+      if (relevantCandles.length === 0) {
+        sim.entry_bereikt = false;
+        sim.resultaat = 'entry_niet_bereikt';
+        sim.winst = 0;
+        continue;
+      }
+      // Loop door candles in volgorde
+      let entryBereikt = false;
+      let entryTijdstip = null;
+      let resultaat = 'open';
+      let slotkoers = relevantCandles[relevantCandles.length-1].close;
+      let winst = 0;
+      for (const candle of relevantCandles) {
+        const d = new Date(candle.date);
+        const nlTijd = new Date(d.toLocaleString('en-US', {
+          timeZone: 'Europe/Amsterdam'
+        }));
+        const tijdstip = nlTijd.getHours().toString().padStart(2,'0') +
+          ':' + nlTijd.getMinutes().toString().padStart(2,'0');
         if (!entryBereikt) {
-          // Koers is nooit zo laag geweest — geen aankoop
-          sim.resultaat = 'entry_niet_bereikt';
-          sim.winst = 0;
-        } else if (hoogsteKoers >= sim.target) {
-          // Target bereikt
-          sim.resultaat = 'target_bereikt';
-          sim.winst = +((sim.target - sim.entry) * sim.aantal).toFixed(2);
-        } else if (laagsteKoers <= sim.stop_loss) {
-          // Stop-loss geraakt
-          sim.resultaat = 'stop_geraakt';
-          sim.winst = +((sim.stop_loss - sim.entry) * sim.aantal).toFixed(2);
-        } else {
-          // Positie open aan einde dag
-          sim.resultaat = 'einde_dag';
-          sim.winst = +((slotkoers - sim.entry) * sim.aantal).toFixed(2);
+          if (sim.signaal === 'KOOP' && candle.low <= sim.entry) {
+            entryBereikt = true;
+            entryTijdstip = tijdstip;
+          } else if (sim.signaal === 'VERKOOP' &&
+            candle.high >= sim.entry) {
+            entryBereikt = true;
+            entryTijdstip = tijdstip;
+          }
         }
-      } else if (sim.signaal === 'VERKOOP') {
-        const entryBereikt = hoogsteKoers >= sim.entry;
-        sim.entry_bereikt = entryBereikt;
-        if (!entryBereikt) {
-          sim.resultaat = 'entry_niet_bereikt';
-          sim.winst = 0;
-        } else if (laagsteKoers <= sim.target) {
-          sim.resultaat = 'target_bereikt';
-          sim.winst = +((sim.entry - sim.target) * sim.aantal).toFixed(2);
-        } else if (hoogsteKoers >= sim.stop_loss) {
-          sim.resultaat = 'stop_geraakt';
-          sim.winst = +((sim.entry - sim.stop_loss) * sim.aantal).toFixed(2);
-        } else {
-          sim.resultaat = 'einde_dag';
-          sim.winst = +((sim.entry - slotkoers) * sim.aantal).toFixed(2);
+        if (entryBereikt) {
+          if (sim.signaal === 'KOOP') {
+            // Stop-loss eerst (worst case als beide in zelfde candle)
+            if (candle.low <= sim.stop_loss) {
+              resultaat = 'stop_geraakt';
+              winst = +((sim.stop_loss - sim.entry) *
+                sim.aantal).toFixed(2);
+              slotkoers = sim.stop_loss;
+              break;
+            }
+            if (candle.high >= sim.target) {
+              resultaat = 'target_bereikt';
+              winst = +((sim.target - sim.entry) *
+                sim.aantal).toFixed(2);
+              slotkoers = sim.target;
+              break;
+            }
+          } else if (sim.signaal === 'VERKOOP') {
+            if (candle.high >= sim.stop_loss) {
+              resultaat = 'stop_geraakt';
+              winst = +((sim.entry - sim.stop_loss) *
+                sim.aantal).toFixed(2);
+              slotkoers = sim.stop_loss;
+              break;
+            }
+            if (candle.low <= sim.target) {
+              resultaat = 'target_bereikt';
+              winst = +((sim.entry - sim.target) *
+                sim.aantal).toFixed(2);
+              slotkoers = sim.target;
+              break;
+            }
+          }
         }
       }
+      // Als positie nog open is aan einde dag
+      if (entryBereikt && resultaat === 'open') {
+        resultaat = 'einde_dag';
+        if (sim.signaal === 'KOOP') {
+          winst = +((slotkoers - sim.entry) *
+            sim.aantal).toFixed(2);
+        } else {
+          winst = +((sim.entry - slotkoers) *
+            sim.aantal).toFixed(2);
+        }
+      }
+      sim.entry_bereikt = entryBereikt;
+      sim.entryTijdstip = entryTijdstip;
+      sim.resultaat = entryBereikt ? resultaat : 'entry_niet_bereikt';
+      sim.slotkoers = +slotkoers.toFixed(2);
+      sim.winst = entryBereikt ? winst : 0;
     } catch(e) {
       console.error('Fout voor', sim.symbol, e.message);
     }
   }
   localStorage.setItem('simulaties', JSON.stringify(simulaties));
   renderSimulaties();
-  if (btn) { btn.textContent = '📊 Sluit dag af'; btn.disabled = false; }
+  if (btn) {
+    btn.textContent = '📊 Sluit dag af';
+    btn.disabled = false;
+  }
 }
 
 function renderSimulaties() {
@@ -1495,31 +1546,109 @@ async function sluitSimulatiesB() {
       const data = await res.json();
       const quotes = data.quotes || [];
       if (quotes.length === 0) continue;
-      const slotkoers = quotes[quotes.length-1].close;
-      const hoogste = Math.max(...quotes.map(q => q.high));
-      const laagste = Math.min(...quotes.map(q => q.low));
-      sim.slotkoers = +slotkoers.toFixed(2);
-      sim.entry_bereikt = laagste <= sim.entry;
-      if (!sim.entry_bereikt) {
+      // Vind candles NA het tijdstip van de analyse
+      const [simUur, simMin] = sim.tijdstip.split(':').map(Number);
+      const simMinuten = simUur * 60 + simMin;
+      // Filter candles die na de analyse zijn
+      const relevantCandles = quotes.filter(q => {
+        const d = new Date(q.date);
+        const nlTijd = new Date(d.toLocaleString('en-US', {
+          timeZone: 'Europe/Amsterdam'
+        }));
+        const candleMinuten = nlTijd.getHours() * 60 +
+          nlTijd.getMinutes();
+        return candleMinuten >= simMinuten;
+      });
+      if (relevantCandles.length === 0) {
+        sim.entry_bereikt = false;
         sim.resultaat = 'entry_niet_bereikt';
         sim.winst = 0;
-      } else if (hoogste >= sim.target) {
-        sim.resultaat = 'target_bereikt';
-        sim.winst = +((sim.target - sim.entry) * sim.aantal).toFixed(2);
-      } else if (laagste <= sim.stop_loss) {
-        sim.resultaat = 'stop_geraakt';
-        sim.winst = +((sim.stop_loss - sim.entry) * sim.aantal).toFixed(2);
-      } else {
-        sim.resultaat = 'einde_dag';
-        sim.winst = +((slotkoers - sim.entry) * sim.aantal).toFixed(2);
+        continue;
       }
+      // Loop door candles in volgorde
+      let entryBereikt = false;
+      let entryTijdstip = null;
+      let resultaat = 'open';
+      let slotkoers = relevantCandles[relevantCandles.length-1].close;
+      let winst = 0;
+      for (const candle of relevantCandles) {
+        const d = new Date(candle.date);
+        const nlTijd = new Date(d.toLocaleString('en-US', {
+          timeZone: 'Europe/Amsterdam'
+        }));
+        const tijdstip = nlTijd.getHours().toString().padStart(2,'0') +
+          ':' + nlTijd.getMinutes().toString().padStart(2,'0');
+        if (!entryBereikt) {
+          if (sim.signaal === 'KOOP' && candle.low <= sim.entry) {
+            entryBereikt = true;
+            entryTijdstip = tijdstip;
+          } else if (sim.signaal === 'VERKOOP' &&
+            candle.high >= sim.entry) {
+            entryBereikt = true;
+            entryTijdstip = tijdstip;
+          }
+        }
+        if (entryBereikt) {
+          if (sim.signaal === 'KOOP') {
+            // Stop-loss eerst (worst case als beide in zelfde candle)
+            if (candle.low <= sim.stop_loss) {
+              resultaat = 'stop_geraakt';
+              winst = +((sim.stop_loss - sim.entry) *
+                sim.aantal).toFixed(2);
+              slotkoers = sim.stop_loss;
+              break;
+            }
+            if (candle.high >= sim.target) {
+              resultaat = 'target_bereikt';
+              winst = +((sim.target - sim.entry) *
+                sim.aantal).toFixed(2);
+              slotkoers = sim.target;
+              break;
+            }
+          } else if (sim.signaal === 'VERKOOP') {
+            if (candle.high >= sim.stop_loss) {
+              resultaat = 'stop_geraakt';
+              winst = +((sim.entry - sim.stop_loss) *
+                sim.aantal).toFixed(2);
+              slotkoers = sim.stop_loss;
+              break;
+            }
+            if (candle.low <= sim.target) {
+              resultaat = 'target_bereikt';
+              winst = +((sim.entry - sim.target) *
+                sim.aantal).toFixed(2);
+              slotkoers = sim.target;
+              break;
+            }
+          }
+        }
+      }
+      // Als positie nog open is aan einde dag
+      if (entryBereikt && resultaat === 'open') {
+        resultaat = 'einde_dag';
+        if (sim.signaal === 'KOOP') {
+          winst = +((slotkoers - sim.entry) *
+            sim.aantal).toFixed(2);
+        } else {
+          winst = +((sim.entry - slotkoers) *
+            sim.aantal).toFixed(2);
+        }
+      }
+      sim.entry_bereikt = entryBereikt;
+      sim.entryTijdstip = entryTijdstip;
+      sim.resultaat = entryBereikt ? resultaat : 'entry_niet_bereikt';
+      sim.slotkoers = +slotkoers.toFixed(2);
+      sim.winst = entryBereikt ? winst : 0;
     } catch(e) {
       console.error('Fout B voor', sim.symbol, e.message);
     }
   }
   localStorage.setItem('simulaties_b', JSON.stringify(simulaties));
   renderSimulatiesB();
-  if (btn) { btn.textContent = '📊 Sluit dag af'; btn.disabled = false; }
+  if (btn) {
+    btn.textContent = '📊 Sluit dag af';
+    btn.disabled = false;
+  }
 }
 
 function renderSimulatiesB() {
