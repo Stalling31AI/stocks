@@ -136,6 +136,11 @@ app.post('/api/analyze', async (req, res) => {
     const dagHoog = Math.max(...quotes.map(q => q.high));
     const dagLaag = Math.min(...quotes.map(q => q.low));
     const vorigeSlot = quotes.length > 1 ? quotes[0].close : null;
+    const dagRange = dagHoog - dagLaag;
+    const rangePct = dagRange > 0 ? (dagRange / dagLaag * 100).toFixed(2) : '0.00';
+    const positieInRange = dagRange > 0
+      ? Math.round((last.close - dagLaag) / dagRange * 100)
+      : 50;
 
     const fmt = (v, d = 2) => (v != null ? Number(v).toFixed(d) : 'N/A');
     const nowStr = new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam' });
@@ -163,8 +168,9 @@ app.post('/api/analyze', async (req, res) => {
       'NVDA': 'Marktleider chips. Sterk AI/tech sentiment. Dagbewegingen $3-8. Min vertrouwen: 55%.',
       'TSLA': 'Extreem volatiel. Veel valse signalen. Alleen handelen bij vertrouwen 75%+. Strikte stop-loss.',
       'RHM.DE': 'Defensie aandeel. Stijgt bij geopolitiek nieuws. Volg NAVO/Oekraïne nieuws. Min vertrouwen: 65%.',
-      'BA': 'Aerospace/defensie. US markturen leidend (14:30-21:00 NL). Volg Pentagon nieuws.',
-      'LMT': 'Defensie. Gevoelig voor overheidscontracten. US markturen leidend.',
+      'META': 'Sociale media/AI. Hoge liquiditeit. Dagbewegingen $3-10. Reageert op tech sentiment. Min vertrouwen: 55%.',
+      'NFLX': 'Streaming. Volatiel rond earnings. Dagbewegingen $5-15. Min vertrouwen: 60%.',
+      'AMD': 'Chips/AI concurrent NVDA. Hoge volatiliteit. Dagbewegingen $2-8. Sterk gecorreleerd met NVDA. Min vertrouwen: 60%.',
     };
     const isEuropees = ['ASML.AS','ADYEN.AS','RHM.DE'].includes(symbol);
     const handelVenster = isEuropees ? '09:00-17:30' : '15:30-22:00';
@@ -184,105 +190,115 @@ app.post('/api/analyze', async (req, res) => {
       const nuMin = nlUur * 60 + nlMin;
       return nuMin >= oH * 60 + oM && nuMin < sH * 60 + sM;
     })();
-    const prompt = `STRIKTE REGELS - GEEN UITZONDERINGEN:
-1. Baseer je analyse UITSLUITEND op de meegeleverde prijsdata en indicatoren. Verzin GEEN nieuws.
-2. Als je geen nieuws hebt, zet nieuws_samenvatting op "Geen nieuws beschikbaar - analyse puur technisch"
-3. nieuws_sentiment = "NEUTRAAL" als geen nieuws beschikbaar
-4. Schrijf in de redenering ALLEEN wat je daadwerkelijk ziet in de data.
-Je bent een elite daytrader. Analyseer ${symbol} op ${interval} timeframe. Doel: concreet koop/verkoop advies.
-MARKTDATA:
-- Prijs: ${fmt(last.close)} | Tijd: ${amsterdamTijd} (${dagdeel})
-VOLUME ANALYSE:
-- Huidig volume: ${lastVolume.toLocaleString()}
-- Gemiddeld volume (20 periodes): ${Math.round(gemVolume).toLocaleString()}
-- Volume ratio: ${volumeRatio}x gemiddeld
-${Number(volumeRatio) > 1.5 ? '→ HOOG volume: beweging wordt bevestigd' : Number(volumeRatio) < 0.5 ? '→ LAAG volume: beweging niet betrouwbaar' : '→ Normaal volume'}
-KEY PRICE LEVELS VANDAAG:
-- Dag hoog: ${dagHoog.toFixed(2)}
-- Dag laag: ${dagLaag.toFixed(2)}
-- Vorige slotkoers: ${vorigeSlot ? vorigeSlot.toFixed(2) : 'onbekend'}
-- Psychologisch niveau: ${Math.round(last.close / 50) * 50} (dichtstbijzijnde ronde €50)
-MULTI-TIMEFRAME CONTEXT:
-- Huidig timeframe: ${interval}
-- Voor betrouwbaar daytrade signaal: controleer of trend op 1u timeframe overeenkomt
+    const prompt = `Je bent een elite daytrader met 20 jaar ervaring. Je analyseert ${symbol} voor een intraday handelsbeslissing. Jouw doel: 30-40% van de dagrange pakken als winst.
+MARKT DATA:
+- Aandeel: ${symbol}
+- Koers: €${fmt(last.close)}
+- Tijd: ${amsterdamTijd} NL (${dagdeel})
+- Markt: ${marktContext}
+DAG STATISTIEKEN:
+- Dag hoog: €${dagHoog} | Dag laag: €${dagLaag}
+- Dag range: €${dagRange.toFixed(2)} (${rangePct}%)
+- Koers positie in dagrange: ${positieInRange}%
 - Opening gap: ${openingGap ? openingGap + '%' : 'onbekend'}
-- RSI(14): ${fmt(indicators.rsi)} ${Number(indicators.rsi) > 70 ? '→ OVERBOUGHT' : Number(indicators.rsi) < 30 ? '→ OVERSOLD' : '→ neutraal'}
-- MACD: ${fmt(indicators.macd?.macd, 4)} | Histogram: ${fmt(indicators.macd?.histogram, 4)} ${indicators.macd?.histogram > 0 ? '→ bullish' : '→ bearish'}
-- Bollinger: Upper ${fmt(indicators.bb?.upper)} | Mid ${fmt(indicators.bb?.middle)} | Lower ${fmt(indicators.bb?.lower)}
-- Koers vs Bollinger: ${Number(last.close) > Number(indicators.bb?.upper) ? 'BOVEN upper band' : Number(last.close) < Number(indicators.bb?.lower) ? 'ONDER lower band' : 'Binnen bands'}
+${Number(positieInRange) < 25 ? '→ Koers dicht bij daglaag — POTENTIEEL KOOPMOMENT' : ''}
+${Number(positieInRange) > 75 ? '→ Koers dicht bij daghoog — WEES VOORZICHTIG MET KOPEN' : ''}
+TECHNISCHE INDICATOREN:
+- RSI(14): ${fmt(indicators.rsi)} ${Number(indicators.rsi) < 40 ? '→ OVERSOLD ZONE' : Number(indicators.rsi) > 60 ? '→ OVERBOUGHT ZONE' : '→ neutraal'}
+- MACD: ${fmt(indicators.macd?.macd, 4)} | Histogram: ${fmt(indicators.macd?.histogram, 4)} ${indicators.macd?.histogram > 0 ? '→ BULLISH momentum' : '→ BEARISH momentum'}
+- Bollinger: Upper €${fmt(indicators.bb?.upper)} | Mid €${fmt(indicators.bb?.middle)} | Lower €${fmt(indicators.bb?.lower)}
+- Koers vs Bollinger: ${Number(last.close) < Number(indicators.bb?.lower) ? '🟢 ONDER lower band — sterk oversold' : Number(last.close) > Number(indicators.bb?.upper) ? '🔴 BOVEN upper band — sterk overbought' : '⚪ Binnen bands'}
 - Trend: ${indicators.trend}
-Laatste koers: ${fmt(last.close)} om ${amsterdamTijd}
-Trend laatste 3 kaarsen: ${recent.slice(-3).map(q =>
-  (q.close >= q.open ? '▲' : '▼') + fmt(q.close)
-).join(' ')}
-AANDEEL: ${aandeelRegels[symbol] || 'Standaard regels.'}
-TIJDSTIP: ${dagdeel}
-HANDELVENSTER: ${handelVenster} NL tijd
-MARKT STATUS: ${marktContext}
-Status: ${binnenVenster ? '✅ Binnen handelvenster' : '❌ Buiten handelvenster - geef NIET MEER KOPEN VANDAAG'}
-BELANGRIJK - WANNEER WELK SIGNAAL:
-KOOP: alleen als er een concreet en betrouwbaar instapmoment is op basis van de technische analyse. Geef dan een specifieke entry prijs, stop-loss en target.
-VERKOOP: alleen als je een bestaande longpositie zou sluiten of een short zou openen op basis van duidelijke verkoopsignalen.
-WACHT: als het signaal onduidelijk is, de betrouwbaarheid te laag is, of als het beter is om de markt af te wachten. Bij WACHT: geef GEEN entry, stop-loss of target. Zet entry, stop_loss, target op null. Leg in de redenering uit WANNEER je wel zou instappen (bijv "wacht op RSI onder 30" of "instappen als koers boven 1155 breekt met volume").
-NIET MEER KOPEN VANDAAG: als de dag al te ver gevorderd is of de kans op een goed instapmoment voorbij is. Geef ook geen entry meer.
-Zo weet de gebruiker altijd:
-- KOOP/VERKOOP = nu actie ondernemen met concrete prijzen
-- WACHT = wachten op betere omstandigheden, uitleg waarom
-- NIET MEER KOPEN VANDAAG = dag afschrijven voor dit aandeel
-JOUW ROL: Je bent een ervaren daytrader die handelt voor winst. Geef concrete actie-gerichte adviezen.
-KOOP signaal wanneer:
-- RSI onder 40 EN koers nadert steunniveau
-- OF RSI onder 35 (sterk oversold)
-- OF MACD histogram draait positief na negatieve periode
-- EN koers is niet al meer dan 2% gestegen vandaag
-VERKOOP/SHORT signaal wanneer:
-- RSI boven 60 EN koers nadert weerstandsniveau
-- OF RSI boven 65 (sterk overbought)
-- OF MACD histogram draait negatief na positieve periode
-- EN koers is niet al meer dan 2% gedaald vandaag
-WACHT wanneer:
-- RSI tussen 40-60 zonder duidelijk momentum
-- Eerste 30 minuten na marktopening
-- Opening gap groter dan 3%
-BELANGRIJK VOOR DAGTRADERS:
-- Een dalende trend is ook een signaal (VERKOOP/SHORT)
-- Een stijgende trend is ook een signaal (KOOP)
-- Geef ALTIJD een concreet entry niveau
-- Stop-loss maximaal 1% van entry
-- Target minimaal 1.5x stop-loss
-- Als de trend duidelijk is, geef dan een signaal
 VOLUME:
-- Negeer volume als data ontbreekt (0.00x)
-- Vermeld volume alleen als het een sterk signaal bevestigt of tegenspreekt
-NIEUWS:
-- Verzin GEEN nieuws
-- nieuws_samenvatting = "Analyse puur technisch"
-- nieuws_sentiment = "NEUTRAAL" als geen nieuws
-Geef ALLEEN dit JSON object terug (geen tekst eromheen):
+- Huidig: ${lastVolume > 0 ? lastVolume.toLocaleString() : 'niet beschikbaar'}
+- Gemiddeld: ${gemVolume > 0 ? Math.round(gemVolume).toLocaleString() : 'niet beschikbaar'}
+- Ratio: ${volumeRatio}x ${Number(volumeRatio) > 1.5 ? '→ HOOG volume, bevestigt beweging' : Number(volumeRatio) < 0.5 ? '→ LAAG volume, onbetrouwbaar' : '→ normaal'}
+RECENTE KAARSEN (laatste 8):
+${recent.slice(-8).map(q => {
+  const d = new Date(q.date);
+  const t = d.toLocaleTimeString('nl-NL',{
+    hour:'2-digit',minute:'2-digit',
+    timeZone:'Europe/Amsterdam'
+  });
+  const body = Math.abs(q.close-q.open);
+  const range = q.high-q.low || 0.01;
+  const bodyPct = Math.round(body/range*100);
+  const wick_onder = Math.min(q.open,q.close)-q.low;
+  const wick_boven = q.high-Math.max(q.open,q.close);
+  let patroon = '';
+  if (bodyPct < 10) patroon = '← DOJI';
+  else if (wick_onder > body*2 && q.close > q.open)
+    patroon = '← HAMMER 🔨';
+  else if (wick_boven > body*2 && q.close < q.open)
+    patroon = '← SHOOTING STAR';
+  return t + ': O=' + fmt(q.open) + ' H=' + fmt(q.high) +
+    ' L=' + fmt(q.low) + ' C=' + fmt(q.close) +
+    ' ' + (q.close>=q.open?'🟢':'🔴') + ' ' + patroon;
+}).join('\n')}
+KEY LEVELS:
+- Daghoog weerstand: €${dagHoog}
+- Daglaag steun: €${dagLaag}
+- Vorige slotkoers: €${vorigeSlot ? vorigeSlot.toFixed(2) : 'onbekend'}
+- Psychologisch niveau: €${Math.round(last.close / 50) * 50}
+AANDEEL PROFIEL:
+${aandeelRegels[symbol] || 'Standaard daytrading regels.'}
+BESLISREGELS:
+KOOP als minimaal 2 van deze 3 gelden:
+1. RSI onder 45 EN koers in onderste 35% dagrange
+2. Koers raakt of is net onder Bollinger Lower Band
+3. MACD histogram omkeert van negatief naar minder negatief
+EN: tijdstip binnen handelvenster, dagrange > 0.8%
+WACHT als:
+- RSI tussen 45-55 zonder duidelijk signaal
+- Koers midden in dagrange zonder momentum
+- Volume te laag (ratio < 0.3) tenzij EU aandeel
+- Minder dan 30 min na marktopening
+- Dagrange kleiner dan 0.8% (te weinig beweging)
+TARGET BEREKENING:
+- Minimaal 30% van dagrange boven entry
+- Maar maximaal 2.5% boven entry
+- Altijd R/R minimaal 1:2
+STOP-LOSS:
+- Maximaal 1% onder entry
+- Bij voorkeur net onder daglaag of recente steun
+STRIKTE REGELS:
+1. Stop_loss MOET lager zijn dan entry
+2. Target MOET hoger zijn dan entry
+3. Verzin GEEN nieuws — nieuws_samenvatting = "Analyse puur technisch" als geen nieuws
+4. Vertrouwen boven 65% alleen bij sterke bevestiging
+NIEUWS INSTRUCTIE:
+Zoek kort naar recent nieuws over ${symbol}.
+Gebruik dit ALLEEN voor nieuws_samenvatting (1 zin).
+Het nieuws mag de technische analyse NIET overrulen.
+Alleen als er extreem nieuws is (earnings, grote deal) mag je het vertrouwen aanpassen.
+Geef ALLEEN dit JSON (geen tekst eromheen):
 {
-  "signaal": "KOOP" of "VERKOOP" of "WACHT",
-  "actie": "KOOP NU" of "KOOP BIJ DALING NAAR [prijs]" of "VERKOOP NU" of "WACHT TOT [HH:MM]" of "NIET MEER KOPEN VANDAAG",
+  "signaal": "KOOP" of "WACHT",
+  "actie": "KOOP NU" of "KOOP BIJ DALING NAAR [prijs]" of "WACHT TOT [HH:MM]" of "NIET MEER KOPEN VANDAAG",
   "vertrouwen": getal 0-100,
-  "redenering": "2-3 zinnen concreet met prijsniveaus",
+  "redenering": "2-3 zinnen CONCREET met exacte prijsniveaus en welke criteria gelden",
   "entry": prijsgetal,
   "stop_loss": prijsgetal,
   "target": prijsgetal,
   "rr_ratio": decimaal,
-  "dagtrend": "korte beschrijving dagbeweging",
+  "dagtrend": "korte beschrijving",
   "instap_tijd": "HH:MM of omschrijving",
   "nieuws_sentiment": "POSITIEF" of "NEGATIEF" of "NEUTRAAL",
-  "nieuws_samenvatting": "1 zin actueel nieuws",
+  "nieuws_samenvatting": "Analyse puur technisch",
   "verwacht_rendement_pct": decimaal,
-  "kaarspatroon": "naam patroon of geen",
+  "kaarspatroon": "naam of geen",
   "weerstand": prijsgetal,
   "steun": prijsgetal,
   "tijdstip_advies": "specifiek advies voor nu"
 }`;
 
-    // web_search tijdelijk uitgeschakeld vanwege rate limits
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 600,
+      tools: [{
+        type: "web_search_20250305",
+        name: "web_search"
+      }],
       messages: [{ role: 'user', content: prompt }],
     });
 

@@ -384,10 +384,10 @@
       <button class="snel-btn actief" onclick="laadSymbol('ASML.AS',this)">ASML</button>
       <button class="snel-btn" onclick="laadSymbol('ADYEN.AS',this)">ADYEN</button>
       <button class="snel-btn" onclick="laadSymbol('NVDA',this)">NVDA</button>
-      <button class="snel-btn" onclick="laadSymbol('TSLA',this)">TSLA</button>
+      <button class="snel-btn" onclick="laadSymbol('NFLX',this)">Netflix</button>
       <button class="snel-btn" onclick="laadSymbol('RHM.DE',this)">Rheinmetall</button>
-      <button class="snel-btn" onclick="laadSymbol('BA',this)">Boeing</button>
-      <button class="snel-btn" onclick="laadSymbol('LMT',this)">Lockheed</button>
+      <button class="snel-btn" onclick="laadSymbol('META',this)">Meta</button>
+      <button class="snel-btn" onclick="laadSymbol('AMD',this)">AMD</button>
     </div>
     <div id="alert-balk" style="margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11px;color:#64748b;flex-shrink:0;">
       <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;">
@@ -1410,13 +1410,13 @@ function stopAutoRefresh() {
 }
 
 const WATCHLIST = [
-  { symbol: 'ASML.AS',  label: 'ASML',        vlag: '🇳🇱' },
-  { symbol: 'ADYEN.AS', label: 'ADYEN',       vlag: '🇳🇱' },
-  { symbol: 'NVDA',     label: 'NVIDIA',      vlag: '🇺🇸' },
-  { symbol: 'TSLA',     label: 'TESLA',       vlag: '🇺🇸' },
-  { symbol: 'RHM.DE',   label: 'Rheinmetall',  vlag: '🇩🇪' },
-  { symbol: 'BA',       label: 'Boeing',      vlag: '🇺🇸' },
-  { symbol: 'LMT',      label: 'Lockheed',    vlag: '🇺🇸' },
+  { symbol: 'ASML.AS', label: 'ASML',        vlag: '🇳🇱' },
+  { symbol: 'ADYEN.AS',label: 'ADYEN',       vlag: '🇳🇱' },
+  { symbol: 'RHM.DE',  label: 'Rheinmetall', vlag: '🇩🇪' },
+  { symbol: 'NVDA',    label: 'NVIDIA',      vlag: '🇺🇸' },
+  { symbol: 'META',    label: 'Meta',        vlag: '🇺🇸' },
+  { symbol: 'NFLX',    label: 'Netflix',     vlag: '🇺🇸' },
+  { symbol: 'AMD',     label: 'AMD',         vlag: '🇺🇸' },
 ];
 async function laadMiniDashboard() {
   const container = document.getElementById('mini-dashboard');

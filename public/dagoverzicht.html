@@ -446,13 +446,13 @@ document.getElementById('dag-datum').textContent =
 const BEURSTIJDEN = {
   'ASML.AS':  { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇳🇱' },
   'ADYEN.AS': { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇳🇱' },
-  'NVDA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
-  'TSLA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
   'RHM.DE':   { naam: 'XETRA Frankfurt',   open: '09:00', sluit: '17:30', zone: 'Europe/Amsterdam', vlag: '🇩🇪' },
-  'BA':       { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
-  'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'NVDA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'META':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'NFLX':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'AMD':      { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
 };
-let geselecteerdeAandelen = ['ASML.AS','ADYEN.AS','NVDA','TSLA','RHM.DE'];
+let geselecteerdeAandelen = ['ASML.AS','ADYEN.AS','NVDA','RHM.DE'];
 function updateSelectie(cb) {
   const lbl = document.getElementById('lbl-' + cb.value);
   if (cb.checked) {
@@ -501,11 +501,11 @@ function getBeursstatus(symbol) {
 const BEURS_OPEN = {
   'ASML.AS':  { open: '09:00', sluit: '17:30' },
   'ADYEN.AS': { open: '09:00', sluit: '17:30' },
-  'NVDA':     { open: '15:30', sluit: '22:00' },
-  'TSLA':     { open: '15:30', sluit: '22:00' },
   'RHM.DE':   { open: '09:00', sluit: '17:30' },
-  'BA':       { open: '15:30', sluit: '22:00' },
-  'LMT':      { open: '15:30', sluit: '22:00' },
+  'NVDA':     { open: '15:30', sluit: '22:00' },
+  'META':     { open: '15:30', sluit: '22:00' },
+  'NFLX':     { open: '15:30', sluit: '22:00' },
+  'AMD':      { open: '15:30', sluit: '22:00' },
 };
 function verwijderVerkoopSimulaties() {
   const datum = new Date().toLocaleDateString('nl-NL');
@@ -548,13 +548,13 @@ function isBeursOpen(symbol) {
   return nuMin >= oH * 60 + oM && nuMin < sH * 60 + sM;
 }
 const WATCHLIST = [
-  { symbol: 'ASML.AS',  label: 'ASML',        vlag: '🇳🇱' },
-  { symbol: 'ADYEN.AS', label: 'ADYEN',        vlag: '🇳🇱' },
-  { symbol: 'NVDA',     label: 'NVIDIA',       vlag: '🇺🇸' },
-  { symbol: 'TSLA',     label: 'TESLA',        vlag: '🇺🇸' },
-  { symbol: 'RHM.DE',   label: 'Rheinmetall',  vlag: '🇩🇪' },
-  { symbol: 'BA',       label: 'Boeing',       vlag: '🇺🇸' },
-  { symbol: 'LMT',      label: 'Lockheed',     vlag: '🇺🇸' },
+  { symbol: 'ASML.AS', label: 'ASML',        vlag: '🇳🇱' },
+  { symbol: 'ADYEN.AS',label: 'ADYEN',       vlag: '🇳🇱' },
+  { symbol: 'RHM.DE',  label: 'Rheinmetall', vlag: '🇩🇪' },
+  { symbol: 'NVDA',    label: 'NVIDIA',      vlag: '🇺🇸' },
+  { symbol: 'META',    label: 'Meta',        vlag: '🇺🇸' },
+  { symbol: 'NFLX',    label: 'Netflix',     vlag: '🇺🇸' },
+  { symbol: 'AMD',     label: 'AMD',         vlag: '🇺🇸' },
 ];
 let huidigeAnalyses = [];
 function renderLadenKaarten() {
