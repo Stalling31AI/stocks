@@ -168,6 +168,13 @@ app.post('/api/analyze', async (req, res) => {
     };
     const isEuropees = ['ASML.AS','ADYEN.AS','RHM.DE'].includes(symbol);
     const handelVenster = isEuropees ? '09:00-17:30' : '15:30-22:00';
+    const marktContext = isEuropees
+      ? `Europese markt: ${handelVenster} NL tijd`
+      : `Amerikaanse markt (NYSE/NASDAQ): ${handelVenster} NL tijd. \
+     De Europese beurzen zijn gesloten maar de Amerikaanse \
+     markt is OPEN tot 22:00 NL tijd. \
+     Geef gewoon een normaal daytrade advies \
+     voor de resterende handelstijd.`;
     const binnenVenster = (() => {
       const [open, sluit] = handelVenster.split('-');
       const [oH, oM] = open.split(':').map(Number);
@@ -211,6 +218,7 @@ Trend laatste 3 kaarsen: ${recent.slice(-3).map(q =>
 AANDEEL: ${aandeelRegels[symbol] || 'Standaard regels.'}
 TIJDSTIP: ${dagdeel}
 HANDELVENSTER: ${handelVenster} NL tijd
+MARKT STATUS: ${marktContext}
 Status: ${binnenVenster ? '✅ Binnen handelvenster' : '❌ Buiten handelvenster - geef NIET MEER KOPEN VANDAAG'}
 BELANGRIJK - WANNEER WELK SIGNAAL:
 KOOP: alleen als er een concreet en betrouwbaar instapmoment is op basis van de technische analyse. Geef dan een specifieke entry prijs, stop-loss en target.
