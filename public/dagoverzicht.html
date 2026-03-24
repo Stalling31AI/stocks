@@ -469,6 +469,30 @@ const BEURS_OPEN = {
   'BA':       { open: '15:30', sluit: '22:00' },
   'LMT':      { open: '15:30', sluit: '22:00' },
 };
+function verwijderVerkoopSimulaties() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const simA = JSON.parse(localStorage.getItem('simulaties') || '{}');
+  if (simA[datum]) {
+    const voor = simA[datum].length;
+    simA[datum] = simA[datum].filter(s => s.signaal === 'KOOP');
+    if (voor !== simA[datum].length) {
+      console.log('Verwijderd', voor - simA[datum].length, 'VERKOOP simulaties uit optie A');
+      localStorage.setItem('simulaties', JSON.stringify(simA));
+    }
+  }
+  const simB = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+  if (simB[datum]) {
+    const voor = simB[datum].length;
+    simB[datum] = simB[datum].filter(s => s.signaal === 'KOOP');
+    if (voor !== simB[datum].length) {
+      console.log('Verwijderd', voor - simB[datum].length, 'VERKOOP simulaties uit optie B');
+      localStorage.setItem('simulaties_b', JSON.stringify(simB));
+    }
+  }
+  renderSimulaties();
+  renderSimulatiesB();
+}
+verwijderVerkoopSimulaties();
 function isBeursOpen(symbol) {
   const info = BEURS_OPEN[symbol];
   if (!info) return false;
@@ -1168,14 +1192,11 @@ async function simuleerTrades(analyses) {
     console.log('Check:', a.symbol, a.signaal, a.entry,
       'beursOpen:', isBeursOpen(a.symbol));
 
-    if (a.signaal !== 'KOOP' && a.signaal !== 'VERKOOP') {
-      console.log('Skip: geen KOOP/VERKOOP signaal');
-      continue;
-    }
-    if (!a.entry) {
-      console.log('Skip: geen entry prijs');
-      continue;
-    }
+    // Alleen KOOP simuleren - geen short selling
+    const isKoopActie = a.signaal === 'KOOP' ||
+      (a.actie && a.actie.toUpperCase().includes('KOOP'));
+    if (!isKoopActie) continue;
+    if (!a.entry) continue;
 
     // Controleer of beurs open was ten tijde van analyse
     if (!isBeursOpen(a.symbol)) {
@@ -1265,60 +1286,33 @@ async function sluitSimulaties() {
         const tijdstip = nlTijd.getHours().toString().padStart(2,'0') +
           ':' + nlTijd.getMinutes().toString().padStart(2,'0');
         if (!entryBereikt) {
-          if (sim.signaal === 'KOOP' && candle.low <= sim.entry) {
-            entryBereikt = true;
-            entryTijdstip = tijdstip;
-          } else if (sim.signaal === 'VERKOOP' &&
-            candle.high >= sim.entry) {
+          if (candle.low <= sim.entry) {
             entryBereikt = true;
             entryTijdstip = tijdstip;
           }
         }
         if (entryBereikt) {
-          if (sim.signaal === 'KOOP') {
-            // Stop-loss eerst (worst case als beide in zelfde candle)
-            if (candle.low <= sim.stop_loss) {
-              resultaat = 'stop_geraakt';
-              winst = +((sim.stop_loss - sim.entry) *
-                sim.aantal).toFixed(2);
-              slotkoers = sim.stop_loss;
-              break;
-            }
-            if (candle.high >= sim.target) {
-              resultaat = 'target_bereikt';
-              winst = +((sim.target - sim.entry) *
-                sim.aantal).toFixed(2);
-              slotkoers = sim.target;
-              break;
-            }
-          } else if (sim.signaal === 'VERKOOP') {
-            if (candle.high >= sim.stop_loss) {
-              resultaat = 'stop_geraakt';
-              winst = +((sim.entry - sim.stop_loss) *
-                sim.aantal).toFixed(2);
-              slotkoers = sim.stop_loss;
-              break;
-            }
-            if (candle.low <= sim.target) {
-              resultaat = 'target_bereikt';
-              winst = +((sim.entry - sim.target) *
-                sim.aantal).toFixed(2);
-              slotkoers = sim.target;
-              break;
-            }
+          // Stop-loss eerst (worst case als beide in zelfde candle)
+          if (candle.low <= sim.stop_loss) {
+            resultaat = 'stop_geraakt';
+            winst = +((sim.stop_loss - sim.entry) *
+              sim.aantal).toFixed(2);
+            slotkoers = sim.stop_loss;
+            break;
+          }
+          if (candle.high >= sim.target) {
+            resultaat = 'target_bereikt';
+            winst = +((sim.target - sim.entry) *
+              sim.aantal).toFixed(2);
+            slotkoers = sim.target;
+            break;
           }
         }
       }
       // Als positie nog open is aan einde dag
       if (entryBereikt && resultaat === 'open') {
         resultaat = 'einde_dag';
-        if (sim.signaal === 'KOOP') {
-          winst = +((slotkoers - sim.entry) *
-            sim.aantal).toFixed(2);
-        } else {
-          winst = +((sim.entry - slotkoers) *
-            sim.aantal).toFixed(2);
-        }
+        winst = +((slotkoers - sim.entry) * sim.aantal).toFixed(2);
       }
       sim.entry_bereikt = entryBereikt;
       sim.entryTijdstip = entryTijdstip;
@@ -1411,7 +1405,29 @@ function renderSimulaties() {
         </tr>
       </thead>
       <tbody>
-        ${lijst.map(s => `
+        ${lijst.map(s => {
+          const statusInfo = (() => {
+            if (s.resultaat === 'open' && !s.entry_bereikt) {
+              return { tekst: '⏳ Wacht op entry €' + Number(s.entry).toFixed(2), kleur: '#94a3b8' };
+            }
+            if (s.resultaat === 'open' && s.entry_bereikt) {
+              return { tekst: '✅ Gekocht op €' + Number(s.entry).toFixed(2) + ' — wacht op target/stop', kleur: '#2563eb' };
+            }
+            if (s.resultaat === 'target_bereikt') {
+              return { tekst: '🎯 Verkocht op target €' + Number(s.slotkoers).toFixed(2), kleur: '#16a34a' };
+            }
+            if (s.resultaat === 'stop_geraakt') {
+              return { tekst: '🛑 Stop-loss geraakt op €' + Number(s.slotkoers).toFixed(2), kleur: '#dc2626' };
+            }
+            if (s.resultaat === 'einde_dag') {
+              return { tekst: '📊 Verkocht op slotkoers €' + Number(s.slotkoers).toFixed(2), kleur: '#d97706' };
+            }
+            if (s.resultaat === 'entry_niet_bereikt') {
+              return { tekst: '⏭ Entry €' + Number(s.entry).toFixed(2) + ' niet bereikt — geen aankoop', kleur: '#94a3b8' };
+            }
+            return { tekst: s.resultaat, kleur: '#94a3b8' };
+          })();
+          return `
           <tr style="border-bottom:1px solid #f1f5f9;">
             <td style="padding:8px;color:#94a3b8;">${s.tijdstip}</td>
             <td style="padding:8px;font-weight:600;">${s.vlag} ${s.label}</td>
@@ -1448,13 +1464,21 @@ function renderSimulaties() {
               ${resultaatLabel[s.resultaat]}
             </td>
           </tr>
+          <tr>
+            <td></td>
+            <td colspan="8" style="padding:2px 8px 10px;
+              font-size:12px;font-weight:700;
+              color:${statusInfo.kleur};">
+              ${statusInfo.tekst}
+            </td>
+          </tr>
           <tr style="background:#f8fafc;">
             <td colspan="10" style="padding:4px 8px 8px;font-size:11px;
               color:#64748b;font-style:italic;">
               ${s.redenering || ''}
             </td>
-          </tr>
-        `).join('')}
+          </tr>`;
+        }).join('')}
       </tbody>
     </table>
   `;
@@ -1469,7 +1493,10 @@ async function simuleerTradesB(analyses) {
   );
   if (!simulaties[datum]) simulaties[datum] = [];
   for (const a of analyses) {
-    if (a.signaal !== 'KOOP' && a.signaal !== 'VERKOOP') continue;
+    // Alleen KOOP simuleren - geen short selling
+    const isKoopActie = a.signaal === 'KOOP' ||
+      (a.actie && a.actie.toUpperCase().includes('KOOP'));
+    if (!isKoopActie) continue;
     if (!a.entry) continue;
 
     // Controleer of beurs open was ten tijde van analyse
@@ -1482,30 +1509,21 @@ async function simuleerTradesB(analyses) {
       s.symbol === a.symbol && s.resultaat === 'open'
     );
     if (openPositie) {
-      if (a.signaal === 'KOOP') {
-        // Update stop-loss en target
-        const oudStop = openPositie.stop_loss;
-        const oudTarget = openPositie.target;
-        openPositie.stop_loss = a.stop_loss;
-        openPositie.target = a.target;
-        openPositie.rr_ratio = a.rr_ratio;
-        openPositie.updates = openPositie.updates || [];
-        openPositie.updates.push({
-          tijdstip: a.tijdstip,
-          oud_stop: oudStop,
-          nieuw_stop: a.stop_loss,
-          oud_target: oudTarget,
-          nieuw_target: a.target,
-          redenering: a.redenering
-        });
-      } else if (a.signaal === 'VERKOOP') {
-        // Sluit positie bij verkoop signaal
-        openPositie.resultaat = 'verkoop_signaal';
-        openPositie.slotkoers = a.entry;
-        openPositie.winst = +((a.entry - openPositie.entry) *
-          openPositie.aantal).toFixed(2);
-        openPositie.sluitTijdstip = a.tijdstip;
-      }
+      // Update stop-loss en target bij nieuw KOOP signaal
+      const oudStop = openPositie.stop_loss;
+      const oudTarget = openPositie.target;
+      openPositie.stop_loss = a.stop_loss;
+      openPositie.target = a.target;
+      openPositie.rr_ratio = a.rr_ratio;
+      openPositie.updates = openPositie.updates || [];
+      openPositie.updates.push({
+        tijdstip: a.tijdstip,
+        oud_stop: oudStop,
+        nieuw_stop: a.stop_loss,
+        oud_target: oudTarget,
+        nieuw_target: a.target,
+        redenering: a.redenering
+      });
     } else {
       if (a.signaal === 'KOOP') {
         simulaties[datum].push({
@@ -1587,60 +1605,33 @@ async function sluitSimulatiesB() {
         const tijdstip = nlTijd.getHours().toString().padStart(2,'0') +
           ':' + nlTijd.getMinutes().toString().padStart(2,'0');
         if (!entryBereikt) {
-          if (sim.signaal === 'KOOP' && candle.low <= sim.entry) {
-            entryBereikt = true;
-            entryTijdstip = tijdstip;
-          } else if (sim.signaal === 'VERKOOP' &&
-            candle.high >= sim.entry) {
+          if (candle.low <= sim.entry) {
             entryBereikt = true;
             entryTijdstip = tijdstip;
           }
         }
         if (entryBereikt) {
-          if (sim.signaal === 'KOOP') {
-            // Stop-loss eerst (worst case als beide in zelfde candle)
-            if (candle.low <= sim.stop_loss) {
-              resultaat = 'stop_geraakt';
-              winst = +((sim.stop_loss - sim.entry) *
-                sim.aantal).toFixed(2);
-              slotkoers = sim.stop_loss;
-              break;
-            }
-            if (candle.high >= sim.target) {
-              resultaat = 'target_bereikt';
-              winst = +((sim.target - sim.entry) *
-                sim.aantal).toFixed(2);
-              slotkoers = sim.target;
-              break;
-            }
-          } else if (sim.signaal === 'VERKOOP') {
-            if (candle.high >= sim.stop_loss) {
-              resultaat = 'stop_geraakt';
-              winst = +((sim.entry - sim.stop_loss) *
-                sim.aantal).toFixed(2);
-              slotkoers = sim.stop_loss;
-              break;
-            }
-            if (candle.low <= sim.target) {
-              resultaat = 'target_bereikt';
-              winst = +((sim.entry - sim.target) *
-                sim.aantal).toFixed(2);
-              slotkoers = sim.target;
-              break;
-            }
+          // Stop-loss eerst (worst case als beide in zelfde candle)
+          if (candle.low <= sim.stop_loss) {
+            resultaat = 'stop_geraakt';
+            winst = +((sim.stop_loss - sim.entry) *
+              sim.aantal).toFixed(2);
+            slotkoers = sim.stop_loss;
+            break;
+          }
+          if (candle.high >= sim.target) {
+            resultaat = 'target_bereikt';
+            winst = +((sim.target - sim.entry) *
+              sim.aantal).toFixed(2);
+            slotkoers = sim.target;
+            break;
           }
         }
       }
       // Als positie nog open is aan einde dag
       if (entryBereikt && resultaat === 'open') {
         resultaat = 'einde_dag';
-        if (sim.signaal === 'KOOP') {
-          winst = +((slotkoers - sim.entry) *
-            sim.aantal).toFixed(2);
-        } else {
-          winst = +((sim.entry - slotkoers) *
-            sim.aantal).toFixed(2);
-        }
+        winst = +((slotkoers - sim.entry) * sim.aantal).toFixed(2);
       }
       sim.entry_bereikt = entryBereikt;
       sim.entryTijdstip = entryTijdstip;
