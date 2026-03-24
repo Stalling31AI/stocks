@@ -1958,35 +1958,58 @@ function stopAutoAnalyse() {
 }
 async function voerAutoAnalyseUit() {
   if (!autoAnalyseActief) return;
-  const openAandelen = WATCHLIST.filter(w => isBeursOpen(w.symbol));
+
+  const openAandelen = WATCHLIST.filter(w =>
+    isBeursOpen(w.symbol)
+  );
+
   if (openAandelen.length === 0) {
     console.log('Auto-analyse: geen beurzen open');
     updateAutoAnalyseStatus();
     return;
   }
   if (document.hidden) {
-    console.log('Auto-analyse: pagina niet zichtbaar, skip');
+    console.log('Auto-analyse: pagina niet zichtbaar');
     return;
   }
   const tijdstip = new Date().toLocaleTimeString('nl-NL', {
     hour: '2-digit', minute: '2-digit'
   });
-  console.log('Auto-analyse gestart om', tijdstip,
-    'voor', openAandelen.map(w => w.label).join(', '));
-  document.getElementById('auto-analyse-status').textContent =
-    '🔄 Auto-analyse bezig om ' + tijdstip + '...';
-  geselecteerdeAandelen = openAandelen.map(w => w.symbol);
-  document.querySelectorAll('#aandeel-selectie input[type=checkbox]')
-    .forEach(cb => {
+
+  console.log('Auto-analyse start om', tijdstip);
+
+  const el = document.getElementById('auto-analyse-status');
+  if (el) el.textContent = '🔄 Bezig om ' + tijdstip + '...';
+  try {
+    geselecteerdeAandelen = openAandelen.map(w => w.symbol);
+
+    document.querySelectorAll(
+      '#aandeel-selectie input[type=checkbox]'
+    ).forEach(cb => {
       cb.checked = geselecteerdeAandelen.includes(cb.value);
     });
-  await analyseAlleAandelen();
-  if (Notification.permission === 'granted') {
-    new Notification('📊 Yappi Analytics — Auto analyse', {
-      body: tijdstip + ': Analyse klaar voor ' +
-        openAandelen.map(w => w.label).join(', '),
-      icon: '/logo.png'
-    });
+    await analyseAlleAandelen();
+
+    console.log('Auto-analyse klaar om', tijdstip);
+
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification('📊 Yappi Analytics', {
+          body: tijdstip + ': Analyse klaar voor ' +
+            openAandelen.map(w => w.label).join(', '),
+          icon: '/logo.png'
+        });
+      } catch(e) {
+        console.log('Notificatie mislukt:', e.message);
+      }
+    }
+  } catch(e) {
+    console.error('Auto-analyse fout:', e.message);
+    if (el) {
+      el.textContent = '⚠️ Fout om ' + tijdstip +
+        ': ' + e.message;
+      el.style.color = '#dc2626';
+    }
   }
   updateAutoAnalyseStatus();
 }
