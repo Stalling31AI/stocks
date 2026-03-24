@@ -397,6 +397,70 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
       </button>
     </div>
     <div id="dag-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
+    <div style="display:flex;align-items:center;
+      gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <span style="font-size:12px;font-weight:600;
+        color:#64748b;">Filter:</span>
+      <button onclick="filterGeschiedenis('alle')"
+        id="filter-alle"
+        style="font-size:11px;padding:4px 10px;
+        border-radius:6px;border:1.5px solid #2563eb;
+        background:#2563eb;color:#fff;cursor:pointer;
+        font-weight:600;">
+        Alle
+      </button>
+      <button onclick="filterGeschiedenis('ASML.AS')"
+        id="filter-ASML.AS"
+        style="font-size:11px;padding:4px 10px;
+        border-radius:6px;border:1.5px solid #e2e8f0;
+        background:#fff;color:#64748b;cursor:pointer;">
+        🇳🇱 ASML
+      </button>
+      <button onclick="filterGeschiedenis('ADYEN.AS')"
+        id="filter-ADYEN.AS"
+        style="font-size:11px;padding:4px 10px;
+        border-radius:6px;border:1.5px solid #e2e8f0;
+        background:#fff;color:#64748b;cursor:pointer;">
+        🇳🇱 ADYEN
+      </button>
+      <button onclick="filterGeschiedenis('NVDA')"
+        id="filter-NVDA"
+        style="font-size:11px;padding:4px 10px;
+        border-radius:6px;border:1.5px solid #e2e8f0;
+        background:#fff;color:#64748b;cursor:pointer;">
+        🇺🇸 NVDA
+      </button>
+      <button onclick="filterGeschiedenis('TSLA')"
+        id="filter-TSLA"
+        style="font-size:11px;padding:4px 10px;
+        border-radius:6px;border:1.5px solid #e2e8f0;
+        background:#fff;color:#64748b;cursor:pointer;">
+        🇺🇸 TSLA
+      </button>
+      <button onclick="filterGeschiedenis('RHM.DE')"
+        id="filter-RHM.DE"
+        style="font-size:11px;padding:4px 10px;
+        border-radius:6px;border:1.5px solid #e2e8f0;
+        background:#fff;color:#64748b;cursor:pointer;">
+        🇩🇪 Rheinmetall
+      </button>
+      <button onclick="filterGeschiedenis('BA')"
+        id="filter-BA"
+        style="font-size:11px;padding:4px 10px;
+        border-radius:6px;border:1.5px solid #e2e8f0;
+        background:#fff;color:#64748b;cursor:pointer;">
+        🇺🇸 Boeing
+      </button>
+      <button onclick="filterGeschiedenis('LMT')"
+        id="filter-LMT"
+        style="font-size:11px;padding:4px 10px;
+        border-radius:6px;border:1.5px solid #e2e8f0;
+        background:#fff;color:#64748b;cursor:pointer;">
+        🇺🇸 Lockheed
+      </button>
+      <span style="font-size:11px;color:#94a3b8;"
+        id="filter-resultaat"></span>
+    </div>
     <div id="geschiedenis-tabel"></div>
   </div>
 </div>
@@ -812,6 +876,15 @@ function renderGeschiedenisTabel(datum) {
     run.analyses.map(a => ({...a, runTijd: run.tijdstip}))
   );
   alleAnalyses.reverse();
+  const gefilterd = actieveFilter === 'alle'
+    ? alleAnalyses
+    : alleAnalyses.filter(a => a.symbol === actieveFilter);
+  const filterResultaat = document.getElementById('filter-resultaat');
+  if (filterResultaat) {
+    filterResultaat.textContent = actieveFilter === 'alle'
+      ? ''
+      : gefilterd.length + ' analyses gevonden';
+  }
   tabel.innerHTML = `
     <table>
       <thead>
@@ -834,7 +907,7 @@ function renderGeschiedenisTabel(datum) {
         </tr>
       </thead>
       <tbody>
-        ${alleAnalyses.map((a, idx) => `
+        ${gefilterd.map((a, idx) => `
           <tr>
             <td style="color:#94a3b8;white-space:nowrap;">${a.runTijd}</td>
             <td><strong>${a.vlag||''} ${a.label}</strong></td>
@@ -1881,6 +1954,26 @@ function startAutoSluit() {
   }, msecTotSluit);
 }
 startAutoSluit();
+
+let actieveFilter = 'alle';
+function filterGeschiedenis(symbol) {
+  actieveFilter = symbol;
+  document.querySelectorAll('[id^="filter-"]')
+    .forEach(btn => {
+      btn.style.background = '#fff';
+      btn.style.color = '#64748b';
+      btn.style.borderColor = '#e2e8f0';
+    });
+  const actief = document.getElementById('filter-' + symbol);
+  if (actief) {
+    actief.style.background = '#2563eb';
+    actief.style.color = '#fff';
+    actief.style.borderColor = '#2563eb';
+  }
+  const datum = document.querySelector('.dag-tab.actief')?.textContent?.trim()
+    || new Date().toLocaleDateString('nl-NL');
+  renderGeschiedenisTabel(datum);
+}
 
 let autoAnalyseTimer = null;
 let autoAnalyseActief = false;
