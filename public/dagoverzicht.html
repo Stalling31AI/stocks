@@ -42,6 +42,12 @@ tr:hover td { background:#f8fafc; }
   table { font-size:10px; }
   td, th { padding:6px 4px; }
 }
+#auto-analyse-toggle:checked ~ #toggle-track {
+  background: #2563eb !important;
+}
+#auto-analyse-toggle:checked ~ #toggle-thumb {
+  transform: translateX(20px) !important;
+}
 </style>
 </head>
 <body>
@@ -137,6 +143,59 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
       <input type="checkbox" value="LMT"
         onchange="updateSelectie(this)"> 🇺🇸 Lockheed
     </label>
+  </div>
+  <div style="background:#f8fafc;border-radius:10px;
+    padding:14px;margin-bottom:14px;
+    border:1.5px solid #e2e8f0;">
+    <div style="display:flex;align-items:center;
+      justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;
+          margin-bottom:4px;">
+          🤖 Automatische analyse
+        </div>
+        <div id="auto-analyse-status"
+          style="font-size:12px;color:#94a3b8;">
+          Laden...
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;
+        gap:8px;cursor:pointer;">
+        <div style="position:relative;width:44px;height:24px;">
+          <input type="checkbox" id="auto-analyse-toggle"
+            style="opacity:0;width:100%;height:100%;
+            position:absolute;cursor:pointer;z-index:1;"
+            onchange="
+              autoAnalyseActief = this.checked;
+              if (this.checked) {
+                startAutoAnalyse();
+                Notification.requestPermission();
+              } else {
+                stopAutoAnalyse();
+              }
+            ">
+          <div id="toggle-track"
+            style="position:absolute;top:0;left:0;right:0;
+            bottom:0;background:#e2e8f0;border-radius:12px;
+            transition:background .2s;">
+          </div>
+          <div id="toggle-thumb"
+            style="position:absolute;top:2px;left:2px;
+            width:20px;height:20px;background:#fff;
+            border-radius:50%;transition:transform .2s;
+            box-shadow:0 1px 3px rgba(0,0,0,.2);">
+          </div>
+        </div>
+        <span style="font-size:13px;font-weight:600;
+          color:#64748b;">
+          Elke 30 min
+        </span>
+      </label>
+    </div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:8px;">
+      Analyseert automatisch alle open beurzen elk half uur.
+      Pagina moet open blijven — laptop niet in slaapstand.
+    </div>
   </div>
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
     <button id="analyse-btn" onclick="analyseAlleAandelen()"
@@ -1685,6 +1744,99 @@ function startAutoSluit() {
   }, msecTotSluit);
 }
 startAutoSluit();
+
+let autoAnalyseTimer = null;
+let autoAnalyseActief = false;
+function startAutoAnalyse() {
+  stopAutoAnalyse();
+  const nu = new Date();
+  const minuten = nu.getMinutes();
+  const seconden = nu.getSeconds();
+  let minutenTotVolgende;
+  if (minuten < 30) {
+    minutenTotVolgende = 30 - minuten;
+  } else {
+    minutenTotVolgende = 60 - minuten;
+  }
+  const msTotVolgende = (minutenTotVolgende * 60 - seconden) * 1000;
+  updateAutoAnalyseStatus();
+  autoAnalyseTimer = setTimeout(async () => {
+    await voerAutoAnalyseUit();
+    autoAnalyseTimer = setInterval(async () => {
+      await voerAutoAnalyseUit();
+    }, 30 * 60 * 1000);
+  }, msTotVolgende);
+  console.log('Auto-analyse gepland over', minutenTotVolgende, 'minuten');
+}
+function stopAutoAnalyse() {
+  if (autoAnalyseTimer) {
+    clearTimeout(autoAnalyseTimer);
+    clearInterval(autoAnalyseTimer);
+    autoAnalyseTimer = null;
+  }
+  updateAutoAnalyseStatus();
+}
+async function voerAutoAnalyseUit() {
+  if (!autoAnalyseActief) return;
+  const openAandelen = WATCHLIST.filter(w => isBeursOpen(w.symbol));
+  if (openAandelen.length === 0) {
+    console.log('Auto-analyse: geen beurzen open');
+    updateAutoAnalyseStatus();
+    return;
+  }
+  if (document.hidden) {
+    console.log('Auto-analyse: pagina niet zichtbaar, skip');
+    return;
+  }
+  const tijdstip = new Date().toLocaleTimeString('nl-NL', {
+    hour: '2-digit', minute: '2-digit'
+  });
+  console.log('Auto-analyse gestart om', tijdstip,
+    'voor', openAandelen.map(w => w.label).join(', '));
+  document.getElementById('auto-analyse-status').textContent =
+    '🔄 Auto-analyse bezig om ' + tijdstip + '...';
+  geselecteerdeAandelen = openAandelen.map(w => w.symbol);
+  document.querySelectorAll('#aandeel-selectie input[type=checkbox]')
+    .forEach(cb => {
+      cb.checked = geselecteerdeAandelen.includes(cb.value);
+    });
+  await analyseAlleAandelen();
+  if (Notification.permission === 'granted') {
+    new Notification('📊 Yappi Analytics — Auto analyse', {
+      body: tijdstip + ': Analyse klaar voor ' +
+        openAandelen.map(w => w.label).join(', '),
+      icon: '/logo.png'
+    });
+  }
+  updateAutoAnalyseStatus();
+}
+function updateAutoAnalyseStatus() {
+  const el = document.getElementById('auto-analyse-status');
+  if (!el) return;
+  if (!autoAnalyseActief) {
+    el.textContent = '⏸ Auto-analyse uitgeschakeld';
+    el.style.color = '#94a3b8';
+    return;
+  }
+  const nu = new Date();
+  const minuten = nu.getMinutes();
+  const minutenTotVolgende = minuten < 30 ? 30 - minuten : 60 - minuten;
+  const openAandelen = WATCHLIST.filter(w => isBeursOpen(w.symbol));
+  if (openAandelen.length === 0) {
+    el.textContent = '😴 Geen beurzen open — auto-analyse wacht';
+    el.style.color = '#94a3b8';
+  } else {
+    el.textContent = '⏰ Volgende auto-analyse over ' +
+      minutenTotVolgende + ' min voor: ' +
+      openAandelen.map(w => w.vlag + ' ' + w.label).join(', ');
+    el.style.color = '#2563eb';
+  }
+}
+setInterval(updateAutoAnalyseStatus, 60000);
+window.addEventListener('load', () => {
+  updateAutoAnalyseStatus();
+  Notification.requestPermission();
+});
 </script>
 </body>
 </html>
