@@ -1896,30 +1896,46 @@ function startAutoSluit() {
   }
   window.autoSluitTimer = setTimeout(async () => {
     console.log('Auto-sluit gestart om 22:05');
-    const simA = JSON.parse(localStorage.getItem('simulaties') || '{}');
-    const datum = new Date().toLocaleDateString('nl-NL');
-    const openA = (simA[datum] || []).filter(s => s.resultaat === 'open');
-    if (openA.length > 0) {
-      await sluitSimulaties();
-      await sluitSimulatiesB();
-      if (Notification.permission === 'granted') {
-        new Notification('📊 Yappi Analytics', {
-          body: 'Dag afgesloten! Check je simulatie resultaten.',
-          icon: '/logo.png'
-        });
+
+    try {
+      const datum = new Date().toLocaleDateString('nl-NL');
+      const simA = JSON.parse(
+        localStorage.getItem('simulaties') || '{}'
+      );
+      const openA = (simA[datum] || []).filter(
+        s => s.resultaat === 'open'
+      );
+
+      const simB = JSON.parse(
+        localStorage.getItem('simulaties_b') || '{}'
+      );
+      const openB = (simB[datum] || []).filter(
+        s => s.resultaat === 'open'
+      );
+      if (openA.length > 0 || openB.length > 0) {
+        await sluitSimulaties();
+        await sluitSimulatiesB();
+
+        const el = document.getElementById(
+          'auto-sluit-status'
+        );
+        if (el) {
+          el.textContent = '✅ Dag automatisch afgesloten';
+          el.style.color = '#16a34a';
+        }
+        try {
+          if (Notification.permission === 'granted') {
+            new Notification('📊 Yappi Analytics', {
+              body: 'Dag afgesloten! Check je resultaten.',
+              icon: '/logo.png'
+            });
+          }
+        } catch(e) {}
       }
-      const el = document.getElementById('auto-sluit-status');
-      if (el) {
-        el.textContent = '✅ Dag automatisch afgesloten om 22:05';
-        el.style.color = '#16a34a';
-      }
-    } else {
-      const el = document.getElementById('auto-sluit-status');
-      if (el) {
-        el.textContent = '✅ 22:05 — geen open posities';
-        el.style.color = '#94a3b8';
-      }
+    } catch(e) {
+      console.error('Auto-sluit fout:', e.message);
     }
+    // Plan voor morgen
     startAutoSluit();
   }, msecTotSluit);
 }
