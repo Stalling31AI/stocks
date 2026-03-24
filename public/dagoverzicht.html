@@ -1316,7 +1316,7 @@ async function sluitSimulaties() {
         }));
         const candleMinuten = nlTijd.getHours() * 60 +
           nlTijd.getMinutes();
-        return candleMinuten >= simMinuten;
+        return candleMinuten >= (simMinuten - 30);
       });
       if (relevantCandles.length === 0) {
         sim.entry_bereikt = false;
@@ -1635,7 +1635,7 @@ async function sluitSimulatiesB() {
         }));
         const candleMinuten = nlTijd.getHours() * 60 +
           nlTijd.getMinutes();
-        return candleMinuten >= simMinuten;
+        return candleMinuten >= (simMinuten - 30);
       });
       if (relevantCandles.length === 0) {
         sim.entry_bereikt = false;
