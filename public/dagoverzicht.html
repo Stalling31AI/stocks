@@ -818,6 +818,10 @@ function renderGeschiedenisTabel(datum) {
         <tr>
           <th>Tijd</th>
           <th>Aandeel</th>
+          <th style="padding:8px;text-align:right;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">
+            Koers
+          </th>
           <th>Signaal</th>
           <th>Entry</th>
           <th>Stop-loss</th>
@@ -834,6 +838,10 @@ function renderGeschiedenisTabel(datum) {
           <tr>
             <td style="color:#94a3b8;white-space:nowrap;">${a.runTijd}</td>
             <td><strong>${a.vlag||''} ${a.label}</strong></td>
+            <td style="padding:8px;text-align:right;
+              font-weight:600;color:#1a1d23;">
+              ${a.prijs ? Number(a.prijs).toFixed(2) : '—'}
+            </td>
             <td><span class="signaal-pill ${a.signaal}" style="font-size:10px;">${a.actie||a.signaal}</span></td>
             <td style="font-weight:600;color:#16a34a;">${a.entry ? Number(a.entry).toFixed(2) : '—'}</td>
             <td style="font-weight:600;color:#dc2626;">${a.stop_loss ? Number(a.stop_loss).toFixed(2) : '—'}</td>
