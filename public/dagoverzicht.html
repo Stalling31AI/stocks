@@ -48,6 +48,15 @@ tr:hover td { background:#f8fafc; }
 #auto-analyse-toggle:checked ~ #toggle-thumb {
   transform: translateX(20px) !important;
 }
+.filter-btn {
+  font-size:11px;padding:4px 10px;
+  border-radius:6px;border:1.5px solid #e2e8f0;
+  background:#fff;color:#64748b;cursor:pointer;
+}
+.filter-btn.actief {
+  background:#2563eb;color:#fff;
+  border-color:#2563eb;
+}
 </style>
 </head>
 <body>
@@ -397,6 +406,35 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
       </button>
     </div>
     <div id="dag-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
+    <div id="aandeel-filter" style="display:flex;
+      gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+      <span style="font-size:11px;font-weight:600;
+        color:#94a3b8;align-self:center;">Filter:</span>
+      <button onclick="setFilter('alle')"
+        class="filter-btn actief"
+        data-filter="alle">Alle</button>
+      <button onclick="setFilter('ASML.AS')"
+        class="filter-btn"
+        data-filter="ASML.AS">🇳🇱 ASML</button>
+      <button onclick="setFilter('ADYEN.AS')"
+        class="filter-btn"
+        data-filter="ADYEN.AS">🇳🇱 ADYEN</button>
+      <button onclick="setFilter('NVDA')"
+        class="filter-btn"
+        data-filter="NVDA">🇺🇸 NVDA</button>
+      <button onclick="setFilter('TSLA')"
+        class="filter-btn"
+        data-filter="TSLA">🇺🇸 TSLA</button>
+      <button onclick="setFilter('RHM.DE')"
+        class="filter-btn"
+        data-filter="RHM.DE">🇩🇪 Rheinmetall</button>
+      <button onclick="setFilter('BA')"
+        class="filter-btn"
+        data-filter="BA">🇺🇸 Boeing</button>
+      <button onclick="setFilter('LMT')"
+        class="filter-btn"
+        data-filter="LMT">🇺🇸 Lockheed</button>
+    </div>
     <div id="geschiedenis-tabel"></div>
   </div>
 </div>
@@ -824,6 +862,19 @@ function selecteerDag(datum, el) {
   el.classList.add('actief');
   renderGeschiedenisTabel(datum);
 }
+let actieveFilter = 'alle';
+function setFilter(symbol) {
+  actieveFilter = symbol;
+  document.querySelectorAll('.filter-btn')
+    .forEach(b => {
+      b.classList.toggle('actief',
+        b.dataset.filter === symbol);
+    });
+  const datum = document.querySelector(
+    '.dag-tab.actief')?.textContent?.trim()
+    || new Date().toLocaleDateString('nl-NL');
+  renderGeschiedenisTabel(datum);
+}
 function renderGeschiedenisTabel(datum) {
   const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
   const dagData = opgeslagen[datum];
@@ -834,8 +885,9 @@ function renderGeschiedenisTabel(datum) {
   }
   const alleAnalyses = dagData.flatMap(run =>
     run.analyses.map(a => ({...a, runTijd: run.tijdstip}))
+  ).reverse().filter(a =>
+    actieveFilter === 'alle' || a.symbol === actieveFilter
   );
-  alleAnalyses.reverse();
   tabel.innerHTML = `
     <table>
       <thead>
