@@ -1460,6 +1460,13 @@ function renderSimulaties() {
         margin-left:8px;">
         🔄 Herbereken hele dag
       </button>
+      <button onclick="resetSimulaties()"
+        style="padding:8px 16px;background:#dc2626;
+        color:#fff;border:none;border-radius:8px;
+        font-weight:700;font-size:12px;cursor:pointer;
+        margin-left:8px;">
+        🗑 Reset simulaties
+      </button>
       <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
           <input type="checkbox" id="auto-sluit-toggle" checked
@@ -1741,328 +1748,170 @@ async function sluitSimulatiesB() {
   }
 }
 
+// Shared helper: simulate one analyse against candle data
+function verwerkAnalyse(analyse, quotes) {
+  const [simUur, simMin] = analyse.tijdstip.split(':').map(Number);
+  const simMinuten = simUur * 60 + simMin;
+  const relevantCandles = quotes.filter(q => {
+    const d = new Date(q.date);
+    const nl = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+    return nl.getHours() * 60 + nl.getMinutes() >= simMinuten - 15;
+  });
+  if (relevantCandles.length === 0) return null;
+
+  const dagLaag = Math.min(...relevantCandles.map(c => c.low));
+  const entryBereikt = dagLaag <= analyse.entry;
+  let resultaat = 'entry_niet_bereikt';
+  let slotkoers = relevantCandles[relevantCandles.length - 1].close;
+  let winst = 0;
+  let entryTijdstip = null;
+  let sluitTijdstip = null;
+
+  if (entryBereikt) {
+    resultaat = 'open';
+    let gekocht = false;
+    for (const candle of relevantCandles) {
+      const d = new Date(candle.date);
+      const nl = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+      const tijdstip = nl.getHours().toString().padStart(2,'0') + ':' + nl.getMinutes().toString().padStart(2,'0');
+      if (!gekocht) {
+        if (candle.low <= analyse.entry) { gekocht = true; entryTijdstip = tijdstip; }
+        continue;
+      }
+      if (candle.low <= analyse.stop_loss) {
+        resultaat = 'stop_geraakt'; slotkoers = analyse.stop_loss;
+        winst = +((analyse.stop_loss - analyse.entry) * 10).toFixed(2);
+        sluitTijdstip = tijdstip; break;
+      }
+      if (candle.high >= analyse.target) {
+        resultaat = 'target_bereikt'; slotkoers = analyse.target;
+        winst = +((analyse.target - analyse.entry) * 10).toFixed(2);
+        sluitTijdstip = tijdstip; break;
+      }
+    }
+    if (resultaat === 'open') {
+      resultaat = 'einde_dag';
+      winst = +((slotkoers - analyse.entry) * 10).toFixed(2);
+    }
+  }
+  return { entryBereikt, resultaat, slotkoers: +slotkoers.toFixed(2), winst: entryBereikt ? winst : 0, entryTijdstip, sluitTijdstip };
+}
+
+function maakSimRecord(analyse, sim) {
+  return {
+    symbol: analyse.symbol, label: analyse.label, vlag: analyse.vlag || '',
+    tijdstip: analyse.tijdstip, signaal: 'KOOP', actie: analyse.actie,
+    entry: analyse.entry, stop_loss: analyse.stop_loss, target: analyse.target,
+    rr_ratio: analyse.rr_ratio, aantal: 10, redenering: analyse.redenering,
+    resultaat: sim.resultaat, entry_bereikt: sim.entryBereikt,
+    entryTijdstip: sim.entryTijdstip, sluitTijdstip: sim.sluitTijdstip,
+    slotkoers: sim.slotkoers, winst: sim.winst,
+  };
+}
+
 async function herbereken() {
   const btn = document.getElementById('herbereken-btn');
   btn.disabled = true;
   btn.textContent = '⏳ Bezig...';
-
   const datum = new Date().toLocaleDateString('nl-NL');
 
-  // Haal alle analyses van vandaag op
-  const opgeslagen = JSON.parse(
-    localStorage.getItem('daganalyses') || '{}'
-  );
+  const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
   const dagData = opgeslagen[datum];
-
   if (!dagData || dagData.length === 0) {
     alert('Geen analyses gevonden voor vandaag.');
-    btn.disabled = false;
-    btn.textContent = '🔄 Herbereken hele dag';
-    return;
+    btn.disabled = false; btn.textContent = '🔄 Herbereken hele dag'; return;
   }
-  // Verzamel alle analyses
-  const alleAnalyses = dagData.flatMap(run =>
-    run.analyses.map(a => ({
-      ...a,
-      tijdstip: run.tijdstip
-    }))
-  );
-  // Wis huidige simulaties
-  const simA = JSON.parse(
-    localStorage.getItem('simulaties') || '{}'
-  );
-  simA[datum] = [];
-  localStorage.setItem('simulaties', JSON.stringify(simA));
-  const simB = JSON.parse(
-    localStorage.getItem('simulaties_b') || '{}'
-  );
-  simB[datum] = [];
-  localStorage.setItem('simulaties_b', JSON.stringify(simB));
-  // Haal koersdata op per aandeel (eenmalig)
-  const koersData = {};
-  const symbols = [...new Set(
-    alleAnalyses.map(a => a.symbol).filter(Boolean)
-  )];
 
-  for (const symbol of symbols) {
-    try {
-      const res = await fetch(
-        `/api/quote/${symbol}?interval=15m`
-      );
-      const data = await res.json();
-      koersData[symbol] = data.quotes || [];
-      console.log(symbol, 'geladen:',
-        koersData[symbol].length, 'candles');
-    } catch(e) {
-      console.error('Fout laden', symbol, e.message);
-    }
-  }
-  // Verwerk elke analyse in tijdvolgorde
-  const gesorteerd = alleAnalyses.sort((a, b) => {
+  const alleAnalyses = dagData.flatMap(run =>
+    run.analyses.map(a => ({ ...a, tijdstip: run.tijdstip }))
+  ).sort((a, b) => {
     const [aU, aM] = a.tijdstip.split(':').map(Number);
     const [bU, bM] = b.tijdstip.split(':').map(Number);
     return (aU * 60 + aM) - (bU * 60 + bM);
   });
-  for (const analyse of gesorteerd) {
-    const isKoop = analyse.signaal === 'KOOP' ||
-      (analyse.actie &&
-       analyse.actie.toUpperCase().includes('KOOP'));
 
-    if (!isKoop) continue;
-    if (!analyse.entry) continue;
-    if (!isBeursOpen(analyse.symbol)) continue;
-    const quotes = koersData[analyse.symbol] || [];
-    if (quotes.length === 0) continue;
-    // Candles NA dit analysetijdstip
-    const [simUur, simMin] = analyse.tijdstip
-      .split(':').map(Number);
-    const simMinuten = simUur * 60 + simMin;
-    const relevantCandles = quotes.filter(q => {
-      const d = new Date(q.date);
-      const nl = new Date(d.toLocaleString('en-US', {
-        timeZone: 'Europe/Amsterdam'
-      }));
-      const candleMin = nl.getHours() * 60 +
-        nl.getMinutes();
-      // 15 min buffer voor vertraging
-      return candleMin >= simMinuten - 15;
-    });
-    if (relevantCandles.length === 0) continue;
-    // Check entry
-    const dagLaag = Math.min(
-      ...relevantCandles.map(c => c.low)
-    );
-    const entryBereikt = dagLaag <= analyse.entry;
-    let resultaat = 'entry_niet_bereikt';
-    let slotkoers = relevantCandles[
-      relevantCandles.length - 1
-    ].close;
-    let winst = 0;
-    let entryTijdstip = null;
-    let sluitTijdstip = null;
-    if (entryBereikt) {
-      resultaat = 'open';
-
-      // Loop candle voor candle na entry
-      let gekocht = false;
-      for (const candle of relevantCandles) {
-        const d = new Date(candle.date);
-        const nl = new Date(d.toLocaleString('en-US', {
-          timeZone: 'Europe/Amsterdam'
-        }));
-        const tijdstip =
-          nl.getHours().toString().padStart(2,'0') +
-          ':' +
-          nl.getMinutes().toString().padStart(2,'0');
-        if (!gekocht) {
-          if (candle.low <= analyse.entry) {
-            gekocht = true;
-            entryTijdstip = tijdstip;
-          }
-          continue;
-        }
-        // Stop-loss check
-        if (candle.low <= analyse.stop_loss) {
-          resultaat = 'stop_geraakt';
-          slotkoers = analyse.stop_loss;
-          winst = +((analyse.stop_loss - analyse.entry)
-            * 10).toFixed(2);
-          sluitTijdstip = tijdstip;
-          break;
-        }
-        // Target check
-        if (candle.high >= analyse.target) {
-          resultaat = 'target_bereikt';
-          slotkoers = analyse.target;
-          winst = +((analyse.target - analyse.entry)
-            * 10).toFixed(2);
-          sluitTijdstip = tijdstip;
-          break;
-        }
-      }
-      // Nog open aan einde dag
-      if (resultaat === 'open') {
-        resultaat = 'einde_dag';
-        winst = +((slotkoers - analyse.entry)
-          * 10).toFixed(2);
-      }
-    }
-    // Sla op in Simulatie A
-    const simAData = JSON.parse(
-      localStorage.getItem('simulaties') || '{}'
-    );
-    if (!simAData[datum]) simAData[datum] = [];
-    simAData[datum].push({
-      symbol: analyse.symbol,
-      label: analyse.label,
-      vlag: analyse.vlag || '',
-      tijdstip: analyse.tijdstip,
-      signaal: 'KOOP',
-      actie: analyse.actie,
-      entry: analyse.entry,
-      stop_loss: analyse.stop_loss,
-      target: analyse.target,
-      rr_ratio: analyse.rr_ratio,
-      aantal: 10,
-      redenering: analyse.redenering,
-      resultaat: resultaat,
-      entry_bereikt: entryBereikt,
-      entryTijdstip: entryTijdstip,
-      sluitTijdstip: sluitTijdstip,
-      slotkoers: +slotkoers.toFixed(2),
-      winst: entryBereikt ? winst : 0,
-    });
-    localStorage.setItem('simulaties',
-      JSON.stringify(simAData));
+  // Reset simulaties voor vandaag
+  for (const sleutel of ['simulaties', 'simulaties_b']) {
+    const d = JSON.parse(localStorage.getItem(sleutel) || '{}');
+    d[datum] = []; localStorage.setItem(sleutel, JSON.stringify(d));
   }
-  // Simulatie B apart verwerken
-  // (positiebeheer - max 1 positie per aandeel)
-  const simBData = JSON.parse(
-    localStorage.getItem('simulaties_b') || '{}'
-  );
-  if (!simBData[datum]) simBData[datum] = [];
 
-  for (const analyse of gesorteerd) {
-    const isKoop = analyse.signaal === 'KOOP' ||
-      (analyse.actie &&
-       analyse.actie.toUpperCase().includes('KOOP'));
-    if (!isKoop) continue;
-    if (!analyse.entry) continue;
-    if (!isBeursOpen(analyse.symbol)) continue;
+  // Batch-fetch koersdata per symbool
+  const koersData = {};
+  for (const symbol of [...new Set(alleAnalyses.map(a => a.symbol).filter(Boolean))]) {
+    try {
+      const res = await fetch(`/api/quote/${symbol}?interval=15m`);
+      const data = await res.json();
+      koersData[symbol] = data.quotes || [];
+      console.log(symbol, 'geladen:', koersData[symbol].length, 'candles');
+    } catch(e) { console.error('Fout laden', symbol, e.message); }
+  }
+
+  // Sim A: elke KOOP analyse = aparte trade
+  const simAData = JSON.parse(localStorage.getItem('simulaties') || '{}');
+  if (!simAData[datum]) simAData[datum] = [];
+  for (const analyse of alleAnalyses) {
+    const isKoop = analyse.signaal === 'KOOP' || (analyse.actie && analyse.actie.toUpperCase().includes('KOOP'));
+    if (!isKoop || !analyse.entry || !isBeursOpen(analyse.symbol)) continue;
     const quotes = koersData[analyse.symbol] || [];
     if (quotes.length === 0) continue;
-    // Check open positie voor dit aandeel
+    const sim = verwerkAnalyse(analyse, quotes);
+    if (!sim) continue;
+    simAData[datum].push(maakSimRecord(analyse, sim));
+  }
+  localStorage.setItem('simulaties', JSON.stringify(simAData));
+
+  // Sim B: max 1 open positie per symbool
+  const simBData = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+  if (!simBData[datum]) simBData[datum] = [];
+  for (const analyse of alleAnalyses) {
+    const isKoop = analyse.signaal === 'KOOP' || (analyse.actie && analyse.actie.toUpperCase().includes('KOOP'));
+    if (!isKoop || !analyse.entry || !isBeursOpen(analyse.symbol)) continue;
+    const quotes = koersData[analyse.symbol] || [];
+    if (quotes.length === 0) continue;
+
     const openPositie = simBData[datum].find(s =>
-      s.symbol === analyse.symbol &&
-      s.resultaat === 'open'
+      s.symbol === analyse.symbol && s.resultaat === 'open'
     );
     if (openPositie) {
+      // Update bestaande positie
       if (!openPositie.entry_bereikt) {
-        // Nog niet gekocht - update entry/stop/target
         openPositie.entry = analyse.entry;
         openPositie.stop_loss = analyse.stop_loss;
         openPositie.target = analyse.target;
-        openPositie.updates = openPositie.updates || [];
-        openPositie.updates.push({
-          tijdstip: analyse.tijdstip,
-          entry: analyse.entry,
-          stop_loss: analyse.stop_loss,
-          target: analyse.target,
-          reden: 'entry bijgewerkt - nog niet gekocht'
-        });
       } else {
-        // Al gekocht - alleen stop/target updaten
         openPositie.stop_loss = analyse.stop_loss;
         openPositie.target = analyse.target;
-        openPositie.updates = openPositie.updates || [];
-        openPositie.updates.push({
-          tijdstip: analyse.tijdstip,
-          stop_loss: analyse.stop_loss,
-          target: analyse.target,
-          reden: 'stop/target bijgewerkt - positie actief'
-        });
       }
+      openPositie.updates = openPositie.updates || [];
+      openPositie.updates.push({ tijdstip: analyse.tijdstip, entry: analyse.entry, stop_loss: analyse.stop_loss, target: analyse.target });
       localStorage.setItem('simulaties_b', JSON.stringify(simBData));
       continue;
-    } else {
-      // Nieuwe positie - zelfde logica als Sim A
-      const [simUur, simMin] = analyse.tijdstip
-        .split(':').map(Number);
-      const simMinuten = simUur * 60 + simMin;
-      const relevantCandles = quotes.filter(q => {
-        const d = new Date(q.date);
-        const nl = new Date(d.toLocaleString('en-US', {
-          timeZone: 'Europe/Amsterdam'
-        }));
-        return nl.getHours() * 60 +
-          nl.getMinutes() >= simMinuten - 15;
-      });
-      if (relevantCandles.length === 0) continue;
-      const dagLaag = Math.min(
-        ...relevantCandles.map(c => c.low)
-      );
-      const entryBereikt = dagLaag <= analyse.entry;
-      let resultaat = 'entry_niet_bereikt';
-      let slotkoers = relevantCandles[
-        relevantCandles.length - 1
-      ].close;
-      let winst = 0;
-      let entryTijdstip = null;
-      let sluitTijdstip = null;
-      if (entryBereikt) {
-        resultaat = 'open';
-        let gekocht = false;
-
-        for (const candle of relevantCandles) {
-          const d = new Date(candle.date);
-          const nl = new Date(d.toLocaleString('en-US', {
-            timeZone: 'Europe/Amsterdam'
-          }));
-          const tijdstip =
-            nl.getHours().toString().padStart(2,'0') +
-            ':' + nl.getMinutes().toString().padStart(2,'0');
-          if (!gekocht) {
-            if (candle.low <= analyse.entry) {
-              gekocht = true;
-              entryTijdstip = tijdstip;
-            }
-            continue;
-          }
-          if (candle.low <= analyse.stop_loss) {
-            resultaat = 'stop_geraakt';
-            slotkoers = analyse.stop_loss;
-            winst = +((analyse.stop_loss - analyse.entry)
-              * 10).toFixed(2);
-            sluitTijdstip = tijdstip;
-            break;
-          }
-          if (candle.high >= analyse.target) {
-            resultaat = 'target_bereikt';
-            slotkoers = analyse.target;
-            winst = +((analyse.target - analyse.entry)
-              * 10).toFixed(2);
-            sluitTijdstip = tijdstip;
-            break;
-          }
-        }
-        if (resultaat === 'open') {
-          resultaat = 'einde_dag';
-          winst = +((slotkoers - analyse.entry)
-            * 10).toFixed(2);
-        }
-      }
-      simBData[datum].push({
-        symbol: analyse.symbol,
-        label: analyse.label,
-        vlag: analyse.vlag || '',
-        tijdstip: analyse.tijdstip,
-        signaal: 'KOOP',
-        actie: analyse.actie,
-        entry: analyse.entry,
-        stop_loss: analyse.stop_loss,
-        target: analyse.target,
-        rr_ratio: analyse.rr_ratio,
-        aantal: 10,
-        redenering: analyse.redenering,
-        resultaat: resultaat,
-        entry_bereikt: entryBereikt,
-        entryTijdstip: entryTijdstip,
-        sluitTijdstip: sluitTijdstip,
-        slotkoers: +slotkoers.toFixed(2),
-        winst: entryBereikt ? winst : 0,
-        updates: [],
-      });
     }
+
+    // Nieuwe positie
+    const sim = verwerkAnalyse(analyse, quotes);
+    if (!sim) continue;
+    simBData[datum].push({ ...maakSimRecord(analyse, sim), updates: [] });
   }
-  localStorage.setItem('simulaties_b',
-    JSON.stringify(simBData));
+  localStorage.setItem('simulaties_b', JSON.stringify(simBData));
+
   renderSimulaties();
   renderSimulatiesB();
   btn.disabled = false;
   btn.textContent = '🔄 Herbereken hele dag';
+  alert('Klaar! Alle simulaties herberekend op basis van werkelijke koersen.');
+}
 
-  alert('Klaar! Alle simulaties herberekend ' +
-    'op basis van werkelijke koersen.');
+function resetSimulaties() {
+  if (!confirm('Weet je zeker dat je alle simulaties van vandaag wilt wissen?')) return;
+  const datum = new Date().toLocaleDateString('nl-NL');
+  for (const sleutel of ['simulaties', 'simulaties_b']) {
+    const d = JSON.parse(localStorage.getItem(sleutel) || '{}');
+    d[datum] = []; localStorage.setItem(sleutel, JSON.stringify(d));
+  }
+  renderSimulaties();
+  renderSimulatiesB();
 }
 
 function renderSimulatiesB() {
