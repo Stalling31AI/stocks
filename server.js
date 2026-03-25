@@ -218,8 +218,9 @@ Als WACHT: geef CONCREET aan bij welke prijs/conditie je WEL zou kopen.
 Geen vage antwoorden - altijd een concreet level noemen.
 Reageer ALLEEN met dit JSON:
 {
-  "signaal": "KOOP" of "WACHT",
-  "actie": "KOOP NU" of "KOOP BIJ DALING NAAR [prijs]" of "WACHT TOT [conditie]",
+  "signaal": "KOOP" als je nu of bij een specifieke prijs zou kopen. "WACHT" alleen als er geen enkel koopmoment is vandaag.
+  "actie": "KOOP NU" of "KOOP BIJ DALING NAAR [prijs]",
+  BELANGRIJK: Als je "KOOP BIJ DALING NAAR [prijs]" geeft, gebruik dan signaal="KOOP" en vul entry in met die prijs. Nooit signaal="WACHT" combineren met een KOOP actie.
   "vertrouwen": 0-100,
   "redenering": "max 2 zinnen met exacte prijzen",
   "entry": getal of null,
@@ -248,6 +249,34 @@ Reageer ALLEEN met dit JSON:
     }
     try {
       const parsed = JSON.parse(match[0]);
+      // Fix: actie bevat KOOP maar signaal is WACHT
+      if (parsed.actie &&
+          parsed.actie.toUpperCase().includes('KOOP') &&
+          parsed.signaal === 'WACHT') {
+        parsed.signaal = 'KOOP';
+      }
+      // Fix: entry ontbreekt, extraheer uit actie tekst
+      if (parsed.signaal === 'KOOP' && !parsed.entry) {
+        const entryMatch = parsed.actie?.match(/(\d+[\.,]?\d*)/);
+        if (entryMatch) {
+          parsed.entry = parseFloat(entryMatch[1].replace(',', '.'));
+        }
+      }
+      // Fix: stop/target ontbreken of zijn ongeldig
+      if (parsed.signaal === 'KOOP' && parsed.entry) {
+        if (!parsed.stop_loss || parsed.stop_loss >= parsed.entry) {
+          parsed.stop_loss = +(parsed.entry * 0.992).toFixed(2);
+        }
+        if (!parsed.target || parsed.target <= parsed.entry) {
+          parsed.target = +(parsed.entry * 1.02).toFixed(2);
+        }
+        const risico = parsed.entry - parsed.stop_loss;
+        const beloning = parsed.target - parsed.entry;
+        if (beloning < risico * 1.5) {
+          parsed.target = +(parsed.entry + risico * 2).toFixed(2);
+        }
+        parsed.rr_ratio = +((parsed.target - parsed.entry) / (parsed.entry - parsed.stop_loss)).toFixed(2);
+      }
       res.json(parsed);
     } catch(e) {
       console.error('JSON parse fout:', match[0].substring(0, 200));

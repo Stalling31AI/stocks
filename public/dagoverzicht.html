@@ -1253,10 +1253,10 @@ async function simuleerTrades(analyses) {
       'beursOpen:', isBeursOpen(a.symbol));
 
     // Alleen KOOP simuleren - geen short selling
-    const isKoopActie = a.signaal === 'KOOP' ||
+    const isKoopActie =
+      a.signaal === 'KOOP' ||
       (a.actie && a.actie.toUpperCase().includes('KOOP'));
-    if (!isKoopActie) continue;
-    if (!a.entry) continue;
+    if (!isKoopActie || !a.entry) continue;
 
     // Controleer of beurs open was ten tijde van analyse
     if (!isBeursOpen(a.symbol)) {
@@ -1561,10 +1561,10 @@ async function simuleerTradesB(analyses) {
   if (!simulaties[datum]) simulaties[datum] = [];
   for (const a of analyses) {
     // Alleen KOOP simuleren - geen short selling
-    const isKoopActie = a.signaal === 'KOOP' ||
+    const isKoopActie =
+      a.signaal === 'KOOP' ||
       (a.actie && a.actie.toUpperCase().includes('KOOP'));
-    if (!isKoopActie) continue;
-    if (!a.entry) continue;
+    if (!isKoopActie || !a.entry) continue;
 
     // Controleer of beurs open was ten tijde van analyse
     if (!isBeursOpen(a.symbol)) {
