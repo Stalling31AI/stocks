@@ -379,6 +379,29 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
         Simuleert alsof je elk KOOP/VERKOOP advies opvolgt
       </div>
     </div>
+    <div id="simulatie-knoppen" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+      <button id="sluit-btn" onclick="sluitSimulaties()"
+        style="padding:8px 16px;background:#2563eb;color:#fff;
+        border:none;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;">
+        📊 Sluit dag af &amp; bereken resultaat
+      </button>
+      <button onclick="herbereken()" id="herbereken-btn"
+        style="padding:8px 16px;background:#16a34a;color:#fff;
+        border:none;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;">
+        🔄 Herbereken hele dag
+      </button>
+      <button onclick="resetSimulaties()"
+        style="padding:8px 16px;background:#dc2626;color:#fff;
+        border:none;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;">
+        🗑 Reset simulaties
+      </button>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;">
+        <input type="checkbox" id="auto-sluit-toggle" checked
+          onchange="if(this.checked) startAutoSluit(); else clearTimeout(window.autoSluitTimer);">
+        Auto-sluit om 22:05
+      </label>
+      <span id="auto-sluit-status" style="color:#94a3b8;font-size:11px;"></span>
+    </div>
     <div id="simulatie-tabel"></div>
   </div>
   <div style="background:#fff;border-radius:12px;padding:20px;
@@ -1438,43 +1461,12 @@ function renderSimulaties() {
     'open':                '⏳ Open',
   };
   el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;
-      align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:13px;font-weight:600;">
-        ${lijst.length} gesimuleerde trades |
-        ${gekocht} gekocht | ${nietGekocht} entry niet bereikt |
-        Totaal: <span style="color:${totaalWinst>=0?'#16a34a':'#dc2626'};font-weight:700;">
-          ${totaalWinst>=0?'+':''}€${totaalWinst.toFixed(2)}
-        </span>
-      </div>
-      <button id="sluit-btn" onclick="sluitSimulaties()"
-        style="padding:8px 16px;background:#2563eb;color:#fff;
-        border:none;border-radius:8px;font-weight:700;font-size:12px;
-        cursor:pointer;">
-        📊 Sluit dag af & bereken resultaat
-      </button>
-      <button onclick="herbereken()" id="herbereken-btn"
-        style="padding:8px 16px;background:#16a34a;
-        color:#fff;border:none;border-radius:8px;
-        font-weight:700;font-size:12px;cursor:pointer;
-        margin-left:8px;">
-        🔄 Herbereken hele dag
-      </button>
-      <button onclick="resetSimulaties()"
-        style="padding:8px 16px;background:#dc2626;
-        color:#fff;border:none;border-radius:8px;
-        font-weight:700;font-size:12px;cursor:pointer;
-        margin-left:8px;">
-        🗑 Reset simulaties
-      </button>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="auto-sluit-toggle" checked
-            onchange="if(this.checked) startAutoSluit(); else clearTimeout(window.autoSluitTimer);">
-          Auto-sluit om 22:05
-        </label>
-        <span id="auto-sluit-status" style="color:#94a3b8;font-size:11px;"></span>
-      </div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px;">
+      ${lijst.length} gesimuleerde trades |
+      ${gekocht} gekocht | ${nietGekocht} entry niet bereikt |
+      Totaal: <span style="color:${totaalWinst>=0?'#16a34a':'#dc2626'};font-weight:700;">
+        ${totaalWinst>=0?'+':''}€${totaalWinst.toFixed(2)}
+      </span>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
@@ -1904,14 +1896,27 @@ async function herbereken() {
 }
 
 function resetSimulaties() {
-  if (!confirm('Weet je zeker dat je alle simulaties van vandaag wilt wissen?')) return;
+  if (!confirm(
+    'Alle simulaties van vandaag wissen?\n' +
+    'De analyse geschiedenis blijft bewaard.\n' +
+    'Klik daarna op Herbereken om opnieuw te berekenen.'
+  )) return;
+
   const datum = new Date().toLocaleDateString('nl-NL');
-  for (const sleutel of ['simulaties', 'simulaties_b']) {
-    const d = JSON.parse(localStorage.getItem(sleutel) || '{}');
-    d[datum] = []; localStorage.setItem(sleutel, JSON.stringify(d));
-  }
+  ['simulaties','simulaties_b'].forEach(key => {
+    const data = JSON.parse(localStorage.getItem(key) || '{}');
+    data[datum] = [];
+    localStorage.setItem(key, JSON.stringify(data));
+  });
+
   renderSimulaties();
   renderSimulatiesB();
+
+  // Zorg dat herbereken knop zichtbaar blijft
+  const herberekenBtn = document.getElementById('herbereken-btn');
+  if (herberekenBtn) herberekenBtn.style.display = 'inline-block';
+
+  alert('Gesimuleerde trades gewist.\nKlik nu op 🔄 Herbereken hele dag.');
 }
 
 function renderSimulatiesB() {
