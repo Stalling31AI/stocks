@@ -1394,6 +1394,22 @@ async function sluitSimulaties() {
 
 function renderSimulaties() {
   const datum = new Date().toLocaleDateString('nl-NL');
+  const simData = JSON.parse(localStorage.getItem('simulaties') || '{}');
+  const lijst = simData[datum] || [];
+  if (lijst.length > 0) {
+    console.log('=== SIMULATIE DATA ===');
+    lijst.slice(0, 3).forEach(s => {
+      console.log(s.symbol, {
+        entry: s.entry,
+        stop: s.stop_loss,
+        target: s.target,
+        stopOnderEntry: s.stop_loss < s.entry,
+        entryBereikt: s.entry_bereikt,
+        resultaat: s.resultaat,
+        winst: s.winst
+      });
+    });
+  }
   const simulaties = JSON.parse(
     localStorage.getItem('simulaties') || '{}'
   );
