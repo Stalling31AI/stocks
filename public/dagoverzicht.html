@@ -1030,7 +1030,11 @@ function updateScore() {
     dagData.forEach(run => run.analyses.forEach(a => {
       if (a.resultaat==='correct') correct++;
       else if (a.resultaat==='incorrect') incorrect++;
-      else open++;
+      else if (
+        (a.signaal === 'KOOP' || (a.actie && a.actie.includes('KOOP'))) &&
+        a.entry &&
+        (!a.resultaat || a.resultaat === 'open' || a.resultaat === 'onbekend')
+      ) open++;
     }));
   }
   const totaal = correct+incorrect;
