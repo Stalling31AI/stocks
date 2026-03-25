@@ -120,20 +120,6 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
-      id="lbl-NVDA">
-      <input type="checkbox" value="NVDA" checked
-        onchange="updateSelectie(this)"> 🇺🇸 NVDA
-    </label>
-    <label style="display:flex;align-items:center;gap:5px;
-      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
-      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
-      id="lbl-TSLA">
-      <input type="checkbox" value="TSLA" checked
-        onchange="updateSelectie(this)"> 🇺🇸 TSLA
-    </label>
-    <label style="display:flex;align-items:center;gap:5px;
-      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
-      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
       id="lbl-RHM.DE">
       <input type="checkbox" value="RHM.DE" checked
         onchange="updateSelectie(this)"> 🇩🇪 Rheinmetall
@@ -141,16 +127,30 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
-      id="lbl-BA">
-      <input type="checkbox" value="BA"
-        onchange="updateSelectie(this)"> 🇺🇸 Boeing
+      id="lbl-NVDA">
+      <input type="checkbox" value="NVDA" checked
+        onchange="updateSelectie(this)"> 🇺🇸 NVIDIA
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
-      id="lbl-LMT">
-      <input type="checkbox" value="LMT"
-        onchange="updateSelectie(this)"> 🇺🇸 Lockheed
+      id="lbl-META">
+      <input type="checkbox" value="META"
+        onchange="updateSelectie(this)"> 🇺🇸 Meta
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-NFLX">
+      <input type="checkbox" value="NFLX"
+        onchange="updateSelectie(this)"> 🇺🇸 Netflix
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-AMD">
+      <input type="checkbox" value="AMD"
+        onchange="updateSelectie(this)"> 🇺🇸 AMD
     </label>
   </div>
   <div style="background:#f8fafc;border-radius:10px;
@@ -284,9 +284,12 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
             <select id="trade-symbol" style="width:100%;padding:7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;">
               <option value="ASML.AS">🇳🇱 ASML</option>
               <option value="ADYEN.AS">🇳🇱 ADYEN</option>
-              <option value="NVDA">🇺🇸 NVIDIA</option>
-              <option value="TSLA">🇺🇸 TESLA</option>
               <option value="RHM.DE">🇩🇪 Rheinmetall</option>
+              <option value="NVDA">🇺🇸 NVIDIA</option>
+              <option value="META">🇺🇸 Meta</option>
+              <option value="NFLX">🇺🇸 Netflix</option>
+              <option value="AMD">🇺🇸 AMD</option>
+              <option value="TSLA">🇺🇸 Tesla</option>
               <option value="BA">🇺🇸 Boeing</option>
               <option value="LMT">🇺🇸 Lockheed</option>
             </select>

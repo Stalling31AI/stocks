@@ -168,9 +168,9 @@ app.post('/api/analyze', async (req, res) => {
       'NVDA': 'Marktleider chips. Sterk AI/tech sentiment. Dagbewegingen $3-8. Min vertrouwen: 55%.',
       'TSLA': 'Extreem volatiel. Veel valse signalen. Alleen handelen bij vertrouwen 75%+. Strikte stop-loss.',
       'RHM.DE': 'Defensie aandeel. Stijgt bij geopolitiek nieuws. Volg NAVO/Oekraïne nieuws. Min vertrouwen: 65%.',
-      'META': 'Sociale media/AI. Hoge liquiditeit. Dagbewegingen $3-10. Reageert op tech sentiment. Min vertrouwen: 55%.',
-      'NFLX': 'Streaming. Volatiel rond earnings. Dagbewegingen $5-15. Min vertrouwen: 60%.',
-      'AMD': 'Chips/AI concurrent NVDA. Hoge volatiliteit. Dagbewegingen $2-8. Sterk gecorreleerd met NVDA. Min vertrouwen: 60%.',
+      'META': 'Social media/AI. Hoge dagrange $8-15. Sterk gecorreleerd met tech sentiment. Min vertrouwen: 55%.',
+      'NFLX': 'Streaming. Volatiel rond earnings. Dagrange $8-20. Min vertrouwen: 60%.',
+      'AMD':  'Chips/AI. Volgt NVDA sterk. Dagrange $3-6. Min vertrouwen: 55%.',
     };
     const isEuropees = ['ASML.AS','ADYEN.AS','RHM.DE'].includes(symbol);
     const handelVenster = isEuropees ? '09:00-17:30' : '15:30-22:00';

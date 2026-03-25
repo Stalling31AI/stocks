@@ -383,10 +383,10 @@
     <div id="snelkeuze" style="display:flex;gap:5px;flex-shrink:0;">
       <button class="snel-btn actief" onclick="laadSymbol('ASML.AS',this)">ASML</button>
       <button class="snel-btn" onclick="laadSymbol('ADYEN.AS',this)">ADYEN</button>
-      <button class="snel-btn" onclick="laadSymbol('NVDA',this)">NVDA</button>
-      <button class="snel-btn" onclick="laadSymbol('NFLX',this)">Netflix</button>
       <button class="snel-btn" onclick="laadSymbol('RHM.DE',this)">Rheinmetall</button>
+      <button class="snel-btn" onclick="laadSymbol('NVDA',this)">NVDA</button>
       <button class="snel-btn" onclick="laadSymbol('META',this)">Meta</button>
+      <button class="snel-btn" onclick="laadSymbol('NFLX',this)">Netflix</button>
       <button class="snel-btn" onclick="laadSymbol('AMD',this)">AMD</button>
     </div>
     <div id="alert-balk" style="margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11px;color:#64748b;flex-shrink:0;">
@@ -646,11 +646,11 @@ let aiWeerstand = null;
 const BEURSTIJDEN = {
   'ASML.AS':  { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', vlag: '🇳🇱' },
   'ADYEN.AS': { naam: 'Euronext Amsterdam', open: '09:00', sluit: '17:30', vlag: '🇳🇱' },
-  'NVDA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
-  'TSLA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
   'RHM.DE':   { naam: 'XETRA Frankfurt',   open: '09:00', sluit: '17:30', vlag: '🇩🇪' },
-  'BA':       { naam: 'NYSE',               open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
-  'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
+  'NVDA':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
+  'META':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
+  'NFLX':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
+  'AMD':      { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', vlag: '🇺🇸' },
 };
 function getBeursstatus(symbol) {
   const info = BEURSTIJDEN[symbol];
