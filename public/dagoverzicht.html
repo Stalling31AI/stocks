@@ -1394,8 +1394,10 @@ async function sluitSimulaties() {
 
 function renderSimulaties() {
   const datum = new Date().toLocaleDateString('nl-NL');
-  const simData = JSON.parse(localStorage.getItem('simulaties') || '{}');
-  const lijst = simData[datum] || [];
+  const simulaties = JSON.parse(
+    localStorage.getItem('simulaties') || '{}'
+  );
+  const lijst = simulaties[datum] || [];
   if (lijst.length > 0) {
     console.log('=== SIMULATIE DATA ===');
     lijst.slice(0, 3).forEach(s => {
@@ -1410,10 +1412,6 @@ function renderSimulaties() {
       });
     });
   }
-  const simulaties = JSON.parse(
-    localStorage.getItem('simulaties') || '{}'
-  );
-  const lijst = simulaties[datum] || [];
   const el = document.getElementById('simulatie-tabel');
   if (!el) return;
   if (lijst.length === 0) {
