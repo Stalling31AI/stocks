@@ -676,19 +676,20 @@ async function analyseAlleAandelen() {
       ' (' + (i+1) + '/' + teAnalyseren.length + ')';
     document.getElementById('voortgang-status').textContent =
       i > 0 ? teAnalyseren.slice(0,i).map(w=>w.label).join(', ') + ' klaar' : '';
+      let quotes = [], last = null, rsi = null, macdData = null, bb = null, trend = null;
     try {
       const quoteRes = await fetch(`/api/quote/${item.symbol}?interval=15m`);
       const quoteData = await quoteRes.json();
-      const quotes = quoteData.quotes || [];
-      const last = quotes.length > 0
+      quotes = quoteData.quotes || [];
+      last = quotes.length > 0
         ? quotes[quotes.length - 1]
         : null;
       if (quotes.length < 2) throw new Error('Te weinig data');
       const closes = quotes.map(q => q.close);
-      const rsi = berekenRSI(closes);
-      const macdData = berekenMACD(closes);
-      const bb = berekenBollinger(closes);
-      const trend = closes.slice(-5).reduce((a,b)=>a+b,0)/5 >
+      rsi = berekenRSI(closes);
+      macdData = berekenMACD(closes);
+      bb = berekenBollinger(closes);
+      trend = closes.slice(-5).reduce((a,b)=>a+b,0)/5 >
                     closes.slice(-10,-5).reduce((a,b)=>a+b,0)/5
                     ? 'OPWAARTS' : 'NEERWAARTS';
       const openingGap = quotes.length > 1
