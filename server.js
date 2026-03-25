@@ -260,29 +260,36 @@ Reageer ALLEEN met dit JSON:
       // Validatie na JSON parse
       if (parsed.signaal === 'KOOP') {
         const entry = parseFloat(parsed.entry);
-        const isGoedkoop = entry < 300;
-        const minStop = isGoedkoop ? 0.985 : 0.990;
-        const minTarget = isGoedkoop ? 1.030 : 1.020;
 
-        if (!parsed.stop_loss ||
-            parseFloat(parsed.stop_loss) >= entry ||
-            parseFloat(parsed.stop_loss) > entry * minStop) {
-          parsed.stop_loss = +(entry * minStop).toFixed(2);
+        // Minimum stop afstand op basis van prijs
+        let minStopPct;
+        if (entry > 1000) minStopPct = 0.988;      // 1.2%
+        else if (entry > 500) minStopPct = 0.985;   // 1.5%
+        else if (entry > 100) minStopPct = 0.982;   // 1.8%
+        else minStopPct = 0.978;                     // 2.2%
+        const minStop = +(entry * minStopPct).toFixed(2);
+        const parsedStop = parseFloat(parsed.stop_loss);
+
+        // Stop te hoog of te dichtbij
+        if (!parsedStop || parsedStop >= entry ||
+            parsedStop > minStop) {
+          parsed.stop_loss = minStop;
         }
 
-        if (!parsed.target ||
-            parseFloat(parsed.target) <= entry ||
-            parseFloat(parsed.target) < entry * minTarget) {
-          parsed.target = +(entry * minTarget).toFixed(2);
+        // Target minimaal 2x risico
+        const risico = entry - parsed.stop_loss;
+        const minTarget = +(entry + risico * 2).toFixed(2);
+        const parsedTarget = parseFloat(parsed.target);
+
+        if (!parsedTarget || parsedTarget <= entry ||
+            parsedTarget < minTarget) {
+          parsed.target = minTarget;
         }
 
-        const risico = entry - parseFloat(parsed.stop_loss);
-        const beloning = parseFloat(parsed.target) - entry;
-        if (beloning < risico * 1.5) {
-          parsed.target = +(entry + risico * 2).toFixed(2);
-        }
-
-        parsed.rr_ratio = +(beloning / risico).toFixed(2);
+        parsed.rr_ratio = +(
+          (parsed.target - entry) /
+          (entry - parsed.stop_loss)
+        ).toFixed(2);
       }
       // KOOP actie maar WACHT signaal - fix signaal + entry
       if (parsed.actie &&

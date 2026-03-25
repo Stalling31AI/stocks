@@ -1283,19 +1283,26 @@ function valideerTrade(entry, stop, target) {
 function getCandles(quotes, vanafTijdstip) {
   const [uur, min] = vanafTijdstip.split(':').map(Number);
   const vanafMin = uur * 60 + min;
-  // Bepaal vandaag in NL tijd
-  const vandaag = new Date().toLocaleDateString('nl-NL');
+  // Haal vandaag op in NL tijd
+  const nu = new Date();
+  const nlNu = new Date(nu.toLocaleString('en-US', {
+    timeZone: 'Europe/Amsterdam'
+  }));
+  const vandaagJaar = nlNu.getFullYear();
+  const vandaagMaand = nlNu.getMonth();
+  const vandaagDag = nlNu.getDate();
   return quotes.filter(q => {
     const d = new Date(q.date);
     const nl = new Date(d.toLocaleString('en-US', {
       timeZone: 'Europe/Amsterdam'
     }));
 
-    // Check 1: alleen candles van vandaag
-    const candleDatum = nl.toLocaleDateString('nl-NL');
-    if (candleDatum !== vandaag) return false;
+    // Alleen candles van vandaag
+    if (nl.getFullYear() !== vandaagJaar) return false;
+    if (nl.getMonth() !== vandaagMaand) return false;
+    if (nl.getDate() !== vandaagDag) return false;
 
-    // Check 2: strikt NA analysetijdstip
+    // Strikt NA analysetijdstip
     const candleMin = nl.getHours() * 60 + nl.getMinutes();
     return candleMin > vanafMin;
   });
