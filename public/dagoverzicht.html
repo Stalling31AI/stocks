@@ -1283,14 +1283,32 @@ function valideerTrade(entry, stop, target) {
 function getCandles(quotes, vanafTijdstip) {
   const [uur, min] = vanafTijdstip.split(':').map(Number);
   const vanafMin = uur * 60 + min;
+
   return quotes.filter(q => {
     const d = new Date(q.date);
-    const nl = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
-    return nl.getHours() * 60 + nl.getMinutes() > vanafMin;
+    const nl = new Date(d.toLocaleString('en-US', {
+      timeZone: 'Europe/Amsterdam'
+    }));
+    const candleMin = nl.getHours() * 60 + nl.getMinutes();
+    // STRIKT NA analysetijdstip - niet gelijk aan
+    return candleMin > vanafMin;
   });
 }
 
 function berekenResultaat(entry, stop, target, candles, isKoopNu) {
+  // Verifieer dat stop < entry en target > entry
+  // VOOR we candles checken
+  if (stop >= entry) {
+    console.error('STOP >= ENTRY - niet geldig:', {entry, stop, target});
+    stop = +(entry * 0.990).toFixed(2);
+  }
+  if (target <= entry) {
+    console.error('TARGET <= ENTRY - niet geldig:', {entry, stop, target});
+    target = +(entry * 1.020).toFixed(2);
+  }
+  // Log elke berekening zodat we kunnen debuggen
+  console.log('berekenResultaat:', {entry, stop, target, candles: candles.length, isKoopNu});
+
   if (candles.length === 0) {
     if (isKoopNu) {
       return { entry_bereikt: true, entryTijdstip: 'direct', resultaat: 'open', slotkoers: null, winst: null, sluitTijdstip: null };
