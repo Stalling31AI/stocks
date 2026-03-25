@@ -212,8 +212,16 @@ KOOP als 2 van 3:
 ✓ RSI < 45 EN koers in onderste 35% dagrange
 ✓ Koers raakt/onder Bollinger Lower Band
 ✓ MACD histogram draait positief
-TARGET = entry + ${Math.max(dagRange * 0.3, last.close * 0.01).toFixed(0)} (30% dagrange)
-STOP = entry - ${Math.min(dagRange * 0.12, last.close * 0.008).toFixed(0)} (max 0.8%)
+STOP-LOSS REGELS:
+- Voor aandelen onder €300: minimaal 1.5% onder entry
+- Voor aandelen boven €300: minimaal 1% onder entry
+- Stop moet buiten normale dagvolatiliteit liggen
+- Een 15-minuten candle heeft gemiddeld 0.3-0.5% range
+- Stop moet minimaal 3x die range onder entry liggen
+TARGET REGELS:
+- Voor aandelen onder €300: minimaal 3% boven entry
+- Voor aandelen boven €300: minimaal 2% boven entry
+- Target moet realistisch zijn binnen dagrange
 Als WACHT: geef CONCREET aan bij welke prijs/conditie je WEL zou kopen.
 Geen vage antwoorden - altijd een concreet level noemen.
 Reageer ALLEEN met dit JSON:
@@ -252,29 +260,29 @@ Reageer ALLEEN met dit JSON:
       // Validatie na JSON parse
       if (parsed.signaal === 'KOOP') {
         const entry = parseFloat(parsed.entry);
+        const isGoedkoop = entry < 300;
+        const minStop = isGoedkoop ? 0.985 : 0.990;
+        const minTarget = isGoedkoop ? 1.030 : 1.020;
 
-        // Stop MOET onder entry
         if (!parsed.stop_loss ||
-            parseFloat(parsed.stop_loss) >= entry) {
-          parsed.stop_loss = +(entry * 0.992).toFixed(2);
+            parseFloat(parsed.stop_loss) >= entry ||
+            parseFloat(parsed.stop_loss) > entry * minStop) {
+          parsed.stop_loss = +(entry * minStop).toFixed(2);
         }
 
-        // Target MOET boven entry
         if (!parsed.target ||
-            parseFloat(parsed.target) <= entry) {
-          parsed.target = +(entry * 1.02).toFixed(2);
+            parseFloat(parsed.target) <= entry ||
+            parseFloat(parsed.target) < entry * minTarget) {
+          parsed.target = +(entry * minTarget).toFixed(2);
         }
 
-        // R/R minimaal 1:2
         const risico = entry - parseFloat(parsed.stop_loss);
         const beloning = parseFloat(parsed.target) - entry;
-        if (risico > 0 && beloning < risico * 1.5) {
+        if (beloning < risico * 1.5) {
           parsed.target = +(entry + risico * 2).toFixed(2);
         }
 
-        parsed.rr_ratio = risico > 0
-          ? +((parseFloat(parsed.target) - entry) / risico).toFixed(2)
-          : 0;
+        parsed.rr_ratio = +(beloning / risico).toFixed(2);
       }
       // KOOP actie maar WACHT signaal - fix signaal + entry
       if (parsed.actie &&
