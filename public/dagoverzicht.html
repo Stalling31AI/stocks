@@ -1732,14 +1732,112 @@ async function herbereken() {
     }
   }
   for (const [symbol, pos] of Object.entries(pending)) {
-    const isKoopNu = pos.analyse.actie && pos.analyse.actie.toUpperCase() === 'KOOP NU';
-    const candles = getCandles(koersData[symbol] || [], pos.analyse.tijdstip);
-    const uitkomst = berekenResultaat(pos.entry, pos.stop, pos.target, candles, isKoopNu);
+    const quotes = koersData[symbol] || [];
+    const isKoopNu = pos.analyse.actie &&
+      pos.analyse.actie.toUpperCase() === 'KOOP NU';
+    // Bouw tijdlijn op van stop/target wijzigingen
+    // Elke update heeft een tijdstip en stop/target
+    const tijdlijn = [
+      {
+        tijdstip: pos.analyse.tijdstip,
+        stop: pos.analyse.stop_loss || pos.analyse.entry * 0.990,
+        target: pos.analyse.target || pos.analyse.entry * 1.020
+      },
+      ...(pos.updates || []).map(u => ({
+        tijdstip: u.tijdstip,
+        stop: u.stop,    // pending updates gebruiken .stop
+        target: u.target
+      }))
+    ];
+    // Helper: geef stop/target voor een bepaald tijdstip
+    function getStopTargetOpTijdstip(tijdstip) {
+      const [h, m] = tijdstip.split(':').map(Number);
+      const min = h * 60 + m;
+      // Meest recente update voor dit tijdstip
+      let huidig = tijdlijn[0];
+      for (const t of tijdlijn) {
+        const [th, tm] = t.tijdstip.split(':').map(Number);
+        if (th * 60 + tm <= min) huidig = t;
+      }
+      return huidig;
+    }
+    // Candles vanaf eerste analyse
+    const alleCandles = getCandles(quotes, pos.analyse.tijdstip);
+    // Vind entry
+    let entryIndex = -1;
+    let entryTijdstip = null;
+    if (isKoopNu) {
+      entryIndex = 0;
+      entryTijdstip = pos.analyse.tijdstip;
+    } else {
+      for (let i = 0; i < alleCandles.length; i++) {
+        if (alleCandles[i].low <= pos.entry) {
+          entryIndex = i;
+          const nl = new Date(
+            new Date(alleCandles[i].date).toLocaleString('en-US', {
+              timeZone: 'Europe/Amsterdam'
+            })
+          );
+          entryTijdstip =
+            nl.getHours().toString().padStart(2,'0') + ':' +
+            nl.getMinutes().toString().padStart(2,'0');
+          break;
+        }
+      }
+    }
+    if (entryIndex === -1) {
+      simBData[datum].push({
+        symbol: pos.analyse.symbol, label: pos.analyse.label || symbol,
+        vlag: pos.analyse.vlag || '', tijdstip: pos.analyse.tijdstip,
+        signaal: 'KOOP', actie: pos.analyse.actie, entry: pos.entry,
+        stop_loss: tijdlijn[tijdlijn.length - 1].stop,
+        target: tijdlijn[tijdlijn.length - 1].target,
+        aantal: 10, redenering: pos.analyse.redenering || '',
+        updates: pos.updates || [], entry_bereikt: false,
+        entryTijdstip: null, resultaat: 'entry_niet_bereikt',
+        slotkoers: null, winst: 0, sluitTijdstip: null
+      });
+      continue;
+    }
+    // Check stop/target NA entry met tijdstip-correcte stop/target waarden
+    const candlesNaEntry = alleCandles.slice(entryIndex + 1);
+    const nu = new Date();
+    const nlNu = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+    const beursOpen = nlNu.getHours() < 22;
+    let resultaat = beursOpen ? 'open' : 'einde_dag';
+    let slotkoers = alleCandles[alleCandles.length - 1].close;
+    let winst = beursOpen ? null : +((slotkoers - pos.entry) * 10).toFixed(2);
+    let sluitTijdstip = null;
+    for (const candle of candlesNaEntry) {
+      const nl = new Date(
+        new Date(candle.date).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' })
+      );
+      const tijdstip =
+        nl.getHours().toString().padStart(2,'0') + ':' +
+        nl.getMinutes().toString().padStart(2,'0');
+      // Haal stop/target op die golden OP DIT TIJDSTIP
+      const st = getStopTargetOpTijdstip(tijdstip);
+      if (candle.low <= st.stop) {
+        resultaat = 'stop_geraakt'; slotkoers = st.stop;
+        winst = +((st.stop - pos.entry) * 10).toFixed(2);
+        sluitTijdstip = tijdstip; break;
+      }
+      if (candle.high >= st.target) {
+        resultaat = 'target_bereikt'; slotkoers = st.target;
+        winst = +((st.target - pos.entry) * 10).toFixed(2);
+        sluitTijdstip = tijdstip; break;
+      }
+    }
     simBData[datum].push({
-      symbol: pos.analyse.symbol, label: pos.analyse.label || symbol, vlag: pos.analyse.vlag || '',
-      tijdstip: pos.analyse.tijdstip, signaal: 'KOOP', actie: pos.analyse.actie,
-      entry: pos.entry, stop_loss: pos.stop, target: pos.target,
-      aantal: 10, redenering: pos.analyse.redenering || '', updates: pos.updates, ...uitkomst
+      symbol: pos.analyse.symbol, label: pos.analyse.label || symbol,
+      vlag: pos.analyse.vlag || '', tijdstip: pos.analyse.tijdstip,
+      signaal: 'KOOP', actie: pos.analyse.actie, entry: pos.entry,
+      stop_loss: tijdlijn[tijdlijn.length - 1].stop,
+      target: tijdlijn[tijdlijn.length - 1].target,
+      aantal: 10, redenering: pos.analyse.redenering || '',
+      updates: pos.updates || [], entry_bereikt: true,
+      entryTijdstip, resultaat,
+      slotkoers: +slotkoers.toFixed(2), winst, sluitTijdstip
     });
   }
   localStorage.setItem('simulaties_b', JSON.stringify(simBData));
