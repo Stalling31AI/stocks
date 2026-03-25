@@ -824,6 +824,7 @@ async function analyseAlleAandelen() {
   slaAnalysesOp();
   simuleerTrades(huidigeAnalyses);
   simuleerTradesB(huidigeAnalyses);
+  await checkOpenPosities(); // ALTIJD uitvoeren
   btn.disabled = false;
   btn.textContent = '🔍 Analyseer geselecteerde aandelen';
 }
@@ -2303,119 +2304,142 @@ async function checkOpenPosities() {
     );
 
     if (openSims.length === 0) continue;
-    for (const sim of openSims) {
+
+    // Haal koersen op per uniek symbool
+    const symbols = [...new Set(openSims.map(s => s.symbol))];
+    const koersData = {};
+    for (const symbol of symbols) {
       try {
         const res = await fetch(
-          `/api/quote/${sim.symbol}?interval=15m`
+          `/api/quote/${symbol}?interval=15m`
         );
         const data = await res.json();
-        const quotes = data.quotes || [];
-        if (quotes.length === 0) continue;
-        // Geen tijdfilter - kijk naar ALLE candles van vandaag
-        const vandaag = new Date().toLocaleDateString('nl-NL');
-        const relevantCandles = quotes.filter(q => {
-          const d = new Date(q.date);
-          return d.toLocaleDateString('nl-NL') === vandaag ||
-            quotes.indexOf(q) >= quotes.length - 40;
-        });
-        console.log(sim.symbol, 'checking',
-          relevantCandles.length, 'candles',
-          'entry:', sim.entry,
-          'dag laag:', Math.min(...relevantCandles.map(c => c.low)).toFixed(2)
-        );
-        if (relevantCandles.length === 0) continue;
-        // Loop candle voor candle
-        for (const candle of relevantCandles) {
-          const d = new Date(candle.date);
-          const nl = new Date(d.toLocaleString('en-US', {
-            timeZone: 'Europe/Amsterdam'
-          }));
-          const tijdstip =
-            nl.getHours().toString().padStart(2,'0') +
-            ':' +
-            nl.getMinutes().toString().padStart(2,'0');
-          // Stap 1: check entry
-          if (!sim.entry_bereikt) {
-            if (sim.signaal === 'KOOP' &&
-              candle.low <= sim.entry) {
-              sim.entry_bereikt = true;
-              sim.entryTijdstip = tijdstip;
-              wijzigingen = true;
-              console.log('✅', sim.symbol,
-                'GEKOCHT om', tijdstip,
-                'op €' + sim.entry);
-
-              // Notificatie
-              if (Notification.permission === 'granted') {
-                try {
-                  new Notification(
-                    '✅ ' + sim.label + ' GEKOCHT!', {
-                    body: 'Entry €' + sim.entry +
-                      ' bereikt om ' + tijdstip +
-                      ' | Stop: €' + sim.stop_loss +
-                      ' | Target: €' + sim.target,
-                    icon: '/logo.png'
-                  });
-                } catch(e) {}
-              }
-            }
-            continue; // Entry nog niet bereikt,
-                      // volgende candle
-          }
-          // Stap 2: entry bereikt — check stop en target
-          if (sim.signaal === 'KOOP') {
-            // Stop-loss check (worst case eerst)
-            if (candle.low <= sim.stop_loss) {
-              sim.resultaat = 'stop_geraakt';
-              sim.slotkoers = sim.stop_loss;
-              sim.winst = +((sim.stop_loss - sim.entry) *
-                sim.aantal).toFixed(2);
-              sim.sluitTijdstip = tijdstip;
-              wijzigingen = true;
-              console.log('🛑', sim.symbol,
-                'STOP geraakt om', tijdstip);
-
-              if (Notification.permission === 'granted') {
-                try {
-                  new Notification(
-                    '🛑 ' + sim.label + ' Stop-loss!', {
-                    body: 'Stop €' + sim.stop_loss +
-                      ' geraakt om ' + tijdstip +
-                      ' | Verlies: €' + sim.winst,
-                    icon: '/logo.png'
-                  });
-                } catch(e) {}
-              }
-              break;
-            }
-            // Target check
-            if (candle.high >= sim.target) {
-              sim.resultaat = 'target_bereikt';
-              sim.slotkoers = sim.target;
-              sim.winst = +((sim.target - sim.entry) *
-                sim.aantal).toFixed(2);
-              sim.sluitTijdstip = tijdstip;
-              wijzigingen = true;
-              console.log('🎯', sim.symbol,
-                'TARGET bereikt om', tijdstip);
-
-              if (Notification.permission === 'granted') {
-                try {
-                  new Notification(
-                    '🎯 ' + sim.label + ' Target bereikt!', {
-                    body: 'Target €' + sim.target +
-                      ' bereikt om ' + tijdstip +
-                      ' | Winst: +€' + sim.winst,
-                    icon: '/logo.png'
-                  });
-                } catch(e) {}
-              }
-              break;
-            }
-          }
-        }
+        koersData[symbol] = data.quotes || [];
       } catch(e) {
-        console.error('Check fout:', sim.symbol, e.message);
+        console.error('Koers fout:', symbol, e.message);
+      }
+    }
+
+    for (const sim of openSims) {
+      const quotes = koersData[sim.symbol] || [];
+      if (quotes.length === 0) continue;
+
+      // Candles na analyse tijdstip
+      const [simUur, simMin] = sim.tijdstip.split(':').map(Number);
+      const simMinuten = simUur * 60 + simMin - 15;
+      const relevantCandles = quotes.filter(q => {
+        const d = new Date(q.date);
+        const nl = new Date(d.toLocaleString('en-US', {
+          timeZone: 'Europe/Amsterdam'
+        }));
+        return nl.getHours() * 60 + nl.getMinutes() >= simMinuten;
+      });
+
+      if (relevantCandles.length === 0) continue;
+
+      // KOOP NU = direct gekocht op entry prijs
+      const isKoopNu = sim.actie &&
+        sim.actie.toUpperCase() === 'KOOP NU';
+
+      if (isKoopNu && !sim.entry_bereikt) {
+        sim.entry_bereikt = true;
+        sim.entryTijdstip = sim.tijdstip;
+        wijzigingen = true;
+        console.log('✅', sim.symbol,
+          'KOOP NU - direct gekocht op', sim.entry);
+        try {
+          if (Notification.permission === 'granted') {
+            new Notification('✅ ' + sim.label + ' GEKOCHT!', {
+              body: 'KOOP NU uitgevoerd op €' + sim.entry +
+                ' | Stop: €' + sim.stop_loss +
+                ' | Target: €' + sim.target,
+              icon: '/logo.png'
+            });
+          }
+        } catch(e) {}
+      }
+
+      // Loop candles voor entry check en stop/target
+      let gekocht = sim.entry_bereikt || false;
+
+      for (const candle of relevantCandles) {
+        const d = new Date(candle.date);
+        const nl = new Date(d.toLocaleString('en-US', {
+          timeZone: 'Europe/Amsterdam'
+        }));
+        const tijdstip =
+          nl.getHours().toString().padStart(2,'0') +
+          ':' +
+          nl.getMinutes().toString().padStart(2,'0');
+
+        // Entry check voor pending orders
+        if (!gekocht) {
+          if (candle.low <= sim.entry) {
+            gekocht = true;
+            sim.entry_bereikt = true;
+            sim.entryTijdstip = tijdstip;
+            wijzigingen = true;
+            console.log('✅', sim.symbol,
+              'gekocht om', tijdstip, 'op €' + sim.entry);
+            try {
+              if (Notification.permission === 'granted') {
+                new Notification('✅ ' + sim.label + ' GEKOCHT!', {
+                  body: 'Entry €' + sim.entry +
+                    ' bereikt om ' + tijdstip +
+                    ' | Stop: €' + sim.stop_loss +
+                    ' | Target: €' + sim.target,
+                  icon: '/logo.png'
+                });
+              }
+            } catch(e) {}
+          }
+          continue;
+        }
+
+        // Stop-loss check
+        if (candle.low <= sim.stop_loss) {
+          sim.resultaat = 'stop_geraakt';
+          sim.slotkoers = sim.stop_loss;
+          sim.winst = +((sim.stop_loss - sim.entry) *
+            sim.aantal).toFixed(2);
+          sim.sluitTijdstip = tijdstip;
+          wijzigingen = true;
+          console.log('🛑', sim.symbol, 'stop geraakt om', tijdstip);
+          try {
+            if (Notification.permission === 'granted') {
+              new Notification('🛑 ' + sim.label + ' Stop-loss!', {
+                body: '€' + sim.stop_loss +
+                  ' geraakt om ' + tijdstip +
+                  ' | Verlies: €' + sim.winst,
+                icon: '/logo.png'
+              });
+            }
+          } catch(e) {}
+          break;
+        }
+
+        // Target check
+        if (candle.high >= sim.target) {
+          sim.resultaat = 'target_bereikt';
+          sim.slotkoers = sim.target;
+          sim.winst = +((sim.target - sim.entry) *
+            sim.aantal).toFixed(2);
+          sim.sluitTijdstip = tijdstip;
+          wijzigingen = true;
+          console.log('🎯', sim.symbol,
+            'target bereikt om', tijdstip);
+          try {
+            if (Notification.permission === 'granted') {
+              new Notification('🎯 ' + sim.label + ' Target!', {
+                body: '€' + sim.target +
+                  ' bereikt om ' + tijdstip +
+                  ' | Winst: +€' + sim.winst,
+                icon: '/logo.png'
+              });
+            }
+          } catch(e) {}
+          break;
+        }
       }
     }
 
@@ -2427,6 +2451,7 @@ async function checkOpenPosities() {
   if (wijzigingen) {
     renderSimulaties();
     renderSimulatiesB();
+    console.log('Simulaties bijgewerkt');
   }
 }
 
@@ -2537,9 +2562,11 @@ function updateAutoAnalyseStatus() {
   }
 }
 setInterval(updateAutoAnalyseStatus, 60000);
+setInterval(() => { checkOpenPosities(); }, 5 * 60 * 1000);
 window.addEventListener('load', () => {
   updateAutoAnalyseStatus();
   Notification.requestPermission();
+  setTimeout(() => checkOpenPosities(), 2000);
 });
 </script>
 </body>
