@@ -262,20 +262,37 @@ Reageer ALLEEN met dit JSON:
           parsed.entry = parseFloat(entryMatch[1].replace(',', '.'));
         }
       }
-      // Fix: stop/target ontbreken of zijn ongeldig
-      if (parsed.signaal === 'KOOP' && parsed.entry) {
-        if (!parsed.stop_loss || parsed.stop_loss >= parsed.entry) {
-          parsed.stop_loss = +(parsed.entry * 0.992).toFixed(2);
+      // Validatie na JSON parse
+      if (parsed.signaal === 'KOOP') {
+        const entry = parseFloat(parsed.entry);
+        const stop = parseFloat(parsed.stop_loss);
+        const target = parseFloat(parsed.target);
+
+        console.log('Validatie:', { entry, stop, target });
+
+        // Stop MOET onder entry
+        if (!stop || stop >= entry) {
+          parsed.stop_loss = +(entry * 0.992).toFixed(2);
+          console.log('Stop gecorrigeerd naar:', parsed.stop_loss);
         }
-        if (!parsed.target || parsed.target <= parsed.entry) {
-          parsed.target = +(parsed.entry * 1.02).toFixed(2);
+
+        // Target MOET boven entry
+        if (!target || target <= entry) {
+          parsed.target = +(entry * 1.02).toFixed(2);
+          console.log('Target gecorrigeerd naar:', parsed.target);
         }
-        const risico = parsed.entry - parsed.stop_loss;
-        const beloning = parsed.target - parsed.entry;
+
+        // Herbereken na correctie
+        const risico = entry - parsed.stop_loss;
+        const beloning = parsed.target - entry;
+
+        // R/R minimaal 1:2
         if (beloning < risico * 1.5) {
-          parsed.target = +(parsed.entry + risico * 2).toFixed(2);
+          parsed.target = +(entry + risico * 2).toFixed(2);
+          console.log('Target verhoogd voor R/R:', parsed.target);
         }
-        parsed.rr_ratio = +((parsed.target - parsed.entry) / (parsed.entry - parsed.stop_loss)).toFixed(2);
+
+        parsed.rr_ratio = +((parsed.target - entry) / (entry - parsed.stop_loss)).toFixed(2);
       }
       res.json(parsed);
     } catch(e) {

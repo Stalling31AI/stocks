@@ -2337,6 +2337,19 @@ async function checkOpenPosities() {
 
       if (relevantCandles.length === 0) continue;
 
+      console.log('Simulatie check:', {
+        symbol: sim.symbol,
+        entry: sim.entry,
+        stop: sim.stop_loss,
+        target: sim.target,
+        stopOnderEntry: sim.stop_loss < sim.entry,
+        targetBovenEntry: sim.target > sim.entry
+      });
+      if (sim.stop_loss >= sim.entry || sim.target <= sim.entry) {
+        console.error('FOUT: ongeldige stop/target voor',
+          sim.symbol, { entry: sim.entry, stop: sim.stop_loss, target: sim.target });
+      }
+
       // KOOP NU = direct gekocht op entry prijs
       const isKoopNu = sim.actie &&
         sim.actie.toUpperCase() === 'KOOP NU';
