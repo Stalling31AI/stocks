@@ -1576,21 +1576,30 @@ async function simuleerTradesB(analyses) {
       s.symbol === a.symbol && s.resultaat === 'open'
     );
     if (openPositie) {
-      // Update stop-loss en target bij nieuw KOOP signaal
-      const oudStop = openPositie.stop_loss;
-      const oudTarget = openPositie.target;
-      openPositie.stop_loss = a.stop_loss;
-      openPositie.target = a.target;
-      openPositie.rr_ratio = a.rr_ratio;
-      openPositie.updates = openPositie.updates || [];
-      openPositie.updates.push({
-        tijdstip: a.tijdstip,
-        oud_stop: oudStop,
-        nieuw_stop: a.stop_loss,
-        oud_target: oudTarget,
-        nieuw_target: a.target,
-        redenering: a.redenering
-      });
+      if (a.signaal === 'KOOP') {
+        if (!openPositie.entry_bereikt) {
+          // Nog niet gekocht - alles updaten
+          openPositie.entry = a.entry;
+          openPositie.stop_loss = a.stop_loss;
+          openPositie.target = a.target;
+          openPositie.rr_ratio = a.rr_ratio;
+        } else {
+          // Al gekocht - alleen stop/target
+          openPositie.stop_loss = a.stop_loss;
+          openPositie.target = a.target;
+          openPositie.rr_ratio = a.rr_ratio;
+        }
+        openPositie.updates = openPositie.updates || [];
+        openPositie.updates.push({
+          tijdstip: a.tijdstip,
+          entry: a.entry,
+          stop_loss: a.stop_loss,
+          target: a.target,
+          reden: openPositie.entry_bereikt
+            ? 'stop/target bijgewerkt - positie actief'
+            : 'entry bijgewerkt - nog niet gekocht'
+        });
+      }
     } else {
       if (a.signaal === 'KOOP') {
         simulaties[datum].push({
@@ -1913,15 +1922,33 @@ async function herbereken() {
       s.resultaat === 'open'
     );
     if (openPositie) {
-      // Update stop en target
-      openPositie.stop_loss = analyse.stop_loss;
-      openPositie.target = analyse.target;
-      openPositie.updates = openPositie.updates || [];
-      openPositie.updates.push({
-        tijdstip: analyse.tijdstip,
-        stop_loss: analyse.stop_loss,
-        target: analyse.target
-      });
+      if (!openPositie.entry_bereikt) {
+        // Nog niet gekocht - update entry/stop/target
+        openPositie.entry = analyse.entry;
+        openPositie.stop_loss = analyse.stop_loss;
+        openPositie.target = analyse.target;
+        openPositie.updates = openPositie.updates || [];
+        openPositie.updates.push({
+          tijdstip: analyse.tijdstip,
+          entry: analyse.entry,
+          stop_loss: analyse.stop_loss,
+          target: analyse.target,
+          reden: 'entry bijgewerkt - nog niet gekocht'
+        });
+      } else {
+        // Al gekocht - alleen stop/target updaten
+        openPositie.stop_loss = analyse.stop_loss;
+        openPositie.target = analyse.target;
+        openPositie.updates = openPositie.updates || [];
+        openPositie.updates.push({
+          tijdstip: analyse.tijdstip,
+          stop_loss: analyse.stop_loss,
+          target: analyse.target,
+          reden: 'stop/target bijgewerkt - positie actief'
+        });
+      }
+      localStorage.setItem('simulaties_b', JSON.stringify(simBData));
+      continue;
     } else {
       // Nieuwe positie - zelfde logica als Sim A
       const [simUur, simMin] = analyse.tijdstip
@@ -2116,11 +2143,11 @@ function renderSimulatiesB() {
                 <span style="background:#eff6ff;color:#2563eb;
                   padding:2px 6px;border-radius:4px;font-size:10px;
                   font-weight:700;" title="${s.updates.map(u =>
-                    u.tijdstip + ': SL ' + Number(u.oud_stop).toFixed(2) +
-                    '→' + Number(u.nieuw_stop).toFixed(2) +
-                    ' TP ' + Number(u.oud_target).toFixed(2) +
-                    '→' + Number(u.nieuw_target).toFixed(2)
-                  ).join('\n')}">
+                    u.tijdstip + ': ' +
+                    (u.reden?.includes('entry') ? 'Entry→' + Number(u.entry).toFixed(2) + ' ' : '') +
+                    'SL→' + Number(u.stop_loss).toFixed(2) +
+                    ' TP→' + Number(u.target).toFixed(2)
+                  ).join(' | ')}">
                   ${s.updates.length}x bijgewerkt
                 </span>` : '—'}
             </td>
