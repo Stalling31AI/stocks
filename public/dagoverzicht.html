@@ -1353,6 +1353,20 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu) {
   let slotkoers = candles[candles.length - 1].close;
   let winst = null;
   let sluitTijdstip = null;
+  console.log('=== SIMULATIE CHECK ===', {
+    entry, stop, target,
+    aantalCandlesNaEntry: candlesNaEntry.length
+  });
+  candlesNaEntry.forEach((c, i) => {
+    const nl = new Date(new Date(c.date).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+    const tijdstip = nl.toLocaleString('nl-NL');
+    if (c.low <= stop) {
+      console.warn('🛑 STOP GERAAKT:', { tijdstip, candle_low: c.low, stop_level: stop, entry, index: i });
+    }
+    if (c.high >= target) {
+      console.log('🎯 TARGET BEREIKT:', { tijdstip, candle_high: c.high, target_level: target, entry, index: i });
+    }
+  });
   for (const candle of candlesNaEntry) {
     const nl = new Date(new Date(candle.date).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
     const tijdstip = nl.getHours().toString().padStart(2,'0') + ':' + nl.getMinutes().toString().padStart(2,'0');
