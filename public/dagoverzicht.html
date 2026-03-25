@@ -1628,7 +1628,10 @@ async function simuleerTradesB(analyses) {
     const openPositie = simData[datum].find(s => s.symbol === a.symbol && s.resultaat === 'open');
     if (openPositie) {
       if (!openPositie.entry_bereikt) {
-        openPositie.entry = trade.entry;
+        // Entry alleen VERLAGEN, nooit verhogen
+        if (trade.entry < openPositie.entry) {
+          openPositie.entry = trade.entry;
+        }
         openPositie.stop_loss = trade.stop;
         openPositie.target = trade.target;
       } else {
@@ -1804,10 +1807,12 @@ async function herbereken() {
     const nu = new Date();
     const nlNu = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
     const beursOpen = nlNu.getHours() < 22;
+    const entry = pos.entry;
     let resultaat = beursOpen ? 'open' : 'einde_dag';
     let slotkoers = alleCandles[alleCandles.length - 1].close;
-    let winst = beursOpen ? null : +((slotkoers - pos.entry) * 10).toFixed(2);
+    let winst = beursOpen ? null : +((slotkoers - entry) * 10).toFixed(2);
     let sluitTijdstip = null;
+    let st = null;
     for (const candle of candlesNaEntry) {
       const nl = new Date(
         new Date(candle.date).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' })
@@ -1816,18 +1821,25 @@ async function herbereken() {
         nl.getHours().toString().padStart(2,'0') + ':' +
         nl.getMinutes().toString().padStart(2,'0');
       // Haal stop/target op die golden OP DIT TIJDSTIP
-      const st = getStopTargetOpTijdstip(tijdstip);
+      st = getStopTargetOpTijdstip(tijdstip);
       if (candle.low <= st.stop) {
         resultaat = 'stop_geraakt'; slotkoers = st.stop;
-        winst = +((st.stop - pos.entry) * 10).toFixed(2);
+        winst = +((st.stop - entry) * 10).toFixed(2);
         sluitTijdstip = tijdstip; break;
       }
       if (candle.high >= st.target) {
         resultaat = 'target_bereikt'; slotkoers = st.target;
-        winst = +((st.target - pos.entry) * 10).toFixed(2);
+        winst = +((st.target - entry) * 10).toFixed(2);
         sluitTijdstip = tijdstip; break;
       }
     }
+    console.log('Winst berekening:', {
+      entry,
+      slotkoers,
+      stop: st?.stop,
+      target: st?.target,
+      winst
+    });
     simBData[datum].push({
       symbol: pos.analyse.symbol, label: pos.analyse.label || symbol,
       vlag: pos.analyse.vlag || '', tijdstip: pos.analyse.tijdstip,
