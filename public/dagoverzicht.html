@@ -848,6 +848,9 @@ async function analyseAlleAandelen() {
         resultaat: 'onbekend',
       };
       huidigeAnalyses.push(resultaat);
+      console.log('Sim B Update uitgevoerd voor:', resultaat.symbol);
+      await simuleerTradesB([resultaat]);
+      renderSimulaties();
       updateKaart(i, resultaat);
       await new Promise(resolve => setTimeout(resolve, 2500));
     } catch(e) {
@@ -894,6 +897,9 @@ async function analyseAlleAandelen() {
             resultaat: 'onbekend',
           };
           huidigeAnalyses.push(resultaat);
+          console.log('Sim B Update uitgevoerd voor:', resultaat.symbol, '(retry)');
+          await simuleerTradesB([resultaat]);
+          renderSimulaties();
           updateKaart(i, resultaat);
           await new Promise(resolve => setTimeout(resolve, 2500));
           continue;
@@ -938,6 +944,7 @@ async function analyseAlleAandelen() {
   slaAnalysesOp();
   await simuleerTrades(huidigeAnalyses);
   await simuleerTradesB(huidigeAnalyses);
+  renderSimulaties();
   btn.disabled = false;
   btn.textContent = '🔍 Analyseer geselecteerde aandelen';
 }
