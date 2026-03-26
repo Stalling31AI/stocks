@@ -1391,6 +1391,21 @@ function loadData() {
   analyses     = JSON.parse(localStorage.getItem('daganalyses') || '{}');
   simulaties_b = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
 
+  // Sim B recovery: als globale variabele leeg is maar localStorage data bevat, herstel expliciet
+  const rawSimB = localStorage.getItem('simulaties_b');
+  if (rawSimB) {
+    try {
+      const parsed = JSON.parse(rawSimB);
+      const dagData = parsed[datum] || [];
+      if (dagData.length > 0 && Object.keys(simulaties_b).length === 0) {
+        simulaties_b = parsed;
+        console.log('Sim B data hersteld:', simulaties_b);
+      } else if (dagData.length > 0) {
+        console.log('Sim B data hersteld:', simulaties_b);
+      }
+    } catch(e) { console.warn('Sim B herstel mislukt:', e.message); }
+  }
+
   // Migreer bestaande USD-winst naar EUR voor gesloten trades
   for (const sleutel of ['simulaties', 'simulaties_b']) {
     const data = JSON.parse(localStorage.getItem(sleutel) || '{}');
@@ -2612,6 +2627,53 @@ function updateAutoAnalyseStatus() {
   }
 }
 setInterval(updateAutoAnalyseStatus, 60000);
+// ============================================
+// LIVE KOERSEN UPDATE (US MARKET OPEN)
+// ============================================
+async function updateKoersen() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const simBData = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+  const dagTrades = simBData[datum] || [];
+  // Alleen open posities (entry bereikt, nog geen resultaat)
+  const openSymbols = [...new Set(
+    dagTrades
+      .filter(t => t.entry_bereikt === true && !t.resultaat)
+      .map(t => t.symbol)
+      .filter(s => USD_SYMBOLS.includes(s))
+  )];
+  if (openSymbols.length === 0) {
+    console.log('updateKoersen: geen open USD posities in Sim B');
+    return;
+  }
+  console.log('updateKoersen: ophalen live koersen voor', openSymbols);
+  for (const sym of openSymbols) {
+    try {
+      const r = await fetch(`/api/quote/${sym}?interval=1m`);
+      const d = await r.json();
+      const candles = d.quotes || [];
+      if (candles.length > 0) {
+        const laatste = candles[candles.length - 1];
+        const prijsUSD = parseFloat(laatste.close);
+        const prijsEUR = +(prijsUSD / EUR_KOERS).toFixed(2);
+        // Update alle open trades voor dit symbool in de tabel
+        const rijen = document.querySelectorAll('#simb-tabel tbody tr');
+        rijen.forEach(rij => {
+          const symCell = rij.cells[2];
+          if (symCell && symCell.textContent.trim() === sym) {
+            const koersCell = rij.cells[5]; // Huidige koers kolom
+            if (koersCell) koersCell.textContent = `$${prijsUSD.toFixed(2)} (€${prijsEUR})`;
+          }
+        });
+        console.log(`updateKoersen: ${sym} = $${prijsUSD.toFixed(2)} (€${prijsEUR})`);
+      }
+    } catch(e) {
+      console.warn(`updateKoersen: fout bij ${sym}:`, e.message);
+    }
+    // 1500ms stagger tussen USD calls (Twelve Data rate limit)
+    await new Promise(res => setTimeout(res, 1500));
+  }
+}
+
 // Auto-check elke 5 minuten
 setInterval(checkOpenPosities, 5 * 60 * 1000);
 // Check bij laden pagina
@@ -2619,6 +2681,22 @@ window.addEventListener('load', () => {
   updateAutoAnalyseStatus();
   Notification.requestPermission();
   setTimeout(checkOpenPosities, 3000);
+  // Start live koersen update als US markt open is (15:30 - 22:00 Amsterdam)
+  const nu = new Date();
+  const amst = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+  const uur = amst.getHours();
+  const min = amst.getMinutes();
+  const totaalMinuten = uur * 60 + min;
+  const marktOpen = 15 * 60 + 30;  // 15:30
+  const marktSluit = 22 * 60;       // 22:00
+  if (totaalMinuten >= marktOpen && totaalMinuten < marktSluit) {
+    console.log('US markt open — updateKoersen starten');
+    updateKoersen();
+    // Herhaal elke 60 seconden
+    setInterval(updateKoersen, 60 * 1000);
+  } else {
+    console.log('US markt gesloten — updateKoersen niet gestart');
+  }
 });
 </script>
 </body>
