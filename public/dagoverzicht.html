@@ -1289,6 +1289,19 @@ function herstelAnalyses() {
   if (analyses) {
     huidigeAnalyses = JSON.parse(analyses);
     updateScore();
+  } else {
+    // Fallback: sessionStorage leeg (refresh/nieuw tabblad) → herstel uit localStorage
+    const datum = new Date().toLocaleDateString('nl-NL');
+    const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+    const dagData = opgeslagen[datum];
+    if (dagData && dagData.length > 0) {
+      const latest = dagData[dagData.length - 1];
+      if (latest.analyses && latest.analyses.length > 0) {
+        huidigeAnalyses = latest.analyses;
+        console.log('herstelAnalyses: hersteld uit localStorage (' + huidigeAnalyses.length + ' analyses)');
+        updateScore();
+      }
+    }
   }
 }
 function markeerBijzondereDag() {
@@ -1316,8 +1329,38 @@ function toonBijzondereDagLabel(datum) {
     btn.textContent = '✏️ Wijzig markering';
   }
 }
+// ============================================
+// LOAD DATA - herstel alles uit localStorage
+// (backwards compatible: keys ongewijzigd)
+// ============================================
+function loadData() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  // Migreer bestaande USD-winst naar EUR voor gesloten trades
+  for (const sleutel of ['simulaties', 'simulaties_b']) {
+    const data = JSON.parse(localStorage.getItem(sleutel) || '{}');
+    const dagTrades = data[datum] || [];
+    let gewijzigd = false;
+    for (const t of dagTrades) {
+      if (USD_SYMBOLS.has(t.symbol) && t.winst !== null && !t._winstEur) {
+        t.winst = +(t.winst / EUR_RATE).toFixed(2);
+        t._winstEur = true; // markeer zodat migratie niet dubbel loopt
+        gewijzigd = true;
+      }
+    }
+    if (gewijzigd) localStorage.setItem(sleutel, JSON.stringify(data));
+  }
+  renderSimulaties();
+  renderSimulatiesB();
+  renderDagTabs();
+  const simA = (JSON.parse(localStorage.getItem('simulaties') || '{}')[datum] || []).length;
+  const simB = (JSON.parse(localStorage.getItem('simulaties_b') || '{}')[datum] || []).length;
+  const ana  = (JSON.parse(localStorage.getItem('daganalyses') || '{}')[datum] || []).length;
+  console.log('loadData:', datum, '| simA:', simA, '| simB:', simB, '| analysesessies:', ana);
+}
+
 toonBijzondereDagLabel(new Date().toLocaleDateString('nl-NL'));
 herstelAnalyses();
+loadData();
 
 // ============================================
 // HULPFUNCTIES
