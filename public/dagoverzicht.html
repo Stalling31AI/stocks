@@ -1716,15 +1716,19 @@ async function simuleerTradesB(analyses) {
 
     if (bestaandeTrade) {
       if (!bestaandeTrade.entry_bereikt) {
-        if (trade.entry < bestaandeTrade.entry) bestaandeTrade.entry = trade.entry;
-        bestaandeTrade.stop_loss = trade.stop;
-        bestaandeTrade.target = trade.target;
+        // Update ALLES voor pending trades naar het nieuwste AI inzicht
+        console.log(`Sim B: Update entry voor ${a.symbol} van ${bestaandeTrade.entry} naar ${a.entry}`);
+        bestaandeTrade.entry = a.entry;
+        bestaandeTrade.stop_loss = a.stop_loss;
+        bestaandeTrade.target = a.target;
+        bestaandeTrade.tijdstip = a.tijdstip; // Update ook het analysetijdstip
       } else {
-        bestaandeTrade.stop_loss = trade.stop;
-        bestaandeTrade.target = trade.target;
+        // Reeds gekocht: Alleen de exit (stop/target) bijwerken
+        bestaandeTrade.stop_loss = a.stop_loss;
+        bestaandeTrade.target = a.target;
       }
       bestaandeTrade.updates = bestaandeTrade.updates || [];
-      bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: trade.entry, stop_loss: trade.stop, target: trade.target, gekocht: bestaandeTrade.entry_bereikt });
+      bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: a.entry, stop_loss: a.stop_loss, target: a.target, gekocht: bestaandeTrade.entry_bereikt });
     } else {
       simData[datum].push({
         symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
