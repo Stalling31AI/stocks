@@ -152,6 +152,34 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
       <input type="checkbox" value="AMD"
         onchange="updateSelectie(this)"> 🇺🇸 AMD
     </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-AMAT">
+      <input type="checkbox" value="AMAT"
+        onchange="updateSelectie(this)"> 🇺🇸 AMAT
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-PYPL">
+      <input type="checkbox" value="PYPL"
+        onchange="updateSelectie(this)"> 🇺🇸 PayPal
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-LMT">
+      <input type="checkbox" value="LMT"
+        onchange="updateSelectie(this)"> 🇺🇸 Lockheed
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-ASML">
+      <input type="checkbox" value="ASML"
+        onchange="updateSelectie(this)"> 🇺🇸 ASML US
+    </label>
   </div>
   <div style="background:#f8fafc;border-radius:10px;
     padding:14px;margin-bottom:14px;
@@ -292,6 +320,9 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
               <option value="TSLA">🇺🇸 Tesla</option>
               <option value="BA">🇺🇸 Boeing</option>
               <option value="LMT">🇺🇸 Lockheed</option>
+              <option value="AMAT">🇺🇸 Applied Materials</option>
+              <option value="PYPL">🇺🇸 PayPal</option>
+              <option value="ASML">🇺🇸 ASML US</option>
             </select>
           </div>
           <div>
@@ -477,6 +508,10 @@ const BEURSTIJDEN = {
   'META':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
   'NFLX':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
   'AMD':      { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'AMAT':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'PYPL':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
+  'ASML':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
 };
 let geselecteerdeAandelen = ['ASML.AS','ADYEN.AS','NVDA','RHM.DE'];
 function updateSelectie(cb) {
@@ -532,6 +567,10 @@ const BEURS_OPEN = {
   'META':     { open: '15:30', sluit: '22:00' },
   'NFLX':     { open: '15:30', sluit: '22:00' },
   'AMD':      { open: '15:30', sluit: '22:00' },
+  'AMAT':     { open: '15:30', sluit: '22:00' },
+  'PYPL':     { open: '15:30', sluit: '22:00' },
+  'LMT':      { open: '15:30', sluit: '22:00' },
+  'ASML':     { open: '15:30', sluit: '22:00' },
 };
 function verwijderVerkoopSimulaties() {
   const datum = new Date().toLocaleDateString('nl-NL');
@@ -580,8 +619,24 @@ const WATCHLIST = [
   { symbol: 'NVDA',    label: 'NVIDIA',      vlag: '🇺🇸' },
   { symbol: 'META',    label: 'Meta',        vlag: '🇺🇸' },
   { symbol: 'NFLX',    label: 'Netflix',     vlag: '🇺🇸' },
-  { symbol: 'AMD',     label: 'AMD',         vlag: '🇺🇸' },
+  { symbol: 'AMD',     label: 'AMD',               vlag: '🇺🇸' },
+  { symbol: 'AMAT',   label: 'Applied Materials', vlag: '🇺🇸' },
+  { symbol: 'PYPL',   label: 'PayPal',            vlag: '🇺🇸' },
+  { symbol: 'LMT',    label: 'Lockheed Martin',   vlag: '🇺🇸' },
+  { symbol: 'ASML',   label: 'ASML US',           vlag: '🇺🇸' },
 ];
+
+const EUR_RATE = 1.15; // vaste USD→EUR wisselkoers voor winstberekening
+const USD_SYMBOLS = new Set(['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML']);
+
+// Formateer prijs als "$X.XX (€Y.YY)" voor USD-aandelen, anders "€X.XX"
+function fmtPrijsLabel(sym, val) {
+  if (val == null) return '—';
+  return USD_SYMBOLS.has(sym)
+    ? `$${Number(val).toFixed(2)} (€${(val / EUR_RATE).toFixed(2)})`
+    : `€${Number(val).toFixed(2)}`;
+}
+
 let huidigeAnalyses = [];
 function renderLadenKaarten() {
   const grid = document.getElementById('aandelen-grid');
@@ -1524,12 +1579,15 @@ async function sluitSimulatiesB() {
   await sluitSimulaties();
 }
 
+let simAVolledig = false;
+
 function renderSimulaties() {
   const datum = new Date().toLocaleDateString('nl-NL');
   const simulaties = JSON.parse(
     localStorage.getItem('simulaties') || '{}'
   );
   const lijst = simulaties[datum] || [];
+  const toonLijst = simAVolledig ? lijst : lijst.slice(-10);
   if (lijst.length > 0) {
     console.log('=== SIMULATIE DATA ===');
     lijst.slice(0, 3).forEach(s => {
@@ -1570,12 +1628,19 @@ function renderSimulaties() {
     'open':                '⏳ Open',
   };
   el.innerHTML = `
-    <div style="font-size:13px;font-weight:600;margin-bottom:12px;">
-      ${lijst.length} gesimuleerde trades |
-      ${gekocht} gekocht | ${nietGekocht} entry niet bereikt |
-      Totaal: <span style="color:${totaalWinst>=0?'#16a34a':'#dc2626'};font-weight:700;">
-        ${totaalWinst>=0?'+':''}€${totaalWinst.toFixed(2)}
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <span>
+        ${lijst.length} gesimuleerde trades |
+        ${gekocht} gekocht | ${nietGekocht} entry niet bereikt |
+        Totaal: <span style="color:${totaalWinst>=0?'#16a34a':'#dc2626'};font-weight:700;">
+          ${totaalWinst>=0?'+':''}€${totaalWinst.toFixed(2)}
+        </span>
       </span>
+      ${lijst.length > 10 ? `<button onclick="simAVolledig=!simAVolledig;renderSimulaties();"
+        style="padding:3px 10px;font-size:11px;border:1.5px solid #e2e8f0;
+          border-radius:6px;background:#f8fafc;cursor:pointer;font-weight:600;">
+        ${simAVolledig ? '⬆ Toon laatste 10' : '⬇ Toon alle ' + lijst.length + ' trades'}
+      </button>` : ''}
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
@@ -1595,7 +1660,7 @@ function renderSimulaties() {
         </tr>
       </thead>
       <tbody>
-        ${lijst.map(s => {
+        ${toonLijst.map(s => {
           const statusInfo = (() => {
             if (s.resultaat === 'open' && !s.entry_bereikt) {
               return { tekst: '⏳ Wacht op entry €' + Number(s.entry).toFixed(2), kleur: '#94a3b8' };
@@ -1629,20 +1694,20 @@ function renderSimulaties() {
               </span>
             </td>
             <td style="padding:8px;text-align:right;font-weight:600;">
-              ${s.entry ? Number(s.entry).toFixed(2) : '—'}
+              ${fmtPrijsLabel(s.symbol, s.entry)}
             </td>
             <td style="padding:8px;text-align:center;font-size:13px;">
               ${s.entry_bereikt === null ? '⏳' :
                 s.entry_bereikt ? '✅ Ja' : '❌ Nee'}
             </td>
             <td style="padding:8px;text-align:right;color:#dc2626;">
-              ${s.stop_loss ? Number(s.stop_loss).toFixed(2) : '—'}
+              ${fmtPrijsLabel(s.symbol, s.stop_loss)}
             </td>
             <td style="padding:8px;text-align:right;color:#16a34a;">
-              ${s.target ? Number(s.target).toFixed(2) : '—'}
+              ${fmtPrijsLabel(s.symbol, s.target)}
             </td>
             <td style="padding:8px;text-align:right;color:#64748b;">
-              ${s.slotkoers ? Number(s.slotkoers).toFixed(2) : '—'}
+              ${fmtPrijsLabel(s.symbol, s.slotkoers)}
             </td>
             <td style="padding:8px;text-align:right;font-weight:700;
               color:${s.winst === null ? '#94a3b8' : s.winst >= 0 ? '#16a34a' : '#dc2626'};">
@@ -1799,6 +1864,8 @@ async function herbereken() {
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
     const candles = getCandles(koersData[a.symbol] || [], a.tijdstip);
     const uitkomst = berekenResultaat(trade.entry, trade.stop, trade.target, candles, isKoopNu, a.tijdstip);
+    if (uitkomst.winst !== null && USD_SYMBOLS.has(a.symbol))
+      uitkomst.winst = +(uitkomst.winst / EUR_RATE).toFixed(2);
     simAData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
       tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
@@ -1899,7 +1966,8 @@ async function herbereken() {
     const entry = pos.entry;
     let resultaat = beursOpen ? 'open' : 'einde_dag';
     let slotkoers = alleCandles[alleCandles.length - 1].close;
-    let winst = beursOpen ? null : +((slotkoers - entry) * 10).toFixed(2);
+    const _usdSym = USD_SYMBOLS.has(symbol);
+    let winst = beursOpen ? null : +((slotkoers - entry) * 10 / (_usdSym ? EUR_RATE : 1)).toFixed(2);
     let sluitTijdstip = null;
     let st = null;
     for (const candle of candlesNaEntry) {
@@ -1913,12 +1981,12 @@ async function herbereken() {
       st = getStopTargetOpTijdstip(tijdstip);
       if (candle.low <= st.stop) {
         resultaat = 'stop_geraakt'; slotkoers = st.stop;
-        winst = +((st.stop - entry) * 10).toFixed(2);
+        winst = +((st.stop - entry) * 10 / (_usdSym ? EUR_RATE : 1)).toFixed(2);
         sluitTijdstip = tijdstip; break;
       }
       if (candle.high >= st.target) {
         resultaat = 'target_bereikt'; slotkoers = st.target;
-        winst = +((st.target - entry) * 10).toFixed(2);
+        winst = +((st.target - entry) * 10 / (_usdSym ? EUR_RATE : 1)).toFixed(2);
         sluitTijdstip = tijdstip; break;
       }
     }
@@ -2048,13 +2116,13 @@ function renderSimulatiesB() {
               </div>
             </td>
             <td style="padding:8px;font-weight:600;">
-              ${s.entry ? Number(s.entry).toFixed(2) : '—'}
+              ${fmtPrijsLabel(s.symbol, s.entry)}
             </td>
             <td style="padding:8px;color:#dc2626;font-weight:600;">
-              ${s.stop_loss ? Number(s.stop_loss).toFixed(2) : '—'}
+              ${fmtPrijsLabel(s.symbol, s.stop_loss)}
             </td>
             <td style="padding:8px;color:#16a34a;font-weight:600;">
-              ${s.target ? Number(s.target).toFixed(2) : '—'}
+              ${fmtPrijsLabel(s.symbol, s.target)}
             </td>
             <td style="padding:8px;text-align:center;">
               ${s.updates && s.updates.length > 0 ? `
@@ -2232,6 +2300,8 @@ async function checkOpenPosities() {
       const isKoopNu = sim.actie && sim.actie.toUpperCase() === 'KOOP NU';
       const candles = getCandles(quotes, sim.tijdstip);
       const uitkomst = berekenResultaat(sim.entry, sim.stop_loss, sim.target, candles, isKoopNu, sim.tijdstip);
+      if (uitkomst.winst !== null && USD_SYMBOLS.has(sim.symbol))
+        uitkomst.winst = +(uitkomst.winst / EUR_RATE).toFixed(2);
       // Update alleen als er iets veranderd is
       if (uitkomst.entry_bereikt !== sim.entry_bereikt || uitkomst.resultaat !== sim.resultaat) {
         const wasGekocht = sim.entry_bereikt;

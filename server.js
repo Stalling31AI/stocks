@@ -5,6 +5,22 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
+const TWELVE_DATA_SYMBOLS = new Set(['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML']);
+const _tdCallTimes = [];
+async function tdRateLimit() {
+  const now = Date.now();
+  while (_tdCallTimes.length && now - _tdCallTimes[0] > 60000) _tdCallTimes.shift();
+  if (_tdCallTimes.length >= 8) {
+    const wait = 60100 - (now - _tdCallTimes[0]);
+    console.log(`TD rate limit: wacht ${wait}ms`);
+    await new Promise(r => setTimeout(r, wait));
+    const now2 = Date.now();
+    while (_tdCallTimes.length && now2 - _tdCallTimes[0] > 60000) _tdCallTimes.shift();
+  }
+  _tdCallTimes.push(Date.now());
+}
+
 const WACHTWOORD = process.env.APP_WACHTWOORD || 'yappi2024';
 app.use((req, res, next) => {
   const cookie = req.headers.cookie || '';
@@ -51,6 +67,35 @@ app.get('/api/quote/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const { interval = '1d' } = req.query;
+
+    // Twelve Data voor US real-time symbolen
+    if (TWELVE_DATA_SYMBOLS.has(symbol)) {
+      await tdRateLimit();
+      const tdIntervalMap = { '5m':'5min', '15m':'15min', '1h':'1h', '1d':'1day' };
+      const tdInterval = tdIntervalMap[interval] || '15min';
+      const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${tdInterval}&format=JSON&outputsize=100&timezone=UTC&apikey=${TWELVE_DATA_KEY}`;
+      console.log('Fetching TD:', symbol, tdInterval);
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
+      });
+      if (!response.ok) throw new Error(`Twelve Data returned ${response.status}`);
+      const data = await response.json();
+      if (data.status === 'error') throw new Error('Twelve Data: ' + (data.message || 'onbekende fout'));
+      const values = (data.values || []).slice().reverse(); // newest-first → oldest-first
+      const quotes = values.map(v => ({
+        date: new Date(v.datetime.replace(' ', 'T') + 'Z').toISOString(),
+        open:   +parseFloat(v.open).toFixed(4),
+        high:   +parseFloat(v.high).toFixed(4),
+        low:    +parseFloat(v.low).toFixed(4),
+        close:  +parseFloat(v.close).toFixed(4),
+        volume: parseInt(v.volume) || 0,
+      })).filter(q => q.open && q.close && q.high && q.low);
+      if (quotes.length === 0) {
+        return res.json({ symbol, interval, quotes: [], meta: { currency: 'USD', source: 'twelvedata' }, bericht: 'Geen data van Twelve Data.' });
+      }
+      return res.json({ symbol, interval, meta: { currency: 'USD', source: 'twelvedata' }, quotes });
+    }
+
     const intervalMap = {
       '5m':  { interval: '5m',  range: '1d' },
       '15m': { interval: '15m', range: '2d' },
@@ -171,6 +216,10 @@ app.post('/api/analyze', async (req, res) => {
       'META': 'Social media/AI. Hoge dagrange $8-15. Sterk gecorreleerd met tech sentiment. Min vertrouwen: 55%.',
       'NFLX': 'Streaming. Volatiel rond earnings. Dagrange $8-20. Min vertrouwen: 60%.',
       'AMD':  'Chips/AI. Volgt NVDA sterk. Dagrange $3-6. Min vertrouwen: 55%.',
+      'AMAT': 'Applied Materials. Chip equipment. Volgt ASML/NVDA. Dagrange $3-7. Min vertrouwen: 60%.',
+      'PYPL': 'PayPal. Fintech. Gevoelig voor rente. Dagrange $2-4. Min vertrouwen: 60%.',
+      'LMT':  'Lockheed Martin. Defensie. Stijgt bij geopolitiek nieuws. Dagrange $5-10. Min vertrouwen: 65%.',
+      'ASML': 'ASML US NASDAQ listing. Chip equipment leider. Volgt ASML.AS. Dagrange $10-25. Min vertrouwen: 60%.',
     };
     const isEuropees = ['ASML.AS','ADYEN.AS','RHM.DE'].includes(symbol);
     const handelVenster = isEuropees ? '09:00-17:30' : '15:30-22:00';
