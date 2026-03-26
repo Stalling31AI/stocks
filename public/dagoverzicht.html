@@ -1711,25 +1711,25 @@ async function simuleerTradesB(analyses) {
     }
 
     if (!isKoop || !a.entry) continue;
-    const trade = valideerTrade(a.entry, a.stop_loss, a.target);
-    if (!trade) continue;
 
     if (bestaandeTrade) {
       if (!bestaandeTrade.entry_bereikt) {
-        // Update ALLES voor pending trades naar het nieuwste AI inzicht
-        console.log(`Sim B: Update entry voor ${a.symbol} van ${bestaandeTrade.entry} naar ${a.entry}`);
+        // Overschrijf ALTIJD met nieuwste AI inzicht (entry mag veranderen zolang niet gekocht)
+        console.log('Sim B: Entry bijgewerkt naar ' + a.entry);
         bestaandeTrade.entry = a.entry;
         bestaandeTrade.stop_loss = a.stop_loss;
         bestaandeTrade.target = a.target;
-        bestaandeTrade.tijdstip = a.tijdstip; // Update ook het analysetijdstip
+        bestaandeTrade.tijdstip = a.tijdstip;
       } else {
-        // Reeds gekocht: Alleen de exit (stop/target) bijwerken
+        // Reeds gekocht: entry nooit aanpassen, alleen exit bijwerken
         bestaandeTrade.stop_loss = a.stop_loss;
         bestaandeTrade.target = a.target;
       }
       bestaandeTrade.updates = bestaandeTrade.updates || [];
       bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: a.entry, stop_loss: a.stop_loss, target: a.target, gekocht: bestaandeTrade.entry_bereikt });
     } else {
+      const trade = valideerTrade(a.entry, a.stop_loss, a.target);
+      if (!trade) continue;
       simData[datum].push({
         symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
         tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
