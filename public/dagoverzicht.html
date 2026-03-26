@@ -410,6 +410,23 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
         Simuleert alsof je elk KOOP/VERKOOP advies opvolgt
       </div>
     </div>
+    <div class="toolbar" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+      <button onclick="exportToCSV()"
+        style="padding:6px 12px;background:#f0fdf4;color:#15803d;border:1.5px solid #86efac;
+          border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">
+        📥 Download Excel (CSV)
+      </button>
+      <button onclick="downloadBackup()"
+        style="padding:6px 12px;background:#eff6ff;color:#1d4ed8;border:1.5px solid #93c5fd;
+          border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">
+        💾 Backup JSON
+      </button>
+      <button onclick="wisAlles()"
+        style="padding:6px 12px;background:#fef2f2;color:#dc2626;border:1.5px solid #fca5a5;
+          border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">
+        🗑️ Wis alles
+      </button>
+    </div>
     <div id="simulatie-knoppen" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
       <button id="sluit-btn" onclick="sluitSimulaties()"
         style="padding:8px 16px;background:#2563eb;color:#fff;
@@ -496,6 +513,11 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
   </div>
 </div>
 <script>
+// ── Globale variabelen: direct gedeclareerd vóór alle functies ──
+let simAVolledig  = false;
+let analyses      = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+let simulaties_b  = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+
 const nu = new Date();
 document.getElementById('dag-datum').textContent =
   nu.toLocaleDateString('nl-NL', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
@@ -1335,6 +1357,27 @@ function toonBijzondereDagLabel(datum) {
 // ============================================
 function loadData() {
   const datum = new Date().toLocaleDateString('nl-NL');
+
+  // Migreer 'analyses' key → 'daganalyses' (backwards compat met oudere opslag)
+  const oudeAnalyses = localStorage.getItem('analyses');
+  if (oudeAnalyses) {
+    try {
+      const oud = JSON.parse(oudeAnalyses);
+      if (Array.isArray(oud) && oud.length > 0) {
+        console.log('Oude data gevonden (analyses key), herstellen...');
+        const bestaand = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+        if (!bestaand[datum]) bestaand[datum] = [];
+        bestaand[datum].push({ tijdstip: datum, analyses: oud });
+        localStorage.setItem('daganalyses', JSON.stringify(bestaand));
+        localStorage.removeItem('analyses'); // key opruimen na migratie
+      }
+    } catch(e) { console.warn('Migratie analyses mislukt:', e.message); }
+  }
+
+  // Herlaad globale variabelen na eventuele migratie
+  analyses     = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+  simulaties_b = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+
   // Migreer bestaande USD-winst naar EUR voor gesloten trades
   for (const sleutel of ['simulaties', 'simulaties_b']) {
     const data = JSON.parse(localStorage.getItem(sleutel) || '{}');
@@ -1356,6 +1399,55 @@ function loadData() {
   const simB = (JSON.parse(localStorage.getItem('simulaties_b') || '{}')[datum] || []).length;
   const ana  = (JSON.parse(localStorage.getItem('daganalyses') || '{}')[datum] || []).length;
   console.log('loadData:', datum, '| simA:', simA, '| simB:', simB, '| analysesessies:', ana);
+}
+
+// ============================================
+// EXPORT & BEHEER FUNCTIES
+// ============================================
+function exportToCSV() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const simA = JSON.parse(localStorage.getItem('simulaties') || '{}')[datum] || [];
+  const simB = JSON.parse(localStorage.getItem('simulaties_b') || '{}')[datum] || [];
+  const header = ['Sim','Datum','Tijdstip','Symbol','Signaal','Entry','Stop','Target','Resultaat','Winst (€)','Entry bereikt'];
+  const rows = [
+    header,
+    ...simA.map(t => ['A', datum, t.tijdstip, t.symbol, t.signaal, t.entry ?? '', t.stop_loss ?? '', t.target ?? '', t.resultaat, t.winst ?? '', t.entry_bereikt]),
+    ...simB.map(t => ['B', datum, t.tijdstip, t.symbol, t.signaal, t.entry ?? '', t.stop_loss ?? '', t.target ?? '', t.resultaat, t.winst ?? '', t.entry_bereikt]),
+  ];
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'trades_' + datum.replace(/[\/]/g, '-') + '.csv';
+  a.click();
+}
+
+function downloadBackup() {
+  const backup = {};
+  for (const k of ['simulaties', 'simulaties_b', 'daganalyses', 'trades', 'weeknotities', 'bijzondere_dagen']) {
+    const v = localStorage.getItem(k);
+    if (v) try { backup[k] = JSON.parse(v); } catch(e) {}
+  }
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'backup_' + datum.replace(/[\/]/g, '-') + '.json';
+  a.click();
+}
+
+function wisAlles() {
+  if (!confirm('Wis ALLE simulaties en analyses van vandaag?\nDit kan niet ongedaan worden gemaakt.')) return;
+  const datum = new Date().toLocaleDateString('nl-NL');
+  for (const k of ['simulaties', 'simulaties_b', 'daganalyses']) {
+    const d = JSON.parse(localStorage.getItem(k) || '{}');
+    delete d[datum];
+    localStorage.setItem(k, JSON.stringify(d));
+  }
+  analyses = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+  simulaties_b = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+  loadData();
+  alert('Data van vandaag gewist.');
 }
 
 toonBijzondereDagLabel(new Date().toLocaleDateString('nl-NL'));
@@ -1453,7 +1545,7 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdsti
       sluitTijdstip: null
     };
   }
-  // Zoek entry candle
+  // Zoek entry candle (scan van oud naar nieuw, links naar rechts)
   let entryIndex = isKoopNu ? 0 : -1;
   let entryTijdstip = isKoopNu ? 'direct' : null;
   if (!isKoopNu) {
@@ -1468,6 +1560,17 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdsti
         entryTijdstip =
           nl.getHours().toString().padStart(2,'0') + ':' +
           nl.getMinutes().toString().padStart(2,'0');
+        // Controleer: raakte dezelfde candle ook direct de stop?
+        // (bearish candle die in één beweging door entry én stop valt)
+        if (candles[i].low <= stop) {
+          const effectiveExit = stop * (1 - SLIP);
+          return {
+            entry_bereikt: true, entryTijdstip,
+            resultaat: 'stop_geraakt', slotkoers: stop,
+            winst: +((effectiveExit - effectiveEntry) * 10).toFixed(2),
+            sluitTijdstip: entryTijdstip
+          };
+        }
         break;
       }
     }
@@ -1621,8 +1724,6 @@ async function sluitSimulaties() {
 async function sluitSimulatiesB() {
   await sluitSimulaties();
 }
-
-let simAVolledig = false;
 
 function renderSimulaties() {
   const datum = new Date().toLocaleDateString('nl-NL');
@@ -1889,6 +1990,7 @@ async function herbereken() {
     return;
   }
   // Haal koersen op per symbool (eenmalig)
+  // Stagger: 1500ms pauze tussen Twelve Data US-tickers om 429-errors te voorkomen
   const koersData = {};
   for (const sym of [...new Set(analyses.map(a => a.symbol))]) {
     try {
@@ -1897,6 +1999,9 @@ async function herbereken() {
       koersData[sym] = d.quotes || [];
       console.log(sym, koersData[sym].length, 'candles');
     } catch(e) { console.error(sym, e.message); koersData[sym] = []; }
+    if (USD_SYMBOLS.has(sym)) {
+      await new Promise(r => setTimeout(r, 1500));
+    }
   }
   // SIMULATIE A: elke analyse = aparte trade
   const simAData = JSON.parse(localStorage.getItem('simulaties') || '{}');
