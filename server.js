@@ -192,6 +192,9 @@ app.post('/api/analyze', async (req, res) => {
     })();
     const prompt = `Elite daytrader analyse voor ${symbol}.
 Tijd: ${amsterdamTijd} | Markt: ${marktContext}
+MARKT CONTEXT (AEX/NASDAQ):
+- Huidige sentiment: Houd rekening met algemene markttrend
+- Sector focus: Halfgeleiders (ASML/AMD/NVDA) bewegen vaak synchroon.
 KOERS & DAG:
 Prijs: €${fmt(last.close)} | Gap: ${openingGap || 0}%
 Dag range: €${dagLaag} - €${dagHoog} (€${dagRange.toFixed(0)}, ${rangePct}%)
@@ -208,10 +211,11 @@ ${recent.slice(-5).map(q => {
   const t = d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'});
   return t+': '+fmt(q.open)+' → '+fmt(q.close)+' (H:'+fmt(q.high)+' L:'+fmt(q.low)+') '+(q.close>=q.open?'🟢':'🔴');
 }).join('\n')}
-KOOP als 2 van 3:
-✓ RSI < 45 EN koers in onderste 35% dagrange
-✓ Koers raakt/onder Bollinger Lower Band
-✓ MACD histogram draait positief
+KOOP CRITERIA (Wees streng, doel is €250-€400 dagwinst met hoge precisie):
+✓ RSI < 40 (Oversold) EN prijs actie toont bodemvorming.
+✓ Prijs onder de Middle Bollinger Band met opwaarts momentum.
+✓ Volume moet minstens 1.2x het gemiddelde zijn bij een KOOP signaal.
+✓ GEEN koop als de algehele markt (AEX/Nasdaq) een sterke downtrend vertoont (Lower Highs/Lower Lows).
 STOP-LOSS REGELS:
 - Voor aandelen onder €300: minimaal 1.5% onder entry
 - Voor aandelen boven €300: minimaal 1% onder entry
@@ -222,6 +226,8 @@ TARGET REGELS:
 - Voor aandelen onder €300: minimaal 3% boven entry
 - Voor aandelen boven €300: minimaal 2% boven entry
 - Target moet realistisch zijn binnen dagrange
+- Geef de voorkeur aan trades met een Risk/Reward ratio van minimaal 2.5.
+- Als de markt onzeker is, kies dan voor een "WACHT" signaal. Liever geen trade dan een verlieslatende trade.
 Als WACHT: geef CONCREET aan bij welke prijs/conditie je WEL zou kopen.
 Geen vage antwoorden - altijd een concreet level noemen.
 Reageer ALLEEN met dit JSON:
