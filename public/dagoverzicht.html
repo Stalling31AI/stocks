@@ -513,10 +513,26 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
   </div>
 </div>
 <script>
-// ── Globale variabelen: direct gedeclareerd vóór alle functies ──
+// ── GLOBAL CONSTANTS & STATE (vóór alle functies) ──────────────
+const USD_SYMBOLS = ['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML'];
+const EUR_KOERS   = 1.15;
+const EUR_RATE    = EUR_KOERS; // backwards-compat alias
+
 let simAVolledig  = false;
-let analyses      = JSON.parse(localStorage.getItem('daganalyses') || '{}');
-let simulaties_b  = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+
+// Data laden met fallback: probeer legacy 'analyses' key, dan 'daganalyses'
+let analyses = (() => {
+  const legacy = localStorage.getItem('analyses');
+  if (legacy) try {
+    const p = JSON.parse(legacy);
+    if (Array.isArray(p) && p.length > 0) return p;
+  } catch(e) {}
+  return JSON.parse(localStorage.getItem('daganalyses') || '{}');
+})();
+let simulaties_b = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+
+console.log('System Initialized. USD Symbols:', USD_SYMBOLS);
+console.log('Data loaded. Analyses:', Array.isArray(analyses) ? analyses.length : Object.keys(analyses).length, 'items');
 
 const nu = new Date();
 document.getElementById('dag-datum').textContent =
@@ -648,14 +664,11 @@ const WATCHLIST = [
   { symbol: 'ASML',   label: 'ASML US',           vlag: '🇺🇸' },
 ];
 
-const EUR_RATE = 1.15; // vaste USD→EUR wisselkoers voor winstberekening
-const USD_SYMBOLS = new Set(['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML']);
-
 // Formateer prijs als "$X.XX (€Y.YY)" voor USD-aandelen, anders "€X.XX"
 function fmtPrijsLabel(sym, val) {
   if (val == null) return '—';
-  return USD_SYMBOLS.has(sym)
-    ? `$${Number(val).toFixed(2)} (€${(val / EUR_RATE).toFixed(2)})`
+  return USD_SYMBOLS.includes(sym)
+    ? `$${Number(val).toFixed(2)} (€${(val / EUR_KOERS).toFixed(2)})`
     : `€${Number(val).toFixed(2)}`;
 }
 
@@ -1384,7 +1397,7 @@ function loadData() {
     const dagTrades = data[datum] || [];
     let gewijzigd = false;
     for (const t of dagTrades) {
-      if (USD_SYMBOLS.has(t.symbol) && t.winst !== null && !t._winstEur) {
+      if (USD_SYMBOLS.includes(t.symbol) && t.winst !== null && !t._winstEur) {
         t.winst = +(t.winst / EUR_RATE).toFixed(2);
         t._winstEur = true; // markeer zodat migratie niet dubbel loopt
         gewijzigd = true;
@@ -1999,7 +2012,7 @@ async function herbereken() {
       koersData[sym] = d.quotes || [];
       console.log(sym, koersData[sym].length, 'candles');
     } catch(e) { console.error(sym, e.message); koersData[sym] = []; }
-    if (USD_SYMBOLS.has(sym)) {
+    if (USD_SYMBOLS.includes(sym)) {
       await new Promise(r => setTimeout(r, 1500));
     }
   }
@@ -2012,7 +2025,7 @@ async function herbereken() {
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
     const candles = getCandles(koersData[a.symbol] || [], a.tijdstip);
     const uitkomst = berekenResultaat(trade.entry, trade.stop, trade.target, candles, isKoopNu, a.tijdstip);
-    if (uitkomst.winst !== null && USD_SYMBOLS.has(a.symbol))
+    if (uitkomst.winst !== null && USD_SYMBOLS.includes(a.symbol))
       uitkomst.winst = +(uitkomst.winst / EUR_RATE).toFixed(2);
     simAData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
@@ -2114,7 +2127,7 @@ async function herbereken() {
     const entry = pos.entry;
     let resultaat = beursOpen ? 'open' : 'einde_dag';
     let slotkoers = alleCandles[alleCandles.length - 1].close;
-    const _usdSym = USD_SYMBOLS.has(symbol);
+    const _usdSym = USD_SYMBOLS.includes(symbol);
     let winst = beursOpen ? null : +((slotkoers - entry) * 10 / (_usdSym ? EUR_RATE : 1)).toFixed(2);
     let sluitTijdstip = null;
     let st = null;
@@ -2448,7 +2461,7 @@ async function checkOpenPosities() {
       const isKoopNu = sim.actie && sim.actie.toUpperCase() === 'KOOP NU';
       const candles = getCandles(quotes, sim.tijdstip);
       const uitkomst = berekenResultaat(sim.entry, sim.stop_loss, sim.target, candles, isKoopNu, sim.tijdstip);
-      if (uitkomst.winst !== null && USD_SYMBOLS.has(sim.symbol))
+      if (uitkomst.winst !== null && USD_SYMBOLS.includes(sim.symbol))
         uitkomst.winst = +(uitkomst.winst / EUR_RATE).toFixed(2);
       // Update alleen als er iets veranderd is
       if (uitkomst.entry_bereikt !== sim.entry_bereikt || uitkomst.resultaat !== sim.resultaat) {
