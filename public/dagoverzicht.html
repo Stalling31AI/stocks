@@ -1798,7 +1798,50 @@ async function sluitSimulatiesB() {
   await sluitSimulaties();
 }
 
+// Synchroniseer ontbrekende KOOP-analyses vanuit daganalyses naar simulaties_b.
+// Wordt aangeroepen vóór elke render zodat Sim B altijd up-to-date is.
+function syncSimulatiesB() {
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const dagSessies = (JSON.parse(localStorage.getItem('daganalyses') || '{}')[datum] || []);
+  if (dagSessies.length === 0) return;
+  const alleAnalyses = dagSessies.flatMap(run =>
+    (run.analyses || []).map(a => ({ ...a, tijdstip: run.tijdstip }))
+  );
+  // Meest recente KOOP per symbool (laatste in de lijst wint)
+  const perSymbool = {};
+  for (const a of alleAnalyses) {
+    const isKoop = a.signaal === 'KOOP' || (a.actie && a.actie.toUpperCase().includes('KOOP'));
+    if (isKoop && a.entry) perSymbool[a.symbol] = a;
+  }
+  const simBOpgeslagen = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+  const bestaand = new Set((simBOpgeslagen[datum] || []).map(t => t.symbol));
+  let gesync = false;
+  for (const [sym, a] of Object.entries(perSymbool)) {
+    if (!bestaand.has(sym)) {
+      const trade = valideerTrade(a.entry, a.stop_loss, a.target);
+      if (!trade) continue;
+      if (!simBOpgeslagen[datum]) simBOpgeslagen[datum] = [];
+      simBOpgeslagen[datum].push({
+        symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
+        tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie || '',
+        entry: trade.entry, stop_loss: trade.stop, target: trade.target,
+        aantal: 10, redenering: a.redenering || '',
+        resultaat: 'open', entry_bereikt: false,
+        entryTijdstip: null, slotkoers: null, winst: null, sluitTijdstip: null, updates: []
+      });
+      gesync = true;
+      console.log('syncSimulatiesB: toegevoegd', sym);
+    }
+  }
+  if (gesync) {
+    simulaties_b = simBOpgeslagen;
+    localStorage.setItem('simulaties_b', JSON.stringify(simulaties_b));
+    renderSimulatiesB();
+  }
+}
+
 function renderSimulaties() {
+  syncSimulatiesB();
   const datum = new Date().toLocaleDateString('nl-NL');
   const simulaties = JSON.parse(
     localStorage.getItem('simulaties') || '{}'
@@ -2522,7 +2565,8 @@ async function checkOpenPosities() {
     const koers = {};
     for (const sym of [...new Set(open.map(s => s.symbol))]) {
       try {
-        const r = await fetch(`/api/quote/${sym}?interval=15m`);
+        const _interval = USD_SYMBOLS.includes(sym) ? '1m' : '15m';
+        const r = await fetch(`/api/quote/${sym}?interval=${_interval}`);
         const d = await r.json();
         koers[sym] = d.quotes || [];
       } catch(e) { koers[sym] = []; }
@@ -2706,6 +2750,14 @@ async function updateKoersen() {
   for (const sym of openSymbols) {
     try {
       const r = await fetch(`/api/quote/${sym}?interval=1m`);
+      if (!r.ok) {
+        const msg = `Server tijdelijk bezet (${r.status}), wacht op volgende refresh...`;
+        console.warn('updateKoersen:', msg);
+        document.querySelectorAll('[data-koers-sym]').forEach(cel => {
+          cel.textContent = '⏳ ' + msg;
+        });
+        return; // stop loop; setInterval herprobeert na 60s
+      }
       const d = await r.json();
       const candles = d.quotes || [];
       if (candles.length > 0) {
