@@ -667,7 +667,8 @@ const WATCHLIST = [
 // Formateer prijs als "$X.XX (€Y.YY)" voor USD-aandelen, anders "€X.XX"
 function fmtPrijsLabel(sym, val) {
   if (val == null) return '—';
-  return USD_SYMBOLS.includes(sym)
+  const isUsd = USD_SYMBOLS.includes(sym) || (!sym.includes('.AS') && !sym.includes('.DE'));
+  return isUsd
     ? `$${Number(val).toFixed(2)} (€${(val / EUR_KOERS).toFixed(2)})`
     : `€${Number(val).toFixed(2)}`;
 }
@@ -2309,6 +2310,8 @@ function renderSimulatiesB() {
             color:#94a3b8;text-transform:uppercase;">Stop</th>
           <th style="padding:8px;text-align:left;font-size:10px;
             color:#94a3b8;text-transform:uppercase;">Target</th>
+          <th style="padding:8px;text-align:right;font-size:10px;
+            color:#94a3b8;text-transform:uppercase;">Koers ($/€)</th>
           <th style="padding:8px;text-align:center;font-size:10px;
             color:#94a3b8;text-transform:uppercase;">Updates</th>
           <th style="padding:8px;text-align:center;font-size:10px;
@@ -2337,6 +2340,9 @@ function renderSimulatiesB() {
             </td>
             <td style="padding:8px;color:#16a34a;font-weight:600;">
               ${fmtPrijsLabel(s.symbol, s.target)}
+            </td>
+            <td data-koers-sym="${s.symbol}" style="padding:8px;text-align:right;font-weight:600;color:#1e40af;">
+              —
             </td>
             <td style="padding:8px;text-align:center;">
               ${s.updates && s.updates.length > 0 ? `
@@ -2699,14 +2705,9 @@ async function updateKoersen() {
         const laatste = candles[candles.length - 1];
         const prijsUSD = parseFloat(laatste.close);
         const prijsEUR = +(prijsUSD / EUR_KOERS).toFixed(2);
-        // Update alle open trades voor dit symbool in de tabel
-        const rijen = document.querySelectorAll('#simb-tabel tbody tr');
-        rijen.forEach(rij => {
-          const symCell = rij.cells[2];
-          if (symCell && symCell.textContent.trim() === sym) {
-            const koersCell = rij.cells[5]; // Huidige koers kolom
-            if (koersCell) koersCell.textContent = `$${prijsUSD.toFixed(2)} (€${prijsEUR})`;
-          }
+        // Update koers-cel via data-attribuut (symboolspecifiek)
+        document.querySelectorAll(`[data-koers-sym="${sym}"]`).forEach(cel => {
+          cel.textContent = `$${prijsUSD.toFixed(2)} (€${prijsEUR})`;
         });
         console.log(`updateKoersen: ${sym} = $${prijsUSD.toFixed(2)} (€${prijsEUR})`);
       }
