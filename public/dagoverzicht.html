@@ -1308,12 +1308,24 @@ function getCandles(quotes, vanafTijdstip) {
   });
 }
 
-function berekenResultaat(entry, stop, target, candles, isKoopNu) {
+function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdstip) {
   // Valideer stop en target
   if (!stop || stop >= entry)
     stop = +(entry * 0.988).toFixed(2);
   if (!target || target <= entry)
     target = +(entry * 1.020).toFixed(2);
+  // Filter: alleen candles strikt NA analyseTijdstip
+  if (analyseTijdstip) {
+    const [aUur, aMin] = analyseTijdstip.split(':').map(Number);
+    const analyseMinuten = aUur * 60 + aMin;
+    candles = candles.filter(c => {
+      const nl = new Date(new Date(c.date).toLocaleString('en-US', {timeZone: 'Europe/Amsterdam'}));
+      return nl.getHours() * 60 + nl.getMinutes() > analyseMinuten;
+    });
+  }
+  // Slippage constanten (realistisch voor daytrading)
+  const SLIP = 0.0005; // 0.05%
+  const effectiveEntry = entry * (1 + SLIP);
   const nu = new Date();
   const nlNu = new Date(nu.toLocaleString('en-US', {
     timeZone: 'Europe/Amsterdam'
@@ -1397,22 +1409,24 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu) {
       nl.getHours().toString().padStart(2,'0') + ':' +
       nl.getMinutes().toString().padStart(2,'0');
     if (candle.low <= stop) {
+      const effectiveExit = stop * (1 - SLIP);
       return {
         entry_bereikt: true,
         entryTijdstip,
         resultaat: 'stop_geraakt',
         slotkoers: stop,
-        winst: +((stop - entry) * 10).toFixed(2),
+        winst: +((effectiveExit - effectiveEntry) * 10).toFixed(2),
         sluitTijdstip: tijdstip
       };
     }
     if (candle.high >= target) {
+      const effectiveExit = target * (1 - SLIP);
       return {
         entry_bereikt: true,
         entryTijdstip,
         resultaat: 'target_bereikt',
         slotkoers: target,
-        winst: +((target - entry) * 10).toFixed(2),
+        winst: +((effectiveExit - effectiveEntry) * 10).toFixed(2),
         sluitTijdstip: tijdstip
       };
     }
@@ -1431,12 +1445,13 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu) {
   } else {
     // Beurs gesloten = sluit op slotkoers
     const slotkoers = candles[candles.length - 1].close;
+    const effectiveExit = slotkoers * (1 - SLIP);
     return {
       entry_bereikt: true,
       entryTijdstip,
       resultaat: 'einde_dag',
       slotkoers: +slotkoers.toFixed(2),
-      winst: +((slotkoers - entry) * 10).toFixed(2),
+      winst: +((effectiveExit - effectiveEntry) * 10).toFixed(2),
       sluitTijdstip: null
     };
   }
@@ -1682,6 +1697,19 @@ async function simuleerTradesB(analyses) {
       continue;
     }
 
+    if (isWacht && bestaandeTrade && bestaandeTrade.entry_bereikt) {
+      // Actieve positie: WACHT sluit niet, maar werkt stop/target bij
+      const tradeWacht = valideerTrade(bestaandeTrade.entry, a.stop_loss, a.target);
+      if (tradeWacht) {
+        bestaandeTrade.stop_loss = tradeWacht.stop;
+        bestaandeTrade.target = tradeWacht.target;
+        bestaandeTrade.updates = bestaandeTrade.updates || [];
+        bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: bestaandeTrade.entry, stop_loss: tradeWacht.stop, target: tradeWacht.target, gekocht: true });
+        console.log(`Sim B: WACHT - actieve positie ${a.symbol} stop/target bijgewerkt naar ${tradeWacht.stop}/${tradeWacht.target}`);
+      }
+      continue;
+    }
+
     if (!isKoop || !a.entry) continue;
     const trade = valideerTrade(a.entry, a.stop_loss, a.target);
     if (!trade) continue;
@@ -1766,7 +1794,7 @@ async function herbereken() {
     if (!trade) continue;
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
     const candles = getCandles(koersData[a.symbol] || [], a.tijdstip);
-    const uitkomst = berekenResultaat(trade.entry, trade.stop, trade.target, candles, isKoopNu);
+    const uitkomst = berekenResultaat(trade.entry, trade.stop, trade.target, candles, isKoopNu, a.tijdstip);
     simAData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
       tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
@@ -2199,7 +2227,7 @@ async function checkOpenPosities() {
       if (quotes.length === 0) continue;
       const isKoopNu = sim.actie && sim.actie.toUpperCase() === 'KOOP NU';
       const candles = getCandles(quotes, sim.tijdstip);
-      const uitkomst = berekenResultaat(sim.entry, sim.stop_loss, sim.target, candles, isKoopNu);
+      const uitkomst = berekenResultaat(sim.entry, sim.stop_loss, sim.target, candles, isKoopNu, sim.tijdstip);
       // Update alleen als er iets veranderd is
       if (uitkomst.entry_bereikt !== sim.entry_bereikt || uitkomst.resultaat !== sim.resultaat) {
         const wasGekocht = sim.entry_bereikt;
