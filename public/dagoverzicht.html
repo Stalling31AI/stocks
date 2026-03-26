@@ -1309,88 +1309,137 @@ function getCandles(quotes, vanafTijdstip) {
 }
 
 function berekenResultaat(entry, stop, target, candles, isKoopNu) {
-  // Verifieer dat stop < entry en target > entry
-  // VOOR we candles checken
-  if (stop >= entry) {
-    console.error('STOP >= ENTRY - niet geldig:', {entry, stop, target});
-    stop = +(entry * 0.990).toFixed(2);
-  }
-  if (target <= entry) {
-    console.error('TARGET <= ENTRY - niet geldig:', {entry, stop, target});
+  // Valideer stop en target
+  if (!stop || stop >= entry)
+    stop = +(entry * 0.988).toFixed(2);
+  if (!target || target <= entry)
     target = +(entry * 1.020).toFixed(2);
-  }
-  // Log elke berekening zodat we kunnen debuggen
-  console.log('berekenResultaat:', {entry, stop, target, candles: candles.length, isKoopNu});
-
+  const nu = new Date();
+  const nlNu = new Date(nu.toLocaleString('en-US', {
+    timeZone: 'Europe/Amsterdam'
+  }));
+  const beursOpen = nlNu.getHours() < 22;
+  // Geen candles beschikbaar
   if (candles.length === 0) {
     if (isKoopNu) {
-      return { entry_bereikt: true, entryTijdstip: 'direct', resultaat: 'open', slotkoers: null, winst: null, sluitTijdstip: null };
+      // KOOP NU = direct gekocht, wacht op stop/target
+      return {
+        entry_bereikt: true,
+        entryTijdstip: 'direct',
+        resultaat: 'open',
+        slotkoers: null,
+        winst: null,
+        sluitTijdstip: null
+      };
     }
-    return { entry_bereikt: false, entryTijdstip: null, resultaat: 'entry_niet_bereikt', slotkoers: null, winst: 0, sluitTijdstip: null };
+    // Geen candles = entry nog niet bereikt
+    // Beurs open = blijf wachten
+    return {
+      entry_bereikt: false,
+      entryTijdstip: null,
+      resultaat: beursOpen ? 'open' : 'entry_niet_bereikt',
+      slotkoers: null,
+      winst: beursOpen ? null : 0,
+      sluitTijdstip: null
+    };
   }
-  // Stap 1: vind entry candle
-  let entryIndex = -1;
-  let entryTijdstip = null;
-  if (isKoopNu) {
-    entryIndex = 0;
-    entryTijdstip = 'direct';
-  } else {
+  // Zoek entry candle
+  let entryIndex = isKoopNu ? 0 : -1;
+  let entryTijdstip = isKoopNu ? 'direct' : null;
+  if (!isKoopNu) {
     for (let i = 0; i < candles.length; i++) {
       if (candles[i].low <= entry) {
         entryIndex = i;
-        const nl = new Date(new Date(candles[i].date).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
-        entryTijdstip = nl.getHours().toString().padStart(2,'0') + ':' + nl.getMinutes().toString().padStart(2,'0');
+        const nl = new Date(
+          new Date(candles[i].date).toLocaleString(
+            'en-US', {timeZone:'Europe/Amsterdam'}
+          )
+        );
+        entryTijdstip =
+          nl.getHours().toString().padStart(2,'0') + ':' +
+          nl.getMinutes().toString().padStart(2,'0');
         break;
       }
     }
   }
+  // Entry nog niet bereikt
   if (entryIndex === -1) {
-    return { entry_bereikt: false, entryTijdstip: null, resultaat: 'entry_niet_bereikt', slotkoers: null, winst: 0, sluitTijdstip: null };
+    return {
+      entry_bereikt: false,
+      entryTijdstip: null,
+      resultaat: beursOpen ? 'open' : 'entry_niet_bereikt',
+      slotkoers: null,
+      winst: beursOpen ? null : 0,
+      sluitTijdstip: null
+    };
   }
-  // Stap 2: candles NA entry candle
+  // Entry bereikt - check candles NA entry
   const candlesNaEntry = candles.slice(entryIndex + 1);
-  const nu = new Date();
-  const nlNu = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
-  const beursOpen = nlNu.getHours() < 22;
-  if (beursOpen && candlesNaEntry.length === 0) {
-    return { entry_bereikt: true, entryTijdstip, resultaat: 'open', slotkoers: null, winst: null, sluitTijdstip: null };
+  // Geen candles na entry = positie open, wacht
+  if (candlesNaEntry.length === 0) {
+    return {
+      entry_bereikt: true,
+      entryTijdstip,
+      resultaat: 'open',
+      slotkoers: null,
+      winst: null,
+      sluitTijdstip: null
+    };
   }
-  // Stap 3: loop door candles na entry
-  let resultaat = 'open';
-  let slotkoers = candles[candles.length - 1].close;
-  let winst = null;
-  let sluitTijdstip = null;
-  console.log('=== SIMULATIE CHECK ===', {
-    entry, stop, target,
-    aantalCandlesNaEntry: candlesNaEntry.length
-  });
-  candlesNaEntry.forEach((c, i) => {
-    const nl = new Date(new Date(c.date).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
-    const tijdstip = nl.toLocaleString('nl-NL');
-    if (c.low <= stop) {
-      console.warn('🛑 STOP GERAAKT:', { tijdstip, candle_low: c.low, stop_level: stop, entry, index: i });
-    }
-    if (c.high >= target) {
-      console.log('🎯 TARGET BEREIKT:', { tijdstip, candle_high: c.high, target_level: target, entry, index: i });
-    }
-  });
+  // Check stop en target in candles na entry
   for (const candle of candlesNaEntry) {
-    const nl = new Date(new Date(candle.date).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
-    const tijdstip = nl.getHours().toString().padStart(2,'0') + ':' + nl.getMinutes().toString().padStart(2,'0');
+    const nl = new Date(
+      new Date(candle.date).toLocaleString(
+        'en-US', {timeZone:'Europe/Amsterdam'}
+      )
+    );
+    const tijdstip =
+      nl.getHours().toString().padStart(2,'0') + ':' +
+      nl.getMinutes().toString().padStart(2,'0');
     if (candle.low <= stop) {
-      resultaat = 'stop_geraakt'; slotkoers = stop;
-      winst = +((stop - entry) * 10).toFixed(2); sluitTijdstip = tijdstip; break;
+      return {
+        entry_bereikt: true,
+        entryTijdstip,
+        resultaat: 'stop_geraakt',
+        slotkoers: stop,
+        winst: +((stop - entry) * 10).toFixed(2),
+        sluitTijdstip: tijdstip
+      };
     }
     if (candle.high >= target) {
-      resultaat = 'target_bereikt'; slotkoers = target;
-      winst = +((target - entry) * 10).toFixed(2); sluitTijdstip = tijdstip; break;
+      return {
+        entry_bereikt: true,
+        entryTijdstip,
+        resultaat: 'target_bereikt',
+        slotkoers: target,
+        winst: +((target - entry) * 10).toFixed(2),
+        sluitTijdstip: tijdstip
+      };
     }
   }
-  if (resultaat === 'open' && !beursOpen) {
-    resultaat = 'einde_dag';
-    winst = +((slotkoers - entry) * 10).toFixed(2);
+  // Geen stop of target bereikt
+  if (beursOpen) {
+    // Beurs open = blijf wachten
+    return {
+      entry_bereikt: true,
+      entryTijdstip,
+      resultaat: 'open',
+      slotkoers: null,
+      winst: null,
+      sluitTijdstip: null
+    };
+  } else {
+    // Beurs gesloten = sluit op slotkoers
+    const slotkoers = candles[candles.length - 1].close;
+    return {
+      entry_bereikt: true,
+      entryTijdstip,
+      resultaat: 'einde_dag',
+      slotkoers: +slotkoers.toFixed(2),
+      winst: +((slotkoers - entry) * 10).toFixed(2),
+      sluitTijdstip: null
+    };
   }
-  return { entry_bereikt: true, entryTijdstip, resultaat, slotkoers: slotkoers ? +slotkoers.toFixed(2) : null, winst, sluitTijdstip };
 }
 
 // ============================================
