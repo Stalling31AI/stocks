@@ -1669,26 +1669,34 @@ async function simuleerTradesB(analyses) {
   const simData = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
   if (!simData[datum]) simData[datum] = [];
   for (const a of analyses) {
-    const isKoop = a.signaal === 'KOOP' || (a.actie && a.actie.toUpperCase().includes('KOOP'));
-    if (!isKoop || !a.entry) continue;
     if (!isBeursOpen(a.symbol)) continue;
+    const isKoop = a.signaal === 'KOOP' || (a.actie && a.actie.toUpperCase().includes('KOOP'));
+    const isWacht = a.signaal === 'WACHT';
+
+    const bestaandeTradeIndex = simData[datum].findIndex(s => s.symbol === a.symbol && s.resultaat === 'open');
+    const bestaandeTrade = bestaandeTradeIndex !== -1 ? simData[datum][bestaandeTradeIndex] : null;
+
+    if (isWacht && bestaandeTrade && !bestaandeTrade.entry_bereikt) {
+      console.log(`Sim B: Order geannuleerd voor ${a.symbol} - Signaal gewijzigd naar WACHT`);
+      simData[datum].splice(bestaandeTradeIndex, 1);
+      continue;
+    }
+
+    if (!isKoop || !a.entry) continue;
     const trade = valideerTrade(a.entry, a.stop_loss, a.target);
     if (!trade) continue;
-    const openPositie = simData[datum].find(s => s.symbol === a.symbol && s.resultaat === 'open');
-    if (openPositie) {
-      if (!openPositie.entry_bereikt) {
-        // Entry alleen VERLAGEN, nooit verhogen
-        if (trade.entry < openPositie.entry) {
-          openPositie.entry = trade.entry;
-        }
-        openPositie.stop_loss = trade.stop;
-        openPositie.target = trade.target;
+
+    if (bestaandeTrade) {
+      if (!bestaandeTrade.entry_bereikt) {
+        if (trade.entry < bestaandeTrade.entry) bestaandeTrade.entry = trade.entry;
+        bestaandeTrade.stop_loss = trade.stop;
+        bestaandeTrade.target = trade.target;
       } else {
-        openPositie.stop_loss = trade.stop;
-        openPositie.target = trade.target;
+        bestaandeTrade.stop_loss = trade.stop;
+        bestaandeTrade.target = trade.target;
       }
-      openPositie.updates = openPositie.updates || [];
-      openPositie.updates.push({ tijdstip: a.tijdstip, entry: trade.entry, stop_loss: trade.stop, target: trade.target, gekocht: openPositie.entry_bereikt });
+      bestaandeTrade.updates = bestaandeTrade.updates || [];
+      bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: trade.entry, stop_loss: trade.stop, target: trade.target, gekocht: bestaandeTrade.entry_bereikt });
     } else {
       simData[datum].push({
         symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
