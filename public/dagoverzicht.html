@@ -809,6 +809,9 @@ async function analyseAlleAandelen() {
       trend = closes.slice(-5).reduce((a,b)=>a+b,0)/5 >
                     closes.slice(-10,-5).reduce((a,b)=>a+b,0)/5
                     ? 'OPWAARTS' : 'NEERWAARTS';
+      const huidigVolume = last.volume || 0;
+      const gemiddeldVolume = quotes.slice(-20).reduce((a, b) => a + (b.volume || 0), 0) / 20;
+      const volumeRatio = gemiddeldVolume > 0 ? (huidigVolume / gemiddeldVolume).toFixed(2) : '0.00';
       const openingGap = quotes.length > 1
         ? ((quotes[0].close - quotes[quotes.length-1].close)
            / quotes[quotes.length-1].close * 100).toFixed(2)
@@ -823,7 +826,7 @@ async function analyseAlleAandelen() {
           symbol: item.symbol,
           interval: '15m',
           quotes: quotes.slice(-30),
-          indicators: { rsi, macd: macdData, bb, trend, openingGap }
+          indicators: { rsi, macd: macdData, bb, trend, openingGap, volumeRatio }
         })
       });
       clearTimeout(timeoutId);
@@ -872,7 +875,7 @@ async function analyseAlleAandelen() {
               symbol: item.symbol,
               interval: '15m',
               quotes: quotes.slice(-10),
-              indicators: { rsi, macd: macdData, bb, trend }
+              indicators: { rsi, macd: macdData, bb, trend, volumeRatio }
             })
           });
           clearTimeout(timeoutId2);
@@ -2026,9 +2029,9 @@ async function simuleerTradesB(analyses) {
 
     if (bestaandeTrade) {
       if (!bestaandeTrade.entry_bereikt) {
-        // Overschrijf ALTIJD met nieuwste AI inzicht (entry mag veranderen zolang niet gekocht)
-        console.log('Sim B: Entry bijgewerkt naar ' + a.entry);
-        bestaandeTrade.entry = a.entry;
+        // Verhoog entry als koers wegloopt (hogere prijs), maar NOOIT verlagen bij daling
+        // zodat we direct instappen als de koers daalt naar onze level
+        if (a.entry > bestaandeTrade.entry) bestaandeTrade.entry = a.entry;
         bestaandeTrade.stop_loss = a.stop_loss;
         bestaandeTrade.target = a.target;
         bestaandeTrade.tijdstip = a.tijdstip;

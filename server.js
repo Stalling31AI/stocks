@@ -174,9 +174,11 @@ app.post('/api/analyze', async (req, res) => {
     const gemVolume = quotes.slice(-20)
       .reduce((sum, q) => sum + (q.volume || 0), 0) / 20;
     const lastVolume = quotes[quotes.length-1].volume || 0;
-    const volumeRatio = gemVolume > 0
-      ? (lastVolume / gemVolume).toFixed(2)
-      : 'onbekend';
+    const volumeRatio = indicators.volumeRatio != null
+      ? indicators.volumeRatio
+      : gemVolume > 0
+        ? (lastVolume / gemVolume).toFixed(2)
+        : 'onbekend';
 
     const dagHoog = Math.max(...quotes.map(q => q.high));
     const dagLaag = Math.min(...quotes.map(q => q.low));
@@ -260,23 +262,24 @@ ${recent.slice(-5).map(q => {
   const t = d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'});
   return t+': '+fmt(q.open)+' → '+fmt(q.close)+' (H:'+fmt(q.high)+' L:'+fmt(q.low)+') '+(q.close>=q.open?'🟢':'🔴');
 }).join('\n')}
-KOOP CRITERIA (Wees streng, doel is €250-€400 dagwinst met hoge precisie):
-✓ RSI < 40 (Oversold) EN prijs actie toont bodemvorming.
-✓ Prijs onder de Middle Bollinger Band met opwaarts momentum.
-✓ Volume moet minstens 1.2x het gemiddelde zijn bij een KOOP signaal.
-✓ GEEN koop als de algehele markt (AEX/Nasdaq) een sterke downtrend vertoont (Lower Highs/Lower Lows).
+TRADING PROFIEL: Actieve Daytrader/Scalper. Dagdoel: €350. Prioriteer uitvoering boven perfecte bodem.
+KOOP CRITERIA:
+✓ Als Target > 1% boven huidige koers EN RSI < 45: geef DIRECT een "KOOP NU" signaal. Wacht niet op de perfecte bodem.
+✓ RSI < 40 (Oversold) EN prijs toont bodemvorming → altijd KOOP.
+✓ Prijs onder Middle Bollinger Band met opwaarts momentum → KOOP.
+✓ Volume minimaal 1.2x gemiddelde bij KOOP signaal.
+✓ Accepteer Risk/Reward van 1:1.2 voor snelle scalp-trades.
+✓ GEEN koop bij sterke downtrend (Lower Highs/Lower Lows) op AEX/Nasdaq.
 STOP-LOSS REGELS:
 - Voor aandelen onder €300: minimaal 1.5% onder entry
 - Voor aandelen boven €300: minimaal 1% onder entry
 - Stop moet buiten normale dagvolatiliteit liggen
-- Een 15-minuten candle heeft gemiddeld 0.3-0.5% range
-- Stop moet minimaal 3x die range onder entry liggen
 TARGET REGELS:
-- Voor aandelen onder €300: minimaal 3% boven entry
-- Voor aandelen boven €300: minimaal 2% boven entry
-- Target moet realistisch zijn binnen dagrange
-- Geef de voorkeur aan trades met een Risk/Reward ratio van minimaal 2.5.
-- Als de markt onzeker is, kies dan voor een "WACHT" signaal. Liever geen trade dan een verlieslatende trade.
+- Voor aandelen onder €300: minimaal 2% boven entry
+- Voor aandelen boven €300: minimaal 1.5% boven entry
+- Target realistisch binnen dagrange; bij snelle scalp mag target kleiner zijn
+- Voorkeur R/R ≥ 2.5 maar accepteer 1.2 als entry-kans groot is.
+- WACHT alleen als er werkelijk geen koopmoment is vandaag.
 Als WACHT: geef CONCREET aan bij welke prijs/conditie je WEL zou kopen.
 Geen vage antwoorden - altijd een concreet level noemen.
 Reageer ALLEEN met dit JSON:
