@@ -135,49 +135,49 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
       id="lbl-META">
-      <input type="checkbox" value="META"
+      <input type="checkbox" value="META" checked
         onchange="updateSelectie(this)"> 🇺🇸 Meta
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
       id="lbl-NFLX">
-      <input type="checkbox" value="NFLX"
+      <input type="checkbox" value="NFLX" checked
         onchange="updateSelectie(this)"> 🇺🇸 Netflix
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
       id="lbl-AMD">
-      <input type="checkbox" value="AMD"
+      <input type="checkbox" value="AMD" checked
         onchange="updateSelectie(this)"> 🇺🇸 AMD
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
       id="lbl-AMAT">
-      <input type="checkbox" value="AMAT"
+      <input type="checkbox" value="AMAT" checked
         onchange="updateSelectie(this)"> 🇺🇸 AMAT
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
       id="lbl-PYPL">
-      <input type="checkbox" value="PYPL"
+      <input type="checkbox" value="PYPL" checked
         onchange="updateSelectie(this)"> 🇺🇸 PayPal
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
       id="lbl-LMT">
-      <input type="checkbox" value="LMT"
+      <input type="checkbox" value="LMT" checked
         onchange="updateSelectie(this)"> 🇺🇸 Lockheed
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
       id="lbl-ASML">
-      <input type="checkbox" value="ASML"
+      <input type="checkbox" value="ASML" checked
         onchange="updateSelectie(this)"> 🇺🇸 ASML US
     </label>
   </div>
@@ -552,7 +552,7 @@ const BEURSTIJDEN = {
   'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
   'ASML':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
 };
-let geselecteerdeAandelen = ['ASML.AS','ADYEN.AS','NVDA','RHM.DE'];
+let geselecteerdeAandelen = WATCHLIST.map(w => w.symbol);
 function updateSelectie(cb) {
   const lbl = document.getElementById('lbl-' + cb.value);
   if (cb.checked) {
