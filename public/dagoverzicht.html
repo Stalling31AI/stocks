@@ -1455,6 +1455,19 @@ function loadData() {
     }
   }
 
+  // Verwijder US-aandelen uit Sim B als de beurs gesloten is (open posities)
+  const simBRaw = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+  const simBDag = simBRaw[datum] || [];
+  const simBVoor = simBDag.length;
+  simBRaw[datum] = simBDag.filter(t =>
+    !USD_SYMBOLS.includes(t.symbol) || isBeursOpen(t.symbol) || t.entry_bereikt === true
+  );
+  if (simBRaw[datum].length !== simBVoor) {
+    localStorage.setItem('simulaties_b', JSON.stringify(simBRaw));
+    simulaties_b = simBRaw;
+    console.log(`Sim B: ${simBVoor - simBRaw[datum].length} US-trade(s) verwijderd (beurs gesloten)`);
+  }
+
   // Migreer bestaande USD-winst naar EUR voor gesloten trades
   for (const sleutel of ['simulaties', 'simulaties_b']) {
     const data = JSON.parse(localStorage.getItem(sleutel) || '{}');
@@ -1834,6 +1847,7 @@ function syncSimulatiesB() {
   let gesync = false;
   for (const [sym, a] of Object.entries(perSymbool)) {
     if (!bestaand.has(sym)) {
+      if (!isBeursOpen(sym)) continue; // Geen trade toevoegen als beurs gesloten
       const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
       if (!trade) continue;
       if (!simBOpgeslagen[datum]) simBOpgeslagen[datum] = [];
