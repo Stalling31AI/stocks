@@ -552,7 +552,7 @@ const BEURSTIJDEN = {
   'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
   'ASML':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
 };
-let geselecteerdeAandelen = WATCHLIST.map(w => w.symbol);
+let geselecteerdeAandelen = ['ASML.AS','ADYEN.AS','RHM.DE','NVDA','META','NFLX','AMD','AMAT','PYPL','LMT','ASML'];
 function updateSelectie(cb) {
   const lbl = document.getElementById('lbl-' + cb.value);
   if (cb.checked) {
