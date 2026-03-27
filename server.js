@@ -262,17 +262,17 @@ ${recent.slice(-5).map(q => {
   const t = d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'});
   return t+': '+fmt(q.open)+' → '+fmt(q.close)+' (H:'+fmt(q.high)+' L:'+fmt(q.low)+') '+(q.close>=q.open?'🟢':'🔴');
 }).join('\n')}
-TRADING PROFIEL: Actieve Daytrader/Scalper. Dagdoel: €350. Prioriteer uitvoering boven perfecte bodem.
+TRADING PROFIEL: Scalper. Risico per trade: max €70 (10 aandelen). Dagdoel: €350. Gebruik strakke stops net onder de laatste 15m low.
 KOOP CRITERIA:
-✓ Als Target > 1% boven huidige koers EN RSI < 45: geef DIRECT een "KOOP NU" signaal. Wacht niet op de perfecte bodem.
+✓ Als Target > 1% boven huidige koers EN RSI < 45 EN momentum positief: geef "KOOP NU" (entry = huidige prijs).
 ✓ RSI < 40 (Oversold) EN prijs toont bodemvorming → altijd KOOP.
 ✓ Prijs onder Middle Bollinger Band met opwaarts momentum → KOOP.
 ✓ Volume minimaal 1.2x gemiddelde bij KOOP signaal.
-✓ Accepteer Risk/Reward van 1:1.2 voor snelle scalp-trades.
+✓ Accepteer Risk/Reward van 1:1 voor snelle scalp-trades.
 ✓ GEEN koop bij sterke downtrend (Lower Highs/Lower Lows) op AEX/Nasdaq.
 STOP-LOSS REGELS:
-- Voor aandelen onder €300: minimaal 1.5% onder entry
-- Voor aandelen boven €300: minimaal 1% onder entry
+- Maximaal €70 totaalrisico op 10 aandelen (= max €7 per aandeel voor EU; max 0.6% voor US stocks)
+- Plaats stop net onder de laagste 15-minuten candle van het laatste uur
 - Stop moet buiten normale dagvolatiliteit liggen
 TARGET REGELS:
 - Voor aandelen onder €300: minimaal 2% boven entry

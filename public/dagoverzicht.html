@@ -1434,7 +1434,7 @@ function loadData() {
     let gesync = false;
     for (const [sym, a] of Object.entries(perSymbool)) {
       if (!bestaand.has(sym)) {
-        const trade = valideerTrade(a.entry, a.stop_loss, a.target);
+        const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
         if (!trade) continue;
         if (!simulaties_b[datum]) simulaties_b[datum] = [];
         simulaties_b[datum].push({
@@ -1534,13 +1534,25 @@ loadData();
 // ============================================
 // HULPFUNCTIES
 // ============================================
-function valideerTrade(entry, stop, target) {
+function valideerTrade(entry, stop, target, symbol) {
   entry = parseFloat(entry);
   stop = parseFloat(stop);
   target = parseFloat(target);
   if (isNaN(entry) || entry <= 0) return null;
   if (isNaN(stop) || stop >= entry) stop = +(entry * 0.992).toFixed(2);
   if (isNaN(target) || target <= entry) target = +(entry * 1.02).toFixed(2);
+  // Tight stop-loss caps per markt
+  if (symbol) {
+    const grootEU = ['ASML.AS', 'RHM.DE', 'ADYEN.AS'];
+    if (grootEU.includes(symbol)) {
+      // Max €70 totaalrisico voor 10 aandelen = €7 per aandeel
+      if ((entry - stop) * 10 > 70) stop = +(entry - 7).toFixed(2);
+    } else if (USD_SYMBOLS.includes(symbol)) {
+      // US stocks: max 0.6% onder entry
+      const maxRisico = entry * 0.006;
+      if (entry - stop > maxRisico) stop = +(entry - maxRisico).toFixed(2);
+    }
+  }
   const risico = entry - stop;
   const beloning = target - entry;
   if (beloning < risico * 1.5) target = +(entry + risico * 2).toFixed(2);
@@ -1748,7 +1760,7 @@ async function simuleerTrades(analyses) {
     if (!isBeursOpen(a.symbol)) continue;
     const bestaat = simData[datum].find(s => s.symbol === a.symbol && s.tijdstip === a.tijdstip);
     if (bestaat) continue;
-    const trade = valideerTrade(a.entry, a.stop_loss, a.target);
+    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
     if (!trade) continue;
     simData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
@@ -1822,7 +1834,7 @@ function syncSimulatiesB() {
   let gesync = false;
   for (const [sym, a] of Object.entries(perSymbool)) {
     if (!bestaand.has(sym)) {
-      const trade = valideerTrade(a.entry, a.stop_loss, a.target);
+      const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
       if (!trade) continue;
       if (!simBOpgeslagen[datum]) simBOpgeslagen[datum] = [];
       simBOpgeslagen[datum].push({
@@ -2014,7 +2026,7 @@ async function simuleerTradesB(analyses) {
 
     if (isWacht && bestaandeTrade && bestaandeTrade.entry_bereikt) {
       // Actieve positie: WACHT sluit niet, maar werkt stop/target bij
-      const tradeWacht = valideerTrade(bestaandeTrade.entry, a.stop_loss, a.target);
+      const tradeWacht = valideerTrade(bestaandeTrade.entry, a.stop_loss, a.target, bestaandeTrade.symbol || a.symbol);
       if (tradeWacht) {
         bestaandeTrade.stop_loss = tradeWacht.stop;
         bestaandeTrade.target = tradeWacht.target;
@@ -2031,7 +2043,7 @@ async function simuleerTradesB(analyses) {
       if (!bestaandeTrade.entry_bereikt) {
         const winstPotentie = a.target - a.entry;
         const risico = a.entry - a.stop_loss;
-        if (winstPotentie > 0 && winstPotentie > risico * 1.2) {
+        if (winstPotentie > 0 && winstPotentie > risico) {
           bestaandeTrade.entry     = a.entry;
           bestaandeTrade.stop_loss = a.stop_loss;
           bestaandeTrade.target    = a.target;
@@ -2049,7 +2061,7 @@ async function simuleerTradesB(analyses) {
       bestaandeTrade.updates = bestaandeTrade.updates || [];
       bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: a.entry, stop_loss: a.stop_loss, target: a.target, gekocht: bestaandeTrade.entry_bereikt });
     } else {
-      const trade = valideerTrade(a.entry, a.stop_loss, a.target);
+      const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
       if (!trade) continue;
       simData[datum].push({
         symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
@@ -2118,7 +2130,7 @@ async function herbereken() {
   const simAData = JSON.parse(localStorage.getItem('simulaties') || '{}');
   if (!simAData[datum]) simAData[datum] = [];
   for (const a of analyses) {
-    const trade = valideerTrade(a.entry, a.stop_loss, a.target);
+    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
     if (!trade) continue;
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
     const candles = getCandles(koersData[a.symbol] || [], a.tijdstip);
@@ -2138,7 +2150,7 @@ async function herbereken() {
   if (!simBData[datum]) simBData[datum] = [];
   const pending = {};
   for (const a of analyses) {
-    const trade = valideerTrade(a.entry, a.stop_loss, a.target);
+    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
     if (!trade) continue;
     const bestaand = pending[a.symbol];
     if (bestaand) {
