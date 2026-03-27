@@ -2029,12 +2029,15 @@ async function simuleerTradesB(analyses) {
 
     if (bestaandeTrade) {
       if (!bestaandeTrade.entry_bereikt) {
-        // Verhoog entry als koers wegloopt (hogere prijs), maar NOOIT verlagen bij daling
-        // zodat we direct instappen als de koers daalt naar onze level
-        if (a.entry > bestaandeTrade.entry) bestaandeTrade.entry = a.entry;
-        bestaandeTrade.stop_loss = a.stop_loss;
-        bestaandeTrade.target = a.target;
-        bestaandeTrade.tijdstip = a.tijdstip;
+        if (a.target > a.entry) {
+          // Valide update: target boven entry, geen flip
+          bestaandeTrade.entry = a.entry;
+          bestaandeTrade.stop_loss = a.stop_loss;
+          bestaandeTrade.target = a.target;
+          bestaandeTrade.tijdstip = a.tijdstip;
+        } else {
+          console.warn(`Update voor ${a.symbol} genegeerd: Target-Flip gedetecteerd (Target < Entry).`);
+        }
       } else {
         // Reeds gekocht: entry nooit aanpassen, alleen exit bijwerken
         bestaandeTrade.stop_loss = a.stop_loss;
