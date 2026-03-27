@@ -519,6 +519,7 @@ const EUR_KOERS   = 1.08;
 const EUR_RATE    = EUR_KOERS; // backwards-compat alias
 const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
 
+window.liveKoersen = {}; // Globale live prijzen via Twelve Data
 let simAVolledig  = false;
 
 // Data laden met fallback: probeer legacy 'analyses' key, dan 'daganalyses'
@@ -2575,65 +2576,60 @@ async function checkOpenPosities() {
     const alle = JSON.parse(localStorage.getItem(sleutel) || '{}');
     const open = (alle[datum] || []).filter(s => s.resultaat === 'open');
     if (open.length === 0) continue;
-    // Haal koersen op per symbool
-    const koers = {};
-    for (const sym of [...new Set(open.map(s => s.symbol))]) {
-      try {
-        // FORCEER PAUZE: Gun de API rust tussen elk aandeel
-        await new Promise(res => setTimeout(res, 6000));
-        const _interval = USD_SYMBOLS.includes(sym) ? '1m' : '15m';
-        const r = await fetch(`/api/quote/${sym}?interval=${_interval}`);
-        if (!r.ok) {
-          console.warn(`Sla ${sym} over wegens server drukte (Status: ${r.status})`);
-          koers[sym] = [];
-          continue;
-        }
-        const d = await r.json();
-        koers[sym] = d.quotes || [];
-      } catch(e) {
-        console.error(`Fout bij ophalen ${sym}:`, e.message);
-        koers[sym] = [];
-      }
-    }
+    // Gebruik live koersen uit window.liveKoersen (gevuld door updateKoersen via Twelve Data)
     for (const sim of open) {
-      const quotes = koers[sim.symbol] || [];
-      if (quotes.length === 0) continue;
+      const huidigePrijs = window.liveKoersen[sim.symbol];
+      if (!huidigePrijs) continue; // Geen live prijs beschikbaar, sla over
+      const nu = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+      const wasGekocht = sim.entry_bereikt;
+      // Entry check (KOOP NU = direct als gekocht beschouwen)
       const isKoopNu = sim.actie && sim.actie.toUpperCase() === 'KOOP NU';
-      const candles = getCandles(quotes, sim.tijdstip);
-      const uitkomst = berekenResultaat(sim.entry, sim.stop_loss, sim.target, candles, isKoopNu, sim.tijdstip);
-      if (uitkomst.winst !== null && USD_SYMBOLS.includes(sim.symbol))
-        uitkomst.winst = +(uitkomst.winst / EUR_RATE).toFixed(2);
-      // Update alleen als er iets veranderd is
-      if (uitkomst.entry_bereikt !== sim.entry_bereikt || uitkomst.resultaat !== sim.resultaat) {
-        const wasGekocht = sim.entry_bereikt;
-        sim.entry_bereikt = uitkomst.entry_bereikt;
-        sim.entryTijdstip = uitkomst.entryTijdstip;
-        sim.resultaat = uitkomst.resultaat;
-        sim.slotkoers = uitkomst.slotkoers;
-        sim.winst = uitkomst.winst;
-        sim.sluitTijdstip = uitkomst.sluitTijdstip;
-        wijzigingen = true;
-        // Notificaties
-        if (uitkomst.entry_bereikt && !wasGekocht) {
-          try {
-            if (Notification.permission === 'granted') {
-              new Notification('✅ ' + sim.label + ' gekocht!', { body: 'Entry €' + sim.entry + ' om ' + uitkomst.entryTijdstip, icon: '/logo.png' });
-            }
-          } catch(e) {}
+      if (!sim.entry_bereikt) {
+        if (isKoopNu || huidigePrijs >= sim.entry) {
+          sim.entry_bereikt = true;
+          sim.entryTijdstip = nu;
+          wijzigingen = true;
         }
-        if (uitkomst.resultaat === 'stop_geraakt') {
-          try {
-            if (Notification.permission === 'granted') {
-              new Notification('🛑 ' + sim.label + ' stop!', { body: '€' + sim.stop_loss + ' | ' + uitkomst.winst, icon: '/logo.png' });
-            }
-          } catch(e) {}
+      }
+      if (sim.entry_bereikt) {
+        let nieuwResultaat = 'open';
+        let slotkoers = huidigePrijs;
+        if (huidigePrijs <= sim.stop_loss) {
+          nieuwResultaat = 'stop_geraakt';
+          slotkoers = sim.stop_loss;
+        } else if (huidigePrijs >= sim.target) {
+          nieuwResultaat = 'target_bereikt';
+          slotkoers = sim.target;
         }
-        if (uitkomst.resultaat === 'target_bereikt') {
-          try {
-            if (Notification.permission === 'granted') {
-              new Notification('🎯 ' + sim.label + ' target!', { body: '+€' + uitkomst.winst, icon: '/logo.png' });
-            }
-          } catch(e) {}
+        if (nieuwResultaat !== sim.resultaat) {
+          sim.resultaat = nieuwResultaat;
+          sim.slotkoers = slotkoers;
+          sim.sluitTijdstip = nieuwResultaat !== 'open' ? nu : null;
+          // Winst berekenen in EUR
+          const diffPrijs = slotkoers - sim.entry;
+          sim.winst = USD_SYMBOLS.includes(sim.symbol)
+            ? +(diffPrijs * 10 / EUR_RATE).toFixed(2)  // 10 aandelen, omrekenen naar EUR
+            : +(diffPrijs * 10).toFixed(2);
+          wijzigingen = true;
+          // Notificaties
+          if (!wasGekocht && sim.entry_bereikt) {
+            try {
+              if (Notification.permission === 'granted')
+                new Notification('✅ ' + sim.label + ' gekocht!', { body: 'Entry $' + sim.entry + ' om ' + sim.entryTijdstip, icon: '/logo.png' });
+            } catch(e) {}
+          }
+          if (nieuwResultaat === 'stop_geraakt') {
+            try {
+              if (Notification.permission === 'granted')
+                new Notification('🛑 ' + sim.label + ' stop!', { body: '€' + sim.winst + ' | koers: $' + huidigePrijs.toFixed(2), icon: '/logo.png' });
+            } catch(e) {}
+          }
+          if (nieuwResultaat === 'target_bereikt') {
+            try {
+              if (Notification.permission === 'granted')
+                new Notification('🎯 ' + sim.label + ' target!', { body: '+€' + sim.winst, icon: '/logo.png' });
+            } catch(e) {}
+          }
         }
       }
     }
@@ -2759,17 +2755,23 @@ async function updateKoersen() {
   console.log('updateKoersen: Start live update via Twelve Data...');
   for (const sym of USD_SYMBOLS) {
     try {
-      // 2500ms pauze vóór elke call (Twelve Data Free rate limit: 8/min)
-      await new Promise(res => setTimeout(res, 2500));
+      // 8000ms pauze vóór elke call (100% veilig binnen Twelve Data Free rate limit)
+      await new Promise(res => setTimeout(res, 8000));
       const url = `https://api.twelvedata.com/quote?symbol=${sym}&apikey=${TWELVE_DATA_KEY}`;
       const r = await fetch(url);
       if (!r.ok) {
         console.warn(`updateKoersen: ${sym} overgeslagen (${r.status})`);
+        if (r.status === 429 || r.status === 500) {
+          console.warn(`updateKoersen: API afkoelen 30s na fout ${r.status}...`);
+          await new Promise(res => setTimeout(res, 30000));
+        }
         continue;
       }
       const d = await r.json();
       const rawPrijs = parseFloat(d.close || d.price);
       if (isNaN(rawPrijs)) continue;
+      // Sla op in globaal object zodat checkOpenPosities dit direct kan gebruiken
+      window.liveKoersen[sym] = rawPrijs;
       const prijsEUR = (rawPrijs / EUR_KOERS).toFixed(2);
       document.querySelectorAll(`[data-koers-sym="${sym}"]`).forEach(cel => {
         cel.innerHTML = `<span style="color:#16a34a;font-weight:700;">$${rawPrijs.toFixed(2)}</span> <small>(€${prijsEUR})</small>`;
@@ -2779,6 +2781,8 @@ async function updateKoersen() {
     }
   }
   console.log('updateKoersen: klaar.');
+  // Hervalideer open posities met nieuwe koersen
+  checkOpenPosities();
 }
 
 // Auto-check elke 5 minuten
