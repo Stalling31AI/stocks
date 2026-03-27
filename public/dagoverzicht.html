@@ -517,6 +517,7 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
 const USD_SYMBOLS = ['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML'];
 const EUR_KOERS   = 1.08;
 const EUR_RATE    = EUR_KOERS; // backwards-compat alias
+const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
 
 let simAVolledig  = false;
 
@@ -668,9 +669,11 @@ const WATCHLIST = [
 function fmtPrijsLabel(sym, val) {
   if (val == null) return '—';
   const isUsd = USD_SYMBOLS.includes(sym) || (!sym.includes('.AS') && !sym.includes('.DE'));
-  return isUsd
-    ? `$${Number(val).toFixed(2)} (€${(val / EUR_KOERS).toFixed(2)})`
-    : `€${Number(val).toFixed(2)}`;
+  if (isUsd) {
+    const euro = (val / EUR_KOERS).toFixed(2);
+    return `$${Number(val).toFixed(2)} <small style="color:#64748b;font-weight:400;">(€${euro})</small>`;
+  }
+  return `€${Number(val).toFixed(2)}`;
 }
 
 let huidigeAnalyses = [];
@@ -848,7 +851,6 @@ async function analyseAlleAandelen() {
         resultaat: 'onbekend',
       };
       huidigeAnalyses.push(resultaat);
-      console.log('Sim B Update uitgevoerd voor:', resultaat.symbol);
       await simuleerTradesB([resultaat]);
       renderSimulaties();
       updateKaart(i, resultaat);
@@ -897,7 +899,6 @@ async function analyseAlleAandelen() {
             resultaat: 'onbekend',
           };
           huidigeAnalyses.push(resultaat);
-          console.log('Sim B Update uitgevoerd voor:', resultaat.symbol, '(retry)');
           await simuleerTradesB([resultaat]);
           renderSimulaties();
           updateKaart(i, resultaat);
@@ -1841,27 +1842,13 @@ function syncSimulatiesB() {
 }
 
 function renderSimulaties() {
-  syncSimulatiesB();
+  try { syncSimulatiesB(); } catch(e) { console.warn('syncSimulatiesB fout:', e.message); }
   const datum = new Date().toLocaleDateString('nl-NL');
   const simulaties = JSON.parse(
     localStorage.getItem('simulaties') || '{}'
   );
   const lijst = simulaties[datum] || [];
   const toonLijst = simAVolledig ? lijst : lijst.slice(-10);
-  if (lijst.length > 0) {
-    console.log('=== SIMULATIE DATA ===');
-    lijst.slice(0, 3).forEach(s => {
-      console.log(s.symbol, {
-        entry: s.entry,
-        stop: s.stop_loss,
-        target: s.target,
-        stopOnderEntry: s.stop_loss < s.entry,
-        entryBereikt: s.entry_bereikt,
-        resultaat: s.resultaat,
-        winst: s.winst
-      });
-    });
-  }
   const el = document.getElementById('simulatie-tabel');
   if (!el) return;
   if (lijst.length === 0) {
@@ -2113,7 +2100,6 @@ async function herbereken() {
       const r = await fetch(`/api/quote/${sym}?interval=15m`);
       const d = await r.json();
       koersData[sym] = d.quotes || [];
-      console.log(sym, koersData[sym].length, 'candles');
     } catch(e) { console.error(sym, e.message); koersData[sym] = []; }
     if (USD_SYMBOLS.includes(sym)) {
       await new Promise(r => setTimeout(r, 2000));
@@ -2254,13 +2240,6 @@ async function herbereken() {
         sluitTijdstip = tijdstip; break;
       }
     }
-    console.log('Winst berekening:', {
-      entry,
-      slotkoers,
-      stop: st?.stop,
-      target: st?.target,
-      winst
-    });
     simBData[datum].push({
       symbol: pos.analyse.symbol, label: pos.analyse.label || symbol,
       vlag: pos.analyse.vlag || '', tijdstip: pos.analyse.tijdstip,
@@ -2729,53 +2708,32 @@ function updateAutoAnalyseStatus() {
 }
 setInterval(updateAutoAnalyseStatus, 60000);
 // ============================================
-// LIVE KOERSEN UPDATE (US MARKET OPEN)
+// LIVE KOERSEN UPDATE — direct via Twelve Data (bypasses Railway backend)
 // ============================================
 async function updateKoersen() {
-  const datum = new Date().toLocaleDateString('nl-NL');
-  const simBData = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
-  const dagTrades = simBData[datum] || [];
-  // Alleen open posities (entry bereikt, nog geen resultaat)
-  const openSymbols = [...new Set(
-    dagTrades
-      .filter(t => t.entry_bereikt === true && t.resultaat === 'open')
-      .map(t => t.symbol)
-      .filter(s => USD_SYMBOLS.includes(s))
-  )];
-  if (openSymbols.length === 0) {
-    console.log('updateKoersen: geen open USD posities in Sim B');
-    return;
-  }
-  console.log('updateKoersen: ophalen live koersen voor', openSymbols);
-  for (const sym of openSymbols) {
+  console.log('updateKoersen: Start live update via Twelve Data...');
+  for (const sym of USD_SYMBOLS) {
     try {
-      const r = await fetch(`/api/quote/${sym}?interval=1m`);
+      // 2500ms pauze vóór elke call (Twelve Data Free rate limit: 8/min)
+      await new Promise(res => setTimeout(res, 2500));
+      const url = `https://api.twelvedata.com/quote?symbol=${sym}&apikey=${TWELVE_DATA_KEY}`;
+      const r = await fetch(url);
       if (!r.ok) {
-        const msg = `Server tijdelijk bezet (${r.status}), wacht op volgende refresh...`;
-        console.warn('updateKoersen:', msg);
-        document.querySelectorAll('[data-koers-sym]').forEach(cel => {
-          cel.textContent = '⏳ ' + msg;
-        });
-        return; // stop loop; setInterval herprobeert na 60s
+        console.warn(`updateKoersen: ${sym} overgeslagen (${r.status})`);
+        continue;
       }
       const d = await r.json();
-      const candles = d.quotes || [];
-      if (candles.length > 0) {
-        const laatste = candles[candles.length - 1];
-        const prijsUSD = parseFloat(laatste.close);
-        const prijsEUR = +(prijsUSD / EUR_KOERS).toFixed(2);
-        // Update koers-cel via data-attribuut (symboolspecifiek)
-        document.querySelectorAll(`[data-koers-sym="${sym}"]`).forEach(cel => {
-          cel.textContent = `$${prijsUSD.toFixed(2)} (€${prijsEUR})`;
-        });
-        console.log(`updateKoersen: ${sym} = $${prijsUSD.toFixed(2)} (€${prijsEUR})`);
-      }
+      const rawPrijs = parseFloat(d.close || d.price);
+      if (isNaN(rawPrijs)) continue;
+      const prijsEUR = (rawPrijs / EUR_KOERS).toFixed(2);
+      document.querySelectorAll(`[data-koers-sym="${sym}"]`).forEach(cel => {
+        cel.innerHTML = `<span style="color:#16a34a;font-weight:700;">$${rawPrijs.toFixed(2)}</span> <small>(€${prijsEUR})</small>`;
+      });
     } catch(e) {
       console.warn(`updateKoersen: fout bij ${sym}:`, e.message);
     }
-    // 2000ms stagger tussen USD calls (Twelve Data Free rate limit)
-    await new Promise(res => setTimeout(res, 2000));
   }
+  console.log('updateKoersen: klaar.');
 }
 
 // Auto-check elke 5 minuten
