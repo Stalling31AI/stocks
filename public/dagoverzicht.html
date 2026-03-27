@@ -2029,14 +2029,17 @@ async function simuleerTradesB(analyses) {
 
     if (bestaandeTrade) {
       if (!bestaandeTrade.entry_bereikt) {
-        if (a.target > a.entry) {
-          // Valide update: target boven entry, geen flip
-          bestaandeTrade.entry = a.entry;
+        const winstPotentie = a.target - a.entry;
+        const risico = a.entry - a.stop_loss;
+        if (winstPotentie > 0 && winstPotentie > risico * 1.2) {
+          bestaandeTrade.entry     = a.entry;
           bestaandeTrade.stop_loss = a.stop_loss;
-          bestaandeTrade.target = a.target;
-          bestaandeTrade.tijdstip = a.tijdstip;
+          bestaandeTrade.target    = a.target;
+          bestaandeTrade.tijdstip  = a.tijdstip;
         } else {
-          console.warn(`Update voor ${a.symbol} genegeerd: Target-Flip gedetecteerd (Target < Entry).`);
+          console.warn(`Sim B: Trade voor ${a.symbol} geannuleerd (Target-Flip of slecht R/R).`);
+          simData[datum].splice(bestaandeTradeIndex, 1);
+          continue;
         }
       } else {
         // Reeds gekocht: entry nooit aanpassen, alleen exit bijwerken
