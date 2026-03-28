@@ -798,6 +798,7 @@ async function analyseAlleAandelen() {
     try {
       const quoteRes = await fetch(`/api/quote/${item.symbol}?interval=15m`);
       const quoteData = await quoteRes.json();
+      if (!quoteRes.ok) throw new Error(`Server ${quoteRes.status}: ${quoteData.error || 'onbekend'}`);
       quotes = quoteData.quotes || [];
       last = quotes.length > 0
         ? quotes[quotes.length - 1]
