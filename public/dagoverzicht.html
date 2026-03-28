@@ -2763,6 +2763,7 @@ async function updateKoersen() {
     try {
       // 8000ms pauze vóór elke call (100% veilig binnen Twelve Data Free rate limit)
       await new Promise(res => setTimeout(res, 8000));
+      if (window.analyseBezig) { console.log('updateKoersen: analyse gestart tijdens sleep, gestopt na ' + sym); return; }
       const url = `https://api.twelvedata.com/quote?symbol=${sym}&apikey=${TWELVE_DATA_KEY}`;
       console.log(`[TD-direct] updateKoersen: ${sym} (#${USD_SYMBOLS.indexOf(sym)+1}/${USD_SYMBOLS.length})`);
       const r = await fetch(url);
