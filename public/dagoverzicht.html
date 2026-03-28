@@ -520,6 +520,7 @@ const EUR_RATE    = EUR_KOERS; // backwards-compat alias
 const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
 
 window.liveKoersen = {}; // Globale live prijzen via Twelve Data
+window.analyseBezig = false; // Blokkeert updateKoersen tijdens analyse
 let simAVolledig  = false;
 
 // Data laden met fallback: probeer legacy 'analyses' key, dan 'daganalyses'
@@ -780,6 +781,7 @@ async function analyseAlleAandelen() {
   btn.disabled = true;
   btn.textContent = '⏳ Bezig...';
   document.getElementById('voortgang-wrap').style.display = 'block';
+  window.analyseBezig = true; // Pauzeer updateKoersen
   huidigeAnalyses = [];
   renderLadenKaarten();
   const teAnalyseren = WATCHLIST.filter(w =>
@@ -951,6 +953,7 @@ async function analyseAlleAandelen() {
   await simuleerTrades(huidigeAnalyses);
   await simuleerTradesB(huidigeAnalyses);
   renderSimulaties();
+  window.analyseBezig = false; // Hervatten updateKoersen
   btn.disabled = false;
   btn.textContent = '🔍 Analyseer geselecteerde aandelen';
 }
@@ -2753,6 +2756,7 @@ setInterval(updateAutoAnalyseStatus, 60000);
 // LIVE KOERSEN UPDATE — direct via Twelve Data (bypasses Railway backend)
 // ============================================
 async function updateKoersen() {
+  if (window.analyseBezig) { console.log('updateKoersen: analyse bezig, overgeslagen.'); return; }
   console.log('updateKoersen: Start live update via Twelve Data...');
   for (const sym of USD_SYMBOLS) {
     try {
