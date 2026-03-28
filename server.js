@@ -8,17 +8,27 @@ const PORT = process.env.PORT || 3000;
 const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
 const TWELVE_DATA_SYMBOLS = new Set(['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML']);
 const _tdCallTimes = [];
+let _tdQueue = Promise.resolve(); // Serialiseert alle TD-calls: nooit gelijktijdig
 async function tdRateLimit() {
-  const now = Date.now();
-  while (_tdCallTimes.length && now - _tdCallTimes[0] > 60000) _tdCallTimes.shift();
-  if (_tdCallTimes.length >= 8) {
-    const wait = 60100 - (now - _tdCallTimes[0]);
-    console.log(`TD rate limit: wacht ${wait}ms`);
-    await new Promise(r => setTimeout(r, wait));
-    const now2 = Date.now();
-    while (_tdCallTimes.length && now2 - _tdCallTimes[0] > 60000) _tdCallTimes.shift();
-  }
-  _tdCallTimes.push(Date.now());
+  // Wacht tot vorige call klaar is (queue), dan minimaal 8s gap
+  _tdQueue = _tdQueue.then(() => new Promise(async resolve => {
+    const now = Date.now();
+    while (_tdCallTimes.length && now - _tdCallTimes[0] > 60000) _tdCallTimes.shift();
+    if (_tdCallTimes.length >= 8) {
+      const wait = 60100 - (now - _tdCallTimes[0]);
+      console.log(`TD rate limit: wacht ${wait}ms`);
+      await new Promise(r => setTimeout(r, wait));
+      const now2 = Date.now();
+      while (_tdCallTimes.length && now2 - _tdCallTimes[0] > 60000) _tdCallTimes.shift();
+    } else if (_tdCallTimes.length > 0) {
+      // Minimaal 8 seconden tussen calls
+      const sindsLaatste = Date.now() - _tdCallTimes[_tdCallTimes.length - 1];
+      if (sindsLaatste < 8000) await new Promise(r => setTimeout(r, 8000 - sindsLaatste));
+    }
+    _tdCallTimes.push(Date.now());
+    resolve();
+  }));
+  return _tdQueue;
 }
 
 const WACHTWOORD = process.env.APP_WACHTWOORD || 'yappi2024';
