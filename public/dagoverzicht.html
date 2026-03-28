@@ -2759,6 +2759,7 @@ async function updateKoersen() {
   if (window.analyseBezig) { console.log('updateKoersen: analyse bezig, overgeslagen.'); return; }
   console.log('updateKoersen: Start live update via Twelve Data...');
   for (const sym of USD_SYMBOLS) {
+    if (window.analyseBezig) { console.log('updateKoersen: analyse gestart, loop gestopt.'); return; }
     try {
       // 8000ms pauze vóór elke call (100% veilig binnen Twelve Data Free rate limit)
       await new Promise(res => setTimeout(res, 8000));
