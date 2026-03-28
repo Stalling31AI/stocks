@@ -2764,6 +2764,7 @@ async function updateKoersen() {
       // 8000ms pauze vóór elke call (100% veilig binnen Twelve Data Free rate limit)
       await new Promise(res => setTimeout(res, 8000));
       const url = `https://api.twelvedata.com/quote?symbol=${sym}&apikey=${TWELVE_DATA_KEY}`;
+      console.log(`[TD-direct] updateKoersen: ${sym} (#${USD_SYMBOLS.indexOf(sym)+1}/${USD_SYMBOLS.length})`);
       const r = await fetch(url);
       if (!r.ok) {
         console.warn(`updateKoersen: ${sym} overgeslagen (${r.status})`);

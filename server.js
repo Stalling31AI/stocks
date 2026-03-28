@@ -80,6 +80,9 @@ app.get('/api/quote/:symbol', async (req, res) => {
 
     // Twelve Data voor US real-time symbolen
     if (TWELVE_DATA_SYMBOLS.has(symbol)) {
+      const now = Date.now();
+      const recent = _tdCallTimes.filter(t => now - t < 60000).length;
+      console.log(`[TD] call aangevraagd: ${symbol} | credits deze minuut (voor call): ${recent} | route: ${req.headers.referer || 'onbekend'}`);
       await tdRateLimit();
       const tdIntervalMap = { '5m':'5min', '15m':'15min', '1h':'1h', '1d':'1day' };
       const tdInterval = tdIntervalMap[interval] || '15min';
