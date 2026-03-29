@@ -2624,6 +2624,20 @@ async function checkOpenPosities() {
         if (uitkomst.resultaat === 'target_bereikt') {
           try { if (Notification.permission === 'granted') new Notification('🎯 ' + sim.label + ' target!', { body: '+€' + uitkomst.winst, icon: '/logo.png' }); } catch(e) {}
         }
+        // Sla afgeronde trade op voor AI-leereffect
+        if (uitkomst.resultaat === 'stop_geraakt' || uitkomst.resultaat === 'target_bereikt') {
+          fetch('/api/trades/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              symbol: sim.symbol, label: sim.label,
+              resultaat: uitkomst.resultaat, winst: uitkomst.winst,
+              entry: sim.entry, stop_loss: sim.stop_loss, target: sim.target,
+              rsi: sim.rsi, signaal: sim.signaal,
+              tijdstip: sim.tijdstip, datum: sim.datum
+            })
+          }).catch(() => {});
+        }
       }
     }
     if (wijzigingen) localStorage.setItem(sleutel, JSON.stringify(alle));

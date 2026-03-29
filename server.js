@@ -5,6 +5,31 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ── TRADE HISTORY (in-memory, reset bij herstart) ──────────────────────────
+const tradeHistory = []; // max 200 afgeronde trades
+const MAX_HISTORY = 200;
+
+// ── NEWS CACHE (Yahoo Finance RSS, 10 min geldig) ──────────────────────────
+const newsCache = {}; // { symbol: { ts, headlines[] } }
+async function haalNieuwsOp(symbol) {
+  const nu = Date.now();
+  if (newsCache[symbol] && nu - newsCache[symbol].ts < 10 * 60 * 1000)
+    return newsCache[symbol].headlines;
+  try {
+    const cleanSym = symbol.replace('.AS','').replace('.DE','');
+    const url = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${cleanSym}&region=US&lang=en-US`;
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) });
+    const xml = await r.text();
+    const headlines = [...xml.matchAll(/<title><!\[CDATA\[(.*?)\]\]><\/title>/g)]
+      .map(m => m[1]).slice(1, 5); // skip feed title, max 4 headlines
+    newsCache[symbol] = { ts: nu, headlines };
+    return headlines;
+  } catch(e) {
+    console.warn(`Nieuws fout voor ${symbol}:`, e.message);
+    return [];
+  }
+}
+
 const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
 const TWELVE_DATA_SYMBOLS = new Set(['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML']);
 const _tdCallTimes = [];
@@ -164,10 +189,26 @@ app.get('/api/quote/:symbol', async (req, res) => {
   }
 });
 
+// POST /api/trades/save  — sla afgeronde trade op in history
+app.post('/api/trades/save', (req, res) => {
+  const { symbol, resultaat, winst, entry, stop_loss, target, rsi, signaal, tijdstip, datum, label } = req.body;
+  if (!symbol || !resultaat) return res.status(400).json({ error: 'symbol en resultaat zijn verplicht' });
+  tradeHistory.unshift({ symbol, resultaat, winst, entry, stop_loss, target, rsi, signaal, tijdstip, datum, label, opgeslagenOm: new Date().toISOString() });
+  if (tradeHistory.length > MAX_HISTORY) tradeHistory.length = MAX_HISTORY;
+  console.log(`Trade opgeslagen: ${symbol} ${resultaat} €${winst} (history: ${tradeHistory.length})`);
+  res.json({ ok: true, count: tradeHistory.length });
+});
+
 // POST /api/analyze  — body: { symbol, interval, quotes, indicators }
 app.post('/api/analyze', async (req, res) => {
   try {
     const { symbol, interval, quotes, indicators } = req.body;
+
+    // Haal nieuws en trade history parallel op
+    const [headlines, symHistory] = await Promise.all([
+      haalNieuwsOp(symbol),
+      Promise.resolve(tradeHistory.filter(t => t.symbol === symbol).slice(0, 10))
+    ]);
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(400).json({ error: 'ANTHROPIC_API_KEY is niet ingesteld op de server.' });
@@ -295,6 +336,16 @@ TARGET REGELS:
 - WACHT alleen als er werkelijk geen koopmoment is vandaag.
 Als WACHT: geef CONCREET aan bij welke prijs/conditie je WEL zou kopen.
 Geen vage antwoorden - altijd een concreet level noemen.
+${headlines.length > 0 ? `RECENT NIEUWS (${symbol}):
+${headlines.map((h, i) => `${i+1}. ${h}`).join('\n')}
+Laat dit meewegen in je sentiment en nieuws_samenvatting.` : ''}
+${symHistory.length > 0 ? `EIGEN TRADE GESCHIEDENIS ${symbol} (leer hiervan):
+${symHistory.map(t => {
+  const icoon = t.resultaat === 'target_bereikt' ? '✅' : t.resultaat === 'stop_geraakt' ? '🛑' : '⏸';
+  return `${icoon} ${t.datum||''} ${t.tijdstip||''}: entry ${t.entry}, stop ${t.stop_loss}, target ${t.target}, RSI ${t.rsi||'?'} → ${t.resultaat} (${t.winst >= 0 ? '+' : ''}€${t.winst})`;
+}).join('\n')}
+Win rate: ${symHistory.filter(t=>t.resultaat==='target_bereikt').length}/${symHistory.length} trades succesvol.
+Pas je strategie aan op basis van welke setups hier werkten en welke niet.` : ''}
 Reageer ALLEEN met dit JSON:
 {
   "signaal": "KOOP" als je nu of bij een specifieke prijs zou kopen. "WACHT" alleen als er geen enkel koopmoment is vandaag.
