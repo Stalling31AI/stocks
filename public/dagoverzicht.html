@@ -2060,37 +2060,49 @@ async function simuleerTradesB(analyses) {
 
     if (bestaandeTrade) {
       if (!bestaandeTrade.entry_bereikt) {
-        const winstPotentie = a.target - a.entry;
-        const risico = a.entry - a.stop_loss;
-        if (winstPotentie > 0 && winstPotentie > risico) {
-          bestaandeTrade.entry     = a.entry;
-          bestaandeTrade.stop_loss = a.stop_loss;
-          bestaandeTrade.target    = a.target;
-          bestaandeTrade.tijdstip  = a.tijdstip;
-        } else {
-          console.warn(`Sim B: Trade voor ${a.symbol} geannuleerd (Target-Flip of slecht R/R).`);
+        // Check: setup ouder dan 60 min zonder fill → verlopen, frisse trade van huidig signaal
+        const tradeMinuten = (() => {
+          try {
+            const [h, m] = bestaandeTrade.tijdstip.split(':').map(Number);
+            const nu = new Date();
+            const diff = (nu.getHours() * 60 + nu.getMinutes()) - (h * 60 + m);
+            return diff < 0 ? diff + 1440 : diff;
+          } catch(e) { return 0; }
+        })();
+        if (tradeMinuten > 60) {
+          console.log(`Sim B: Trade ${a.symbol} verlopen (${tradeMinuten}min zonder fill) → frisse setup`);
           simData[datum].splice(bestaandeTradeIndex, 1);
+          // val door naar nieuwe trade aanmaken hieronder
+        } else {
+          // Entry LOCKED: originele setup bewaren, niet bijwerken achter koers aan
+          console.log(`Sim B: Entry ${a.symbol} gelocked op ${bestaandeTrade.entry} (${tradeMinuten}min oud)`);
+          bestaandeTrade.updates = bestaandeTrade.updates || [];
+          bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: a.entry, stop_loss: a.stop_loss, target: a.target, gekocht: false });
           continue;
         }
       } else {
         // Reeds gekocht: entry nooit aanpassen, alleen exit bijwerken
         bestaandeTrade.stop_loss = a.stop_loss;
-        bestaandeTrade.target = a.target;
+        bestaandeTrade.target    = a.target;
+        bestaandeTrade.updates   = bestaandeTrade.updates || [];
+        bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: bestaandeTrade.entry, stop_loss: a.stop_loss, target: a.target, gekocht: true });
+        continue;
       }
-      bestaandeTrade.updates = bestaandeTrade.updates || [];
-      bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: a.entry, stop_loss: a.stop_loss, target: a.target, gekocht: bestaandeTrade.entry_bereikt });
-    } else {
-      const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
-      if (!trade) continue;
-      simData[datum].push({
-        symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
-        tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
-        entry: trade.entry, stop_loss: trade.stop, target: trade.target,
-        aantal: 10, redenering: a.redenering || '',
-        resultaat: 'open', entry_bereikt: false,
-        entryTijdstip: null, slotkoers: null, winst: null, sluitTijdstip: null, updates: []
-      });
     }
+    // Nieuwe trade aanmaken (ook na verlopen setup)
+    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
+    if (!trade) continue;
+    const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
+    simData[datum].push({
+      symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
+      tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
+      entry: trade.entry, stop_loss: trade.stop, target: trade.target,
+      aantal: 10, redenering: a.redenering || '', rsi: a.rsi,
+      resultaat: 'open',
+      entry_bereikt: isKoopNu,                          // KOOP NU = direct gevuld
+      entryTijdstip: isKoopNu ? a.tijdstip : null,
+      slotkoers: null, winst: null, sluitTijdstip: null, updates: []
+    });
   }
   localStorage.setItem('simulaties_b', JSON.stringify(simData));
   renderSimulatiesB();
