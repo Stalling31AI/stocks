@@ -1787,13 +1787,16 @@ async function simuleerTrades(analyses) {
     if (bestaat) continue;
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
     if (!trade) continue;
+    const isKoopNuA = a.actie && a.actie.toUpperCase() === 'KOOP NU';
     simData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
       tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
       entry: trade.entry, stop_loss: trade.stop, target: trade.target,
       aantal: 10, redenering: a.redenering || '',
-      resultaat: 'open', entry_bereikt: false,
-      entryTijdstip: null, slotkoers: null, winst: null, sluitTijdstip: null
+      resultaat: 'open',
+      entry_bereikt: isKoopNuA,
+      entryTijdstip: isKoopNuA ? a.tijdstip : null,
+      slotkoers: null, winst: null, sluitTijdstip: null
     });
   }
   localStorage.setItem('simulaties', JSON.stringify(simData));
@@ -1819,7 +1822,10 @@ async function sluitSimulaties() {
             const slot = quotes[quotes.length - 1].close;
             sim.resultaat = 'einde_dag';
             sim.slotkoers = +slot.toFixed(2);
-            sim.winst = +((slot - sim.entry) * sim.aantal).toFixed(2);
+            const winstRaw = (slot - sim.entry) * (sim.aantal || 10);
+            sim.winst = USD_SYMBOLS.includes(sim.symbol)
+              ? +(winstRaw / EUR_RATE).toFixed(2)
+              : +winstRaw.toFixed(2);
           }
         } catch(e) {}
       } else if (sim.resultaat === 'open' && !sim.entry_bereikt) {
@@ -1854,7 +1860,8 @@ function syncSimulatiesB() {
     if (isKoop && a.entry) perSymbool[a.symbol] = a;
   }
   const simBOpgeslagen = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
-  const bestaand = new Set((simBOpgeslagen[datum] || []).map(t => t.symbol));
+  // Alleen OPEN trades tellen mee — gesloten trades blokkeren geen nieuwe kans
+  const bestaand = new Set((simBOpgeslagen[datum] || []).filter(t => t.resultaat === 'open').map(t => t.symbol));
   let gesync = false;
   for (const [sym, a] of Object.entries(perSymbool)) {
     if (!bestaand.has(sym)) {
@@ -1867,8 +1874,10 @@ function syncSimulatiesB() {
         tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie || '',
         entry: trade.entry, stop_loss: trade.stop, target: trade.target,
         aantal: 10, redenering: a.redenering || '',
-        resultaat: 'open', entry_bereikt: false,
-        entryTijdstip: null, slotkoers: null, winst: null, sluitTijdstip: null, updates: []
+        resultaat: 'open',
+        entry_bereikt: a.actie && a.actie.toUpperCase() === 'KOOP NU',
+        entryTijdstip: a.actie && a.actie.toUpperCase() === 'KOOP NU' ? a.tijdstip : null,
+        slotkoers: null, winst: null, sluitTijdstip: null, updates: []
       });
       gesync = true;
       console.log('syncSimulatiesB: toegevoegd', sym);
@@ -2050,15 +2059,8 @@ async function simuleerTradesB(analyses) {
     }
 
     if (isWacht && bestaandeTrade && bestaandeTrade.entry_bereikt) {
-      // Actieve positie: WACHT sluit niet, maar werkt stop/target bij
-      const tradeWacht = valideerTrade(bestaandeTrade.entry, a.stop_loss, a.target, bestaandeTrade.symbol || a.symbol);
-      if (tradeWacht) {
-        bestaandeTrade.stop_loss = tradeWacht.stop;
-        bestaandeTrade.target = tradeWacht.target;
-        bestaandeTrade.updates = bestaandeTrade.updates || [];
-        bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: bestaandeTrade.entry, stop_loss: tradeWacht.stop, target: tradeWacht.target, gekocht: true });
-        console.log(`Sim B: WACHT - actieve positie ${a.symbol} stop/target bijgewerkt naar ${tradeWacht.stop}/${tradeWacht.target}`);
-      }
+      // Actieve positie: WACHT = niets aanpassen, origineel trade-plan bewaren
+      console.log(`Sim B: WACHT op actieve ${a.symbol} — stop/target ongewijzigd gelaten`);
       continue;
     }
 
