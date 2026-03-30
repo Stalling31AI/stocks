@@ -813,6 +813,12 @@ async function analyseAlleAandelen() {
       trend = closes.slice(-5).reduce((a,b)=>a+b,0)/5 >
                     closes.slice(-10,-5).reduce((a,b)=>a+b,0)/5
                     ? 'OPWAARTS' : 'NEERWAARTS';
+      // RSI richting: vergelijk met 3 candles geleden
+      const rsiVorig = berekenRSI(closes.slice(0, -3));
+      const rsiTrend = rsi > rsiVorig + 1 ? 'STIJGEND' : rsi < rsiVorig - 1 ? 'DALEND' : 'STABIEL';
+      // MACD histogram richting: vergelijk met vorige candle
+      const macdVorig = berekenMACD(closes.slice(0, -1));
+      const macdRichting = macdData.histogram > macdVorig.histogram ? 'STIJGEND' : 'DALEND';
       const huidigVolume = last.volume || 0;
       const gemiddeldVolume = quotes.slice(-20).reduce((a, b) => a + (b.volume || 0), 0) / 20;
       const volumeRatio = gemiddeldVolume > 0 ? (huidigVolume / gemiddeldVolume).toFixed(2) : '0.00';
@@ -830,7 +836,7 @@ async function analyseAlleAandelen() {
           symbol: item.symbol,
           interval: '15m',
           quotes: quotes.slice(-30),
-          indicators: { rsi, macd: macdData, bb, trend, openingGap, volumeRatio }
+          indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio }
         })
       });
       clearTimeout(timeoutId);
@@ -879,7 +885,7 @@ async function analyseAlleAandelen() {
               symbol: item.symbol,
               interval: '15m',
               quotes: quotes.slice(-10),
-              indicators: { rsi, macd: macdData, bb, trend, volumeRatio }
+              indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, volumeRatio }
             })
           });
           clearTimeout(timeoutId2);

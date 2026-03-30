@@ -30,6 +30,9 @@ async function haalNieuwsOp(symbol) {
   }
 }
 
+// ── MISSED OPPORTUNITY TRACKING ───────────────────────────────────────────
+const lastAnalysePerSymbol = {}; // { symbol: { signaal, prijs, rsi, rsiTrend, macdRichting, tijdstip, datum, label } }
+
 const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
 const TWELVE_DATA_SYMBOLS = new Set(['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML']);
 const _tdCallTimes = [];
@@ -305,8 +308,8 @@ Prijs: €${fmt(last.close)} | Gap: ${openingGap || 0}%
 Dag range: €${dagLaag} - €${dagHoog} (€${dagRange.toFixed(0)}, ${rangePct}%)
 Positie in range: ${positieInRange}% ${Number(positieInRange) < 25 ? '← DICHT BIJ DAGLAAG' : Number(positieInRange) > 75 ? '← DICHT BIJ DAGHOOG' : ''}
 INDICATOREN:
-RSI: ${fmt(indicators.rsi)} ${Number(indicators.rsi) < 40 ? '← OVERSOLD ✅' : Number(indicators.rsi) > 65 ? '← OVERBOUGHT ❌' : '← neutraal'}
-MACD histogram: ${fmt(indicators.macd?.histogram, 4)} ${indicators.macd?.histogram > 0 ? '← bullish' : '← bearish'}
+RSI: ${fmt(indicators.rsi)} (${indicators.rsiTrend || '?'}) ${Number(indicators.rsi) < 40 ? '← OVERSOLD ✅' : Number(indicators.rsi) > 65 ? '← OVERBOUGHT ❌' : '← neutraal'}
+MACD histogram: ${fmt(indicators.macd?.histogram, 4)} (${indicators.macdRichting || '?'}) ${indicators.macd?.histogram > 0 ? '← bullish' : '← bearish'}
 Bollinger: L=${fmt(indicators.bb?.lower)} M=${fmt(indicators.bb?.middle)} U=${fmt(indicators.bb?.upper)}
 Koers vs BB: ${Number(last.close) < Number(indicators.bb?.lower) ? '← ONDER lower ✅ KOOP SIGNAAL' : Number(last.close) > Number(indicators.bb?.upper) ? '← BOVEN upper ❌' : '← binnen bands'}
 VOLUME: ${volumeRatio}x gemiddeld ${Number(volumeRatio) > 1.5 ? '← HOOG ✅' : Number(volumeRatio) < 0.3 ? '← LAAG ⚠️' : ''}
@@ -318,12 +321,12 @@ ${recent.slice(-5).map(q => {
 }).join('\n')}
 TRADING PROFIEL: Scalper. Risico per trade: max €70 (10 aandelen). Dagdoel: €350. Gebruik strakke stops net onder de laatste 15m low.
 KOOP CRITERIA:
-✓ Als Target > 1% boven huidige koers EN RSI < 45 EN momentum positief: geef "KOOP NU" (entry = huidige prijs).
-✓ RSI < 40 (Oversold) EN prijs toont bodemvorming → altijd KOOP.
-✓ Prijs onder Middle Bollinger Band met opwaarts momentum → KOOP.
-✓ Volume minimaal 1.2x gemiddelde bij KOOP signaal.
+✓ OVERSOLD BOUNCE: RSI < 40 EN prijs toont bodemvorming → KOOP NU.
+✓ MOMENTUM BREAKOUT: RSI 44-58 EN RSI STIJGEND EN MACD histogram STIJGEND EN volume > 1.2x → KOOP NU (entry = huidige prijs). Dit vangt stijgingen zoals RHM.DE van 1374→1387.
+✓ BOLLINGER SQUEEZE: Prijs onder Middle Bollinger Band met RSI STIJGEND → KOOP NU.
+✓ Target > 1% boven huidige koers vereist voor KOOP. Bij momentum breakout mag 0.8% als dagrange groot genoeg is.
 ✓ Accepteer Risk/Reward van 1:1 voor snelle scalp-trades.
-✓ GEEN koop bij sterke downtrend (Lower Highs/Lower Lows) op AEX/Nasdaq.
+✓ GEEN koop bij sterke downtrend (Lower Highs/Lower Lows) of RSI DALEND zonder bodemvorming.
 STOP-LOSS REGELS:
 - Maximaal €70 totaalrisico op 10 aandelen (= max €7 per aandeel voor EU; max 0.6% voor US stocks)
 - Plaats stop net onder de laagste 15-minuten candle van het laatste uur
@@ -339,13 +342,17 @@ Geen vage antwoorden - altijd een concreet level noemen.
 ${headlines.length > 0 ? `RECENT NIEUWS (${symbol}):
 ${headlines.map((h, i) => `${i+1}. ${h}`).join('\n')}
 Laat dit meewegen in je sentiment en nieuws_samenvatting.` : ''}
-${symHistory.length > 0 ? `EIGEN TRADE GESCHIEDENIS ${symbol} (leer hiervan):
-${symHistory.map(t => {
-  const icoon = t.resultaat === 'target_bereikt' ? '✅' : t.resultaat === 'stop_geraakt' ? '🛑' : '⏸';
-  return `${icoon} ${t.datum||''} ${t.tijdstip||''}: entry ${t.entry}, stop ${t.stop_loss}, target ${t.target}, RSI ${t.rsi||'?'} → ${t.resultaat} (${t.winst >= 0 ? '+' : ''}€${t.winst})`;
+${symHistory.filter(t => t.resultaat !== 'gemist').length > 0 ? `EIGEN TRADE GESCHIEDENIS ${symbol} (leer hiervan):
+${symHistory.filter(t => t.resultaat !== 'gemist').map(t => {
+  const icoon = t.resultaat === 'target_bereikt' ? '✅' : '🛑';
+  return `${icoon} ${t.datum||''} ${t.tijdstip||''}: entry ${t.entry}, RSI ${t.rsi||'?'} → ${t.resultaat} (${t.winst >= 0 ? '+' : ''}€${t.winst})`;
 }).join('\n')}
-Win rate: ${symHistory.filter(t=>t.resultaat==='target_bereikt').length}/${symHistory.length} trades succesvol.
-Pas je strategie aan op basis van welke setups hier werkten en welke niet.` : ''}
+Win rate: ${symHistory.filter(t=>t.resultaat==='target_bereikt').length}/${symHistory.filter(t=>t.resultaat!=='gemist').length} trades succesvol.` : ''}
+${symHistory.filter(t => t.resultaat === 'gemist').length > 0 ? `GEMISTE KANSEN ${symbol} (WACHT gegeven, koers bewoog toch):
+${symHistory.filter(t => t.resultaat === 'gemist').slice(0,5).map(t =>
+  `⚠️ ${t.datum||''} ${t.tijdstip||''}: RSI ${t.rsi||'?'} (${t.rsiTrend||'?'}), MACD ${t.macdRichting||'?'} → koers ging ${t.winst > 0 ? '+' : ''}${t.winst}% ${t.richting||''}`
+).join('\n')}
+Leer hiervan: bij welke RSI/MACD combinatie had je WEL moeten kopen?` : ''}
 Reageer ALLEEN met dit JSON:
 {
   "signaal": "KOOP" als je nu of bij een specifieke prijs zou kopen. "WACHT" alleen als er geen enkel koopmoment is vandaag.
@@ -431,6 +438,30 @@ Reageer ALLEEN met dit JSON:
           }
         }
       }
+      // Gemiste kans detectie: was vorige analyse WACHT en bewoog koers >0.8%?
+      const vorige = lastAnalysePerSymbol[symbol];
+      if (vorige && vorige.signaal === 'WACHT' && vorige.prijs) {
+        const beweeg = ((last.close - vorige.prijs) / vorige.prijs) * 100;
+        if (Math.abs(beweeg) > 0.8) {
+          tradeHistory.unshift({
+            symbol, label: symbol, resultaat: 'gemist',
+            winst: +beweeg.toFixed(2), // % beweging als proxy
+            entry: vorige.prijs, prijs_nu: last.close,
+            rsi: vorige.rsi, rsiTrend: vorige.rsiTrend, macdRichting: vorige.macdRichting,
+            tijdstip: vorige.tijdstip, datum: vorige.datum,
+            richting: beweeg > 0 ? 'OMHOOG' : 'OMLAAG'
+          });
+          if (tradeHistory.length > MAX_HISTORY) tradeHistory.length = MAX_HISTORY;
+          console.log(`Gemiste kans: ${symbol} WACHT gegeven, koers bewoog ${beweeg.toFixed(2)}%`);
+        }
+      }
+      // Sla huidige analyse op voor volgende vergelijking
+      lastAnalysePerSymbol[symbol] = {
+        signaal: parsed.signaal, prijs: last.close,
+        rsi: indicators.rsi, rsiTrend: indicators.rsiTrend, macdRichting: indicators.macdRichting,
+        tijdstip: new Date().toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/Amsterdam' }),
+        datum: new Date().toLocaleDateString('nl-NL')
+      };
       res.json(parsed);
     } catch(e) {
       console.error('JSON parse fout:', match[0].substring(0, 200));
