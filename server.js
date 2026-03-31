@@ -9,25 +9,100 @@ const PORT = process.env.PORT || 3000;
 const tradeHistory = []; // max 200 afgeronde trades
 const MAX_HISTORY = 200;
 
-// ── NEWS CACHE (Yahoo Finance RSS, 10 min geldig) ──────────────────────────
-const newsCache = {}; // { symbol: { ts, headlines[] } }
+// ── NEWS CACHE ─────────────────────────────────────────────────────────────
+const newsCache = {}; // per-symbol Yahoo cache (10 min)
+const categoryNewsCache = {}; // category feeds cache (30 min)
+
+// Keywords per symbool voor filtering van categorie-feeds
+const SYMBOOL_KEYWORDS = {
+  'NVDA':    ['nvidia','nvda','chip','semiconductor','ai','gpu','tariff','export control','tsmc','jensen'],
+  'AMD':     ['amd','chip','semiconductor','ai','gpu','tariff','export','radeon','lisa su'],
+  'AMAT':    ['applied materials','amat','semiconductor','chip equipment','wafer'],
+  'ASML':    ['asml','semiconductor','chip','lithography','euv','tariff','export','netherlands'],
+  'ASML.AS': ['asml','semiconductor','chip','lithography','euv','tariff','export'],
+  'META':    ['meta','facebook','instagram','social media','advertising','zuckerberg','regulation','antitrust'],
+  'NFLX':    ['netflix','nflx','streaming','subscriber','content','disney','advertising'],
+  'PYPL':    ['paypal','pypl','fintech','payments','venmo','regulation','visa','mastercard'],
+  'LMT':     ['lockheed','lmt','defense','military','nato','pentagon','ukraine','f-35','missile'],
+  'RHM.DE':  ['rheinmetall','rhm','defense','military','nato','ukraine','bundeswehr','ammunition','tank'],
+  'ADYEN.AS':['adyen','payments','fintech','european payments','regulation','bnpl'],
+};
+// Macro-keywords die altijd meegaan ongeacht symbool
+const MACRO_KEYWORDS = ['trump','tariff','fed ','federal reserve','interest rate','inflation','recession',
+  'nasdaq','s&p','dow jones','market rally','market crash','earnings','gdp'];
+
+// Categorie RSS-feeds (30 min cache)
+const CATEGORIE_FEEDS = [
+  { naam: 'Reuters Top',   url: 'https://feeds.reuters.com/reuters/topNews' },
+  { naam: 'Reuters Tech',  url: 'https://feeds.reuters.com/reuters/technologyNews' },
+  { naam: 'CNBC Markets',  url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html' },
+  { naam: 'CNBC Tech',     url: 'https://www.cnbc.com/id/19854910/device/rss/rss.html' },
+  { naam: 'MarketWatch',   url: 'https://feeds.marketwatch.com/marketwatch/topstories/' },
+];
+
+function parseRssTitels(xml) {
+  // Probeer CDATA-formaat, dan gewoon <title>
+  const cdataMatch = [...xml.matchAll(/<title><!\[CDATA\[(.*?)\]\]><\/title>/gs)].map(m => m[1]);
+  if (cdataMatch.length > 1) return cdataMatch.slice(1, 10);
+  const plainMatch = [...xml.matchAll(/<title>(.*?)<\/title>/gs)].map(m => m[1].replace(/&amp;/g,'&').replace(/&lt;/g,'<').trim());
+  return plainMatch.slice(1, 10);
+}
+
+async function haalCategorieNieuwsOp() {
+  const nu = Date.now();
+  const CACHE_MS = 30 * 60 * 1000;
+  const alleHeadlines = [];
+  for (const feed of CATEGORIE_FEEDS) {
+    if (categoryNewsCache[feed.naam] && nu - categoryNewsCache[feed.naam].ts < CACHE_MS) {
+      alleHeadlines.push(...categoryNewsCache[feed.naam].headlines);
+      continue;
+    }
+    try {
+      const r = await fetch(feed.url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) });
+      const xml = await r.text();
+      const titels = parseRssTitels(xml);
+      categoryNewsCache[feed.naam] = { ts: nu, headlines: titels };
+      alleHeadlines.push(...titels);
+    } catch(e) {
+      console.warn(`Categorie nieuws fout (${feed.naam}):`, e.message);
+    }
+  }
+  return alleHeadlines;
+}
+
 async function haalNieuwsOp(symbol) {
   const nu = Date.now();
-  if (newsCache[symbol] && nu - newsCache[symbol].ts < 10 * 60 * 1000)
-    return newsCache[symbol].headlines;
-  try {
-    const cleanSym = symbol.replace('.AS','').replace('.DE','');
-    const url = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${cleanSym}&region=US&lang=en-US`;
-    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) });
-    const xml = await r.text();
-    const headlines = [...xml.matchAll(/<title><!\[CDATA\[(.*?)\]\]><\/title>/g)]
-      .map(m => m[1]).slice(1, 5); // skip feed title, max 4 headlines
-    newsCache[symbol] = { ts: nu, headlines };
-    return headlines;
-  } catch(e) {
-    console.warn(`Nieuws fout voor ${symbol}:`, e.message);
-    return [];
+  // 1. Yahoo Finance per-symbool (10 min cache)
+  let yahooHeadlines = [];
+  if (newsCache[symbol] && nu - newsCache[symbol].ts < 10 * 60 * 1000) {
+    yahooHeadlines = newsCache[symbol].headlines;
+  } else {
+    try {
+      const cleanSym = symbol.replace('.AS','').replace('.DE','');
+      const url = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${cleanSym}&region=US&lang=en-US`;
+      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) });
+      const xml = await r.text();
+      yahooHeadlines = parseRssTitels(xml).slice(0, 3);
+      newsCache[symbol] = { ts: nu, headlines: yahooHeadlines };
+    } catch(e) {
+      console.warn(`Yahoo nieuws fout voor ${symbol}:`, e.message);
+    }
   }
+  // 2. Categorie-feeds gefilterd op symbool-keywords + macro
+  const symKeywords = (SYMBOOL_KEYWORDS[symbol] || []);
+  const alleKeywords = [...symKeywords, ...MACRO_KEYWORDS];
+  const categorieHeadlines = (await haalCategorieNieuwsOp())
+    .filter(h => alleKeywords.some(kw => h.toLowerCase().includes(kw)))
+    .slice(0, 5);
+  // Combineer, deduplicate op eerste 40 chars
+  const seen = new Set();
+  const combined = [...yahooHeadlines, ...categorieHeadlines].filter(h => {
+    const key = h.substring(0, 40).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return combined.slice(0, 7); // max 7 headlines naar AI
 }
 
 // ── MISSED OPPORTUNITY TRACKING ───────────────────────────────────────────
