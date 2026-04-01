@@ -307,7 +307,8 @@ app.get('/api/news/watchlist', async (req, res) => {
   res.json(result);
 });
 
-// POST /api/trades/save  — sla afgeronde trade op in historyapp.post('/api/trades/save', (req, res) => {
+// POST /api/trades/save  — sla afgeronde trade op in history
+app.post('/api/trades/save', (req, res) => {
   const { symbol, resultaat, winst, entry, stop_loss, target, rsi, signaal, tijdstip, datum, label } = req.body;
   if (!symbol || !resultaat) return res.status(400).json({ error: 'symbol en resultaat zijn verplicht' });
   tradeHistory.unshift({ symbol, resultaat, winst, entry, stop_loss, target, rsi, signaal, tijdstip, datum, label, opgeslagenOm: new Date().toISOString() });
