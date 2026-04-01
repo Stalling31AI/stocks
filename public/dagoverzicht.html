@@ -810,14 +810,18 @@ function berekenATR(quotes, period=14) {
   const slice = trList.slice(-period);
   return slice.reduce((a,b) => a+b, 0) / slice.length;
 }
-// Positiegroottes op basis van €75 risico per trade (max 10 aandelen)
-// stop = gevalideerde stop prijs
-function berekenAantal(entry, stop, symbol) {
+// Positiegroottes op basis van €75 risico per trade × vertrouwen (max 10 aandelen)
+// vertrouwen: 0-100 van Claude. Bij 55% vertrouwen → 55% van maximale positie.
+// Minimum altijd 1 aandeel zodat we de trade nog wel simuleren.
+function berekenAantal(entry, stop, symbol, vertrouwen = 100) {
   const RISICO_EUR = 75;
   const stopAfstand = entry - stop;
   if (stopAfstand <= 0) return 1;
   const stopEur = USD_SYMBOLS.includes(symbol) ? stopAfstand / EUR_RATE : stopAfstand;
-  return Math.min(10, Math.max(1, Math.floor(RISICO_EUR / stopEur)));
+  const basis = Math.min(10, Math.max(1, Math.floor(RISICO_EUR / stopEur)));
+  // Schaal met vertrouwen: 100% = vol, 50% = half, minimum 1
+  const factor = Math.min(1, Math.max(0.1, (vertrouwen || 100) / 100));
+  return Math.max(1, Math.round(basis * factor));
 }
 // ============================================
 // KERN ANALYSE — herbruikbaar door cyclus én nieuws-trigger
@@ -1756,7 +1760,7 @@ async function simuleerTrades(analyses) {
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
     if (!trade) continue;
     const isKoopNuA = a.actie && a.actie.toUpperCase() === 'KOOP NU';
-    const aantA = berekenAantal(trade.entry, trade.stop, a.symbol);
+    const aantA = berekenAantal(trade.entry, trade.stop, a.symbol, a.vertrouwen);
     simData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
       tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
@@ -1837,7 +1841,7 @@ function syncSimulatiesB() {
       if (!isBeursOpen(sym)) continue; // Geen trade toevoegen als beurs gesloten
       const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
       if (!trade) continue;
-      const aantSync = berekenAantal(trade.entry, trade.stop, a.symbol);
+      const aantSync = berekenAantal(trade.entry, trade.stop, a.symbol, a.vertrouwen);
       if (!simBOpgeslagen[datum]) simBOpgeslagen[datum] = [];
       simBOpgeslagen[datum].push({
         symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
@@ -1916,6 +1920,7 @@ function renderSimulaties() {
           <th style="padding:8px;text-align:left;">Aandeel</th>
           <th style="padding:8px;text-align:left;">Signaal</th>
           <th style="padding:8px;text-align:right;">Entry</th>
+          <th style="padding:8px;text-align:center;font-size:10px;color:#94a3b8;text-transform:uppercase;">Aandelen</th>
           <th style="padding:8px;text-align:center;font-size:10px;
             color:#94a3b8;text-transform:uppercase;">Gekocht</th>
           <th style="padding:8px;text-align:right;">Stop</th>
@@ -1961,6 +1966,10 @@ function renderSimulaties() {
             </td>
             <td style="padding:8px;text-align:right;font-weight:600;">
               ${fmtPrijsLabel(s.symbol, s.entry)}
+            </td>
+            <td style="padding:8px;text-align:center;font-weight:700;color:#6366f1;">
+              ${s.aantal || 10}×
+              ${s.vertrouwen ? `<div style="font-size:9px;color:#94a3b8;font-weight:400;">${s.vertrouwen}% vtw</div>` : ''}
             </td>
             <td style="padding:8px;text-align:center;font-size:13px;">
               ${s.entry_bereikt === null ? '⏳' :
@@ -2071,12 +2080,12 @@ async function simuleerTradesB(analyses) {
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
     if (!trade) continue;
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
-    const aantB = berekenAantal(trade.entry, trade.stop, a.symbol);
+    const aantB = berekenAantal(trade.entry, trade.stop, a.symbol, a.vertrouwen);
     simData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
       tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
       entry: trade.entry, stop_loss: trade.stop, target: trade.target,
-      aantal: aantB, redenering: a.redenering || '', rsi: a.rsi,
+      aantal: aantB, vertrouwen: a.vertrouwen || 0, redenering: a.redenering || '', rsi: a.rsi,
       resultaat: 'open',
       entry_bereikt: isKoopNu,                          // KOOP NU = direct gevuld
       entryTijdstip: isKoopNu ? a.tijdstip : null,
@@ -2142,7 +2151,7 @@ async function herbereken() {
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
     if (!trade) continue;
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
-    const aantHerbereken = berekenAantal(trade.entry, trade.stop, a.symbol);
+    const aantHerbereken = berekenAantal(trade.entry, trade.stop, a.symbol, a.vertrouwen);
     const candles = getCandles(koersData[a.symbol] || [], a.tijdstip);
     const uitkomst = berekenResultaat(trade.entry, trade.stop, trade.target, candles, isKoopNu, a.tijdstip, aantHerbereken);
     if (uitkomst.winst !== null && USD_SYMBOLS.includes(a.symbol))
@@ -2203,7 +2212,7 @@ async function herbereken() {
     }
     // Candles vanaf eerste analyse
     const alleCandles = getCandles(quotes, pos.analyse.tijdstip);
-    const aantHerB = berekenAantal(pos.entry, tijdlijn[0].stop, symbol);
+    const aantHerB = berekenAantal(pos.entry, tijdlijn[0].stop, symbol, pos.analyse.vertrouwen);
     // Vind entry
     let entryIndex = -1;
     let entryTijdstip = null;
