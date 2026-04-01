@@ -390,6 +390,14 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
           <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-top:2px;">Beste aandeel</div>
         </div>
       </div>
+      <div style="margin-bottom:16px;">
+        <button onclick="laadWeekreview()"
+          style="padding:9px 18px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;">
+          🧠 AI Week Evaluatie
+        </button>
+        <span style="font-size:11px;color:#94a3b8;margin-left:8px;">Stuurt alle trades naar AI voor leeranalyse + verbeterpunten</span>
+      </div>
+      <div id="weekreview-panel" style="display:none;background:#f8fafc;border-radius:10px;padding:16px;border-left:4px solid #6366f1;margin-bottom:16px;font-size:12px;"></div>
       <!-- Per aandeel breakdown -->
       <div style="margin-bottom:14px;">
         <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:8px;">📊 Slagingsrate per aandeel</div>
@@ -791,6 +799,26 @@ function berekenBollinger(closes, period=20) {
   const std=Math.sqrt(sl.map(x=>(x-avg)**2).reduce((a,b)=>a+b,0)/sl.length);
   return {upper:avg+2*std, middle:avg, lower:avg-2*std};
 }
+// ATR (Average True Range) — meet gemiddelde dagvolatiliteit per candle
+function berekenATR(quotes, period=14) {
+  if (quotes.length < 2) return 0;
+  const trList = [];
+  for (let i = 1; i < quotes.length; i++) {
+    const h = quotes[i].high, l = quotes[i].low, pc = quotes[i-1].close;
+    trList.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  const slice = trList.slice(-period);
+  return slice.reduce((a,b) => a+b, 0) / slice.length;
+}
+// Positiegroottes op basis van €75 risico per trade (max 10 aandelen)
+// stop = gevalideerde stop prijs
+function berekenAantal(entry, stop, symbol) {
+  const RISICO_EUR = 75;
+  const stopAfstand = entry - stop;
+  if (stopAfstand <= 0) return 1;
+  const stopEur = USD_SYMBOLS.includes(symbol) ? stopAfstand / EUR_RATE : stopAfstand;
+  return Math.min(10, Math.max(1, Math.floor(RISICO_EUR / stopEur)));
+}
 // ============================================
 // KERN ANALYSE — herbruikbaar door cyclus én nieuws-trigger
 // ============================================
@@ -814,6 +842,7 @@ async function haalAnalyseOp(item) {
   const gemiddeldVolume = quotes.slice(-20).reduce((a, b) => a + (b.volume || 0), 0) / 20;
   const volumeRatio = gemiddeldVolume > 0 ? (huidigVolume / gemiddeldVolume).toFixed(2) : '0.00';
   const openingGap = quotes.length > 1 ? ((quotes[0].close - quotes[quotes.length-1].close) / quotes[quotes.length-1].close * 100).toFixed(2) : null;
+  const atr = berekenATR(quotes);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000);
   const analyseRes = await fetch('/api/analyze', {
@@ -821,7 +850,7 @@ async function haalAnalyseOp(item) {
     headers: { 'Content-Type': 'application/json' },
     signal: controller.signal,
     body: JSON.stringify({ symbol: item.symbol, interval: '15m', quotes: quotes.slice(-30),
-      indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio } })
+      indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio, atr } })
   });
   clearTimeout(timeoutId);
   const ai = await analyseRes.json();
@@ -835,7 +864,7 @@ async function haalAnalyseOp(item) {
     entry: ai.entry, stop_loss: ai.stop_loss, target: ai.target, rr_ratio: ai.rr_ratio,
     redenering: ai.redenering || '', instap_tijd: ai.instap_tijd || '',
     dagtrend: ai.dagtrend || '', nieuws_sentiment: ai.nieuws_sentiment || '',
-    rsi: rsi.toFixed(1), macd: macdData.macd.toFixed(2), resultaat: 'onbekend',
+    rsi: rsi.toFixed(1), macd: macdData.macd.toFixed(2), atr: +atr.toFixed(4), resultaat: 'onbekend',
   };
 }
 
@@ -1499,28 +1528,27 @@ loadData();
 // ============================================
 // HULPFUNCTIES
 // ============================================
-function valideerTrade(entry, stop, target, symbol) {
+function valideerTrade(entry, stop, target, symbol, atr = null) {
   entry = parseFloat(entry);
-  stop = parseFloat(stop);
+  stop  = parseFloat(stop);
   target = parseFloat(target);
   if (isNaN(entry) || entry <= 0) return null;
-  if (isNaN(stop) || stop >= entry) stop = +(entry * 0.992).toFixed(2);
-  if (isNaN(target) || target <= entry) target = +(entry * 1.02).toFixed(2);
-  // Tight stop-loss caps per markt
-  if (symbol) {
-    const grootEU = ['ASML.AS', 'RHM.DE', 'ADYEN.AS'];
-    if (grootEU.includes(symbol)) {
-      // Max €70 totaalrisico voor 10 aandelen = €7 per aandeel
-      if ((entry - stop) * 10 > 70) stop = +(entry - 7).toFixed(2);
-    } else if (USD_SYMBOLS.includes(symbol)) {
-      // US stocks: max 0.6% onder entry
-      const maxRisico = entry * 0.006;
-      if (entry - stop > maxRisico) stop = +(entry - maxRisico).toFixed(2);
-    }
+
+  // Minimum stop afstand: 1.2× ATR of minimaal 0.5% van entry (adapteert aan volatiliteit)
+  const minPct = 0.005;
+  const minStopAfstand = atr
+    ? Math.max(atr * 1.2, entry * minPct)
+    : entry * minPct;
+
+  if (isNaN(stop) || stop >= entry || (entry - stop) < minStopAfstand) {
+    stop = +(entry - minStopAfstand).toFixed(2);
   }
+
   const risico = entry - stop;
-  const beloning = target - entry;
-  if (beloning < risico * 1.5) target = +(entry + risico * 2).toFixed(2);
+  // Minimum R:R 2.5:1 voor day trading
+  if (isNaN(target) || target <= entry || (target - entry) < risico * 2.5) {
+    target = +(entry + risico * 2.5).toFixed(2);
+  }
   return { entry, stop, target };
 }
 
@@ -1552,7 +1580,7 @@ function getCandles(quotes, vanafTijdstip) {
   });
 }
 
-function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdstip) {
+function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdstip, aantal=10) {
   // Valideer stop en target
   if (!stop || stop >= entry)
     stop = +(entry * 0.988).toFixed(2);
@@ -1621,7 +1649,7 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdsti
           return {
             entry_bereikt: true, entryTijdstip,
             resultaat: 'stop_geraakt', slotkoers: stop,
-            winst: +((effectiveExit - effectiveEntry) * 10).toFixed(2),
+            winst: +((effectiveExit - effectiveEntry) * aantal).toFixed(2),
             sluitTijdstip: entryTijdstip
           };
         }
@@ -1670,7 +1698,7 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdsti
         entryTijdstip,
         resultaat: 'stop_geraakt',
         slotkoers: stop,
-        winst: +((effectiveExit - effectiveEntry) * 10).toFixed(2),
+        winst: +((effectiveExit - effectiveEntry) * aantal).toFixed(2),
         sluitTijdstip: tijdstip
       };
     }
@@ -1681,7 +1709,7 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdsti
         entryTijdstip,
         resultaat: 'target_bereikt',
         slotkoers: target,
-        winst: +((effectiveExit - effectiveEntry) * 10).toFixed(2),
+        winst: +((effectiveExit - effectiveEntry) * aantal).toFixed(2),
         sluitTijdstip: tijdstip
       };
     }
@@ -1706,7 +1734,7 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdsti
       entryTijdstip,
       resultaat: 'einde_dag',
       slotkoers: +slotkoers.toFixed(2),
-      winst: +((effectiveExit - effectiveEntry) * 10).toFixed(2),
+      winst: +((effectiveExit - effectiveEntry) * aantal).toFixed(2),
       sluitTijdstip: null
     };
   }
@@ -1728,11 +1756,12 @@ async function simuleerTrades(analyses) {
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
     if (!trade) continue;
     const isKoopNuA = a.actie && a.actie.toUpperCase() === 'KOOP NU';
+    const aantA = berekenAantal(trade.entry, trade.stop, a.symbol);
     simData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
       tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
       entry: trade.entry, stop_loss: trade.stop, target: trade.target,
-      aantal: 10, redenering: a.redenering || '',
+      aantal: aantA, redenering: a.redenering || '',
       resultaat: 'open',
       entry_bereikt: isKoopNuA,
       entryTijdstip: isKoopNuA ? a.tijdstip : null,
@@ -1806,14 +1835,15 @@ function syncSimulatiesB() {
   for (const [sym, a] of Object.entries(perSymbool)) {
     if (!bestaand.has(sym)) {
       if (!isBeursOpen(sym)) continue; // Geen trade toevoegen als beurs gesloten
-      const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
+      const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
       if (!trade) continue;
+      const aantSync = berekenAantal(trade.entry, trade.stop, a.symbol);
       if (!simBOpgeslagen[datum]) simBOpgeslagen[datum] = [];
       simBOpgeslagen[datum].push({
         symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
         tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie || '',
         entry: trade.entry, stop_loss: trade.stop, target: trade.target,
-        aantal: 10, redenering: a.redenering || '',
+        aantal: aantSync, redenering: a.redenering || '',
         resultaat: 'open',
         entry_bereikt: a.actie && a.actie.toUpperCase() === 'KOOP NU',
         entryTijdstip: a.actie && a.actie.toUpperCase() === 'KOOP NU' ? a.tijdstip : null,
@@ -2038,14 +2068,15 @@ async function simuleerTradesB(analyses) {
       }
     }
     // Nieuwe trade aanmaken (ook na verlopen setup)
-    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
+    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
     if (!trade) continue;
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
+    const aantB = berekenAantal(trade.entry, trade.stop, a.symbol);
     simData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
       tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
       entry: trade.entry, stop_loss: trade.stop, target: trade.target,
-      aantal: 10, redenering: a.redenering || '', rsi: a.rsi,
+      aantal: aantB, redenering: a.redenering || '', rsi: a.rsi,
       resultaat: 'open',
       entry_bereikt: isKoopNu,                          // KOOP NU = direct gevuld
       entryTijdstip: isKoopNu ? a.tijdstip : null,
@@ -2111,15 +2142,16 @@ async function herbereken() {
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
     if (!trade) continue;
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
+    const aantHerbereken = berekenAantal(trade.entry, trade.stop, a.symbol);
     const candles = getCandles(koersData[a.symbol] || [], a.tijdstip);
-    const uitkomst = berekenResultaat(trade.entry, trade.stop, trade.target, candles, isKoopNu, a.tijdstip);
+    const uitkomst = berekenResultaat(trade.entry, trade.stop, trade.target, candles, isKoopNu, a.tijdstip, aantHerbereken);
     if (uitkomst.winst !== null && USD_SYMBOLS.includes(a.symbol))
       uitkomst.winst = +(uitkomst.winst / EUR_RATE).toFixed(2);
     simAData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
       tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
       entry: trade.entry, stop_loss: trade.stop, target: trade.target,
-      aantal: 10, redenering: a.redenering || '', ...uitkomst
+      aantal: aantHerbereken, redenering: a.redenering || '', ...uitkomst
     });
   }
   localStorage.setItem('simulaties', JSON.stringify(simAData));
@@ -2128,7 +2160,7 @@ async function herbereken() {
   if (!simBData[datum]) simBData[datum] = [];
   const pending = {};
   for (const a of analyses) {
-    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
+    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
     if (!trade) continue;
     const bestaand = pending[a.symbol];
     if (bestaand) {
@@ -2171,6 +2203,7 @@ async function herbereken() {
     }
     // Candles vanaf eerste analyse
     const alleCandles = getCandles(quotes, pos.analyse.tijdstip);
+    const aantHerB = berekenAantal(pos.entry, tijdlijn[0].stop, symbol);
     // Vind entry
     let entryIndex = -1;
     let entryTijdstip = null;
@@ -2200,7 +2233,7 @@ async function herbereken() {
         signaal: 'KOOP', actie: pos.analyse.actie, entry: pos.entry,
         stop_loss: tijdlijn[tijdlijn.length - 1].stop,
         target: tijdlijn[tijdlijn.length - 1].target,
-        aantal: 10, redenering: pos.analyse.redenering || '',
+        aantal: aantHerB, redenering: pos.analyse.redenering || '',
         updates: pos.updates || [], entry_bereikt: false,
         entryTijdstip: null, resultaat: 'entry_niet_bereikt',
         slotkoers: null, winst: 0, sluitTijdstip: null
@@ -2216,7 +2249,7 @@ async function herbereken() {
     let resultaat = beursOpen ? 'open' : 'einde_dag';
     let slotkoers = alleCandles[alleCandles.length - 1].close;
     const _usdSym = USD_SYMBOLS.includes(symbol);
-    let winst = beursOpen ? null : +((slotkoers - entry) * 10 / (_usdSym ? EUR_RATE : 1)).toFixed(2);
+    let winst = beursOpen ? null : +((slotkoers - entry) * aantHerB / (_usdSym ? EUR_RATE : 1)).toFixed(2);
     let sluitTijdstip = null;
     let st = null;
     for (const candle of candlesNaEntry) {
@@ -2230,12 +2263,12 @@ async function herbereken() {
       st = getStopTargetOpTijdstip(tijdstip);
       if (candle.low <= st.stop) {
         resultaat = 'stop_geraakt'; slotkoers = st.stop;
-        winst = +((st.stop - entry) * 10 / (_usdSym ? EUR_RATE : 1)).toFixed(2);
+        winst = +((st.stop - entry) * aantHerB / (_usdSym ? EUR_RATE : 1)).toFixed(2);
         sluitTijdstip = tijdstip; break;
       }
       if (candle.high >= st.target) {
         resultaat = 'target_bereikt'; slotkoers = st.target;
-        winst = +((st.target - entry) * 10 / (_usdSym ? EUR_RATE : 1)).toFixed(2);
+        winst = +((st.target - entry) * aantHerB / (_usdSym ? EUR_RATE : 1)).toFixed(2);
         sluitTijdstip = tijdstip; break;
       }
     }
@@ -2245,7 +2278,7 @@ async function herbereken() {
       signaal: 'KOOP', actie: pos.analyse.actie, entry: pos.entry,
       stop_loss: tijdlijn[tijdlijn.length - 1].stop,
       target: tijdlijn[tijdlijn.length - 1].target,
-      aantal: 10, redenering: pos.analyse.redenering || '',
+      aantal: aantHerB, redenering: pos.analyse.redenering || '',
       updates: pos.updates || [], entry_bereikt: true,
       entryTijdstip, resultaat,
       slotkoers: +slotkoers.toFixed(2), winst, sluitTijdstip
@@ -2563,7 +2596,7 @@ async function checkOpenPosities() {
       if (quotes.length === 0) continue;
       const isKoopNu = sim.actie && sim.actie.toUpperCase() === 'KOOP NU';
       const candles = getCandles(quotes, sim.tijdstip);
-      const uitkomst = berekenResultaat(sim.entry, sim.stop_loss, sim.target, candles, isKoopNu, sim.tijdstip);
+      const uitkomst = berekenResultaat(sim.entry, sim.stop_loss, sim.target, candles, isKoopNu, sim.tijdstip, sim.aantal || 10);
       if (uitkomst.winst !== null && USD_SYMBOLS.includes(sim.symbol))
         uitkomst.winst = +(uitkomst.winst / EUR_RATE).toFixed(2);
       if (uitkomst.entry_bereikt !== sim.entry_bereikt || uitkomst.resultaat !== sim.resultaat) {
@@ -2904,6 +2937,63 @@ async function checkNieuwsTrigger() {
     }
   } catch(e) {
     console.warn('checkNieuwsTrigger fout:', e.message);
+  }
+}
+
+// ============================================
+// WEEK EVALUATIE — AI analyseert alle trades van de week
+// ============================================
+async function laadWeekreview() {
+  const panel = document.getElementById('weekreview-panel');
+  panel.style.display = 'block';
+  panel.innerHTML = '⏳ AI analyseert de weekresultaten...';
+  try {
+    // Verzamel alle trades van de afgelopen 7 dagen
+    const simA = JSON.parse(localStorage.getItem('simulaties') || '{}');
+    const simB = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+    const nu = new Date();
+    const trades = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(nu);
+      d.setDate(d.getDate() - i);
+      const datum = d.toLocaleDateString('nl-NL');
+      (simA[datum] || []).forEach(t => trades.push({ ...t, sim: 'A' }));
+      (simB[datum] || []).forEach(t => trades.push({ ...t, sim: 'B' }));
+    }
+    const alleAnalyses = [];
+    const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+    Object.values(opgeslagen).forEach(dag => dag.forEach(run => alleAnalyses.push(...(run.analyses||[]))));
+    const res = await fetch('/api/weekevaluatie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trades, analyses: alleAnalyses })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Onbekende fout');
+    panel.innerHTML = `
+      <div style="font-weight:700;font-size:14px;margin-bottom:10px;color:#6366f1;">🧠 AI Week Evaluatie</div>
+      <div style="margin-bottom:8px;">${data.samenvatting}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div style="background:#dcfce7;border-radius:6px;padding:8px;">
+          <div style="font-size:10px;font-weight:600;color:#15803d;text-transform:uppercase;">Sterke punten</div>
+          ${(data.sterkePunten||[]).map(p => `<div style="margin-top:4px;">✅ ${p}</div>`).join('')}
+        </div>
+        <div style="background:#fee2e2;border-radius:6px;padding:8px;">
+          <div style="font-size:10px;font-weight:600;color:#dc2626;text-transform:uppercase;">Verbeterpunten</div>
+          ${(data.verbeterpunten||[]).map(p => `<div style="margin-top:4px;">⚠️ ${p}</div>`).join('')}
+        </div>
+      </div>
+      <div style="margin-bottom:8px;font-weight:600;">📋 Concrete aanpassingen volgende week:</div>
+      ${(data.aanpassingen||[]).map((a,i) => `
+        <div style="background:#fff;border-radius:6px;padding:8px;margin-bottom:6px;border-left:3px solid #6366f1;">
+          <div style="font-weight:600;">${i+1}. ${a.wat}</div>
+          <div style="color:#64748b;font-size:11px;margin-top:2px;">${a.waarom}</div>
+        </div>`).join('')}
+      <div style="margin-top:10px;background:#eff6ff;border-radius:6px;padding:8px;">
+        <span style="font-weight:600;color:#2563eb;">🎯 Focus volgende week: </span>${data.volgendeWeekFocus||''}
+      </div>`;
+  } catch(e) {
+    panel.innerHTML = `<span style="color:#dc2626;">⚠️ Fout: ${e.message}</span>`;
   }
 }
 

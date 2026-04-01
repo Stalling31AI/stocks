@@ -434,7 +434,8 @@ ${recent.slice(-5).map(q => {
   const t = d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Amsterdam'});
   return t+': '+fmt(q.open)+' → '+fmt(q.close)+' (H:'+fmt(q.high)+' L:'+fmt(q.low)+') '+(q.close>=q.open?'🟢':'🔴');
 }).join('\n')}
-TRADING PROFIEL: Scalper. Risico per trade: max €70 (10 aandelen). Dagdoel: €350. Gebruik strakke stops net onder de laatste 15m low.
+ATR (15m, 14 periodes): ${indicators.atr ? fmt(indicators.atr) : 'N/A'} ${indicators.atr ? `← normale candle-beweging = €${fmt(indicators.atr)}` : ''}
+TRADING PROFIEL: Day trader. Risico per trade: €75 vast. Positiegrootte = floor(75/stop_EUR), max 10. Dagdoel: €200-300 netto via 3-5 trades.
 KOOP CRITERIA:
 ✓ OVERSOLD BOUNCE: RSI < 40 EN prijs toont bodemvorming → KOOP NU.
 ✓ MOMENTUM BREAKOUT: RSI 44-58 EN RSI STIJGEND EN MACD histogram STIJGEND EN volume > 1.2x → KOOP NU (entry = huidige prijs). Dit vangt stijgingen zoals RHM.DE van 1374→1387.
@@ -443,15 +444,16 @@ KOOP CRITERIA:
 ✓ Accepteer Risk/Reward van 1:1 voor snelle scalp-trades.
 ✓ GEEN koop bij sterke downtrend (Lower Highs/Lower Lows) of RSI DALEND zonder bodemvorming.
 STOP-LOSS REGELS:
-- Maximaal €70 totaalrisico op 10 aandelen (= max €7 per aandeel voor EU; max 0.6% voor US stocks)
-- Plaats stop net onder de laagste 15-minuten candle van het laatste uur
-- Stop moet buiten normale dagvolatiliteit liggen
+- Minimale stop afstand: 1.2× ATR (≈ €${indicators.atr ? fmt(indicators.atr * 1.2) : '?'}) of minimaal 0.5% van entry
+- Geen stop tighter dan ATR: PYPL $78 met ATR $0.80 → stop minimaal bij $77.04
+- Plaats stop net onder de vorige 15m swing low MAAR minimaal 1.2× ATR van entry
+- Doel: stop overleeft normale noise, niet direct geraakt bij eerste candle
 TARGET REGELS:
-- Voor aandelen onder €300: minimaal 2% boven entry
-- Voor aandelen boven €300: minimaal 1.5% boven entry
-- Target realistisch binnen dagrange; bij snelle scalp mag target kleiner zijn
-- Voorkeur R/R ≥ 2.5 maar accepteer 1.2 als entry-kans groot is.
-- WACHT alleen als er werkelijk geen koopmoment is vandaag.
+- Minimaal 2.5× risico afstand (R:R ≥ 2.5:1) — voor consistent positief dagresultaat
+- Voorbeeld: entry $78, stop $77.04 (risico $0.96) → target minimaal $80.40
+- Bij sterke momentum (RSI STIJGEND, MACD STIJGEND, volume >1.5x): schaal target naar 3:1
+- Bij rangy markt of lunchperiode: hou 2.5:1 en wacht niet op maximaal target
+WACHT alleen als er werkelijk geen koopmoment is vandaag.
 Als WACHT: geef CONCREET aan bij welke prijs/conditie je WEL zou kopen.
 Geen vage antwoorden - altijd een concreet level noemen.
 ${headlines.length > 0 ? `RECENT NIEUWS (${symbol}):
@@ -504,29 +506,26 @@ Reageer ALLEEN met dit JSON:
       // Validatie na JSON parse
       if (parsed.signaal === 'KOOP') {
         const entry = parseFloat(parsed.entry);
+        const atr = indicators.atr ? parseFloat(indicators.atr) : null;
 
-        // Minimum stop afstand op basis van prijs
-        let minStopPct;
-        if (entry > 1000) minStopPct = 0.988;      // 1.2%
-        else if (entry > 500) minStopPct = 0.985;   // 1.5%
-        else if (entry > 100) minStopPct = 0.982;   // 1.8%
-        else minStopPct = 0.978;                     // 2.2%
-        const minStop = +(entry * minStopPct).toFixed(2);
+        // Minimum stop afstand: 1.2× ATR of 0.5% van entry
+        const minStopAfstand = atr
+          ? Math.max(atr * 1.2, entry * 0.005)
+          : entry * 0.005;
+        const minStop = +(entry - minStopAfstand).toFixed(2);
         const parsedStop = parseFloat(parsed.stop_loss);
 
-        // Stop te hoog of te dichtbij
-        if (!parsedStop || parsedStop >= entry ||
-            parsedStop > minStop) {
+        // Stop ontbreekt, te hoog, of te dicht bij entry
+        if (!parsedStop || parsedStop >= entry || (entry - parsedStop) < minStopAfstand) {
           parsed.stop_loss = minStop;
         }
 
-        // Target minimaal 2x risico
+        // Target minimaal 2.5× risico
         const risico = entry - parsed.stop_loss;
-        const minTarget = +(entry + risico * 2).toFixed(2);
+        const minTarget = +(entry + risico * 2.5).toFixed(2);
         const parsedTarget = parseFloat(parsed.target);
 
-        if (!parsedTarget || parsedTarget <= entry ||
-            parsedTarget < minTarget) {
+        if (!parsedTarget || parsedTarget <= entry || parsedTarget < minTarget) {
           parsed.target = minTarget;
         }
 
@@ -589,6 +588,69 @@ Reageer ALLEEN met dit JSON:
     console.error('Quotes length:', quotes?.length);
     console.error('Last candle:', last);
     res.status(500).json({ error: err.message, details: err.stack?.split('\n')[1] });
+  }
+});
+
+// POST /api/weekevaluatie — AI analyseert de weekresultaten en geeft leeradvies
+app.post('/api/weekevaluatie', async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ error: 'ANTHROPIC_API_KEY ontbreekt' });
+    const { trades = [], analyses = [] } = req.body;
+    const gesloten = trades.filter(t => t.resultaat && t.resultaat !== 'open' && t.resultaat !== 'entry_niet_bereikt' && t.resultaat !== 'gemist');
+    const winst = gesloten.filter(t => t.resultaat === 'target_bereikt');
+    const verlies = gesloten.filter(t => t.resultaat === 'stop_geraakt');
+    const winstSom = gesloten.reduce((s, t) => s + (t.winst || 0), 0);
+    const gemisteLijst = trades.filter(t => t.resultaat === 'gemist');
+    const prompt = `Jij bent een professionele daytrading coach. Analyseer de weekresultaten en geef specifieke verbeteradviezen.
+
+WEEKOVERZICHT:
+Totaal trades: ${gesloten.length} | Winst: ${winst.length} (${gesloten.length > 0 ? Math.round(winst.length/gesloten.length*100) : 0}%) | Verlies: ${verlies.length}
+Netto resultaat: €${winstSom.toFixed(2)}
+Gemiste kansen: ${gemisteLijst.length}
+
+TRADES DETAIL:
+${gesloten.slice(0,20).map(t => {
+  const icoon = t.resultaat === 'target_bereikt' ? '✅' : t.resultaat === 'stop_geraakt' ? '🛑' : '📊';
+  return `${icoon} ${t.symbol} ${t.datum||''} ${t.tijdstip||''}: entry ${t.entry}, stop ${t.stop_loss}, target ${t.target}, ${t.aantal||10}x → ${t.resultaat} €${t.winst >= 0 ? '+' : ''}${(t.winst||0).toFixed(2)} (RSI ${t.rsi||'?'})`;
+}).join('\n')}
+${gemisteLijst.slice(0,5).map(t =>
+  `⚠️ GEMIST: ${t.symbol} ${t.datum||''}: WACHT → koers ging ${t.winst > 0 ? '+' : ''}${t.winst}%`
+).join('\n')}
+
+Analyseer:
+1. Welke trades gingen verloren door te krappe stops? (check R:R vs werkelijke beweging)
+2. Welk signaalpatroon (RSI, MACD, volume) correleerde het beste met winnende trades?
+3. Welke symbolen presteren goed/slecht? Moet de watchlist worden aangesteld?
+4. Bij gemiste kansen: welke indicatorcombinatie had KOOP moeten geven?
+5. Geef 3 concrete aanpassingen voor volgende week (niet vaag, met exacte getallen).
+
+Reageer met dit JSON:
+{
+  "samenvatting": "2-3 zinnen over de week",
+  "winrate": ${gesloten.length > 0 ? Math.round(winst.length/gesloten.length*100) : 0},
+  "netto": ${winstSom.toFixed(2)},
+  "sterkePunten": ["punt1", "punt2"],
+  "verbeterpunten": ["punt1", "punt2", "punt3"],
+  "aanpassingen": [
+    {"wat": "specifieke aanpassing", "waarom": "data-onderbouwing"},
+    {"wat": "...", "waarom": "..."},
+    {"wat": "...", "waarom": "..."}
+  ],
+  "volgendeWeekFocus": "1 concrete focus voor volgende week"
+}`;
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const textBlock = message.content.find(b => b.type === 'text');
+    const match = textBlock?.text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AI gaf geen valide JSON terug');
+    res.json(JSON.parse(match[0]));
+  } catch (err) {
+    console.error('Weekevaluatie fout:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
