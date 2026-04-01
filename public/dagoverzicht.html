@@ -254,6 +254,17 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     <span id="selectie-info" style="font-size:12px;color:#94a3b8;"></span>
   </div>
 </div>
+  <!-- Pre-market briefing panel -->
+  <div id="premarket-panel" style="display:none;background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #6366f1;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="font-size:14px;font-weight:700;color:#1e293b;">📰 Pre-market briefing <span id="premarket-tijd" style="font-weight:400;font-size:12px;color:#64748b;"></span></div>
+      <div style="font-size:12px;color:#64748b;" id="premarket-status">Laden...</div>
+    </div>
+    <div id="premarket-inhoud" style="display:grid;gap:10px;"></div>
+    <div id="premarket-opening-alert" style="display:none;margin-top:12px;padding:10px 14px;background:#dcfce7;border-radius:8px;font-size:13px;color:#166534;">
+      <strong>🔔 US markt opent over 15 min.</strong> Aandelen met nieuws worden automatisch geanalyseerd bij opening.
+    </div>
+  </div>
   <!-- Nieuws trigger alert -->
   <div id="nieuws-alert" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:12px 16px;margin-bottom:12px;font-size:13px;color:#92400e;">
     <strong>🚨 Nieuws trigger:</strong> <span id="nieuws-alert-tekst"></span>
@@ -2743,6 +2754,83 @@ async function updateKoersen() {
 }
 
 // ============================================
+// PRE-MARKET BRIEFING
+// ============================================
+const preMarketNieuwsSymbolen = new Set(); // symbolen met relevant nieuws vandaag
+let openingTriggerGedaan = false;
+
+async function laadPreMarketBriefing() {
+  const panel = document.getElementById('premarket-panel');
+  const inhoud = document.getElementById('premarket-inhoud');
+  const status = document.getElementById('premarket-status');
+  const tijdEl = document.getElementById('premarket-tijd');
+  if (!panel) return;
+  panel.style.display = 'block';
+  if (tijdEl) tijdEl.textContent = '— ' + new Date().toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit' });
+  if (status) status.textContent = 'Nieuws ophalen...';
+  try {
+    const r = await fetch('/api/news/briefing');
+    if (!r.ok) throw new Error(r.status);
+    const briefing = await r.json();
+    if (status) status.textContent = `Bijgewerkt ${new Date().toLocaleTimeString('nl-NL', {hour:'2-digit',minute:'2-digit'})}`;
+    const symbolen = Object.entries(briefing).sort((a,b) => b[1].score - a[1].score);
+    if (symbolen.length === 0) {
+      inhoud.innerHTML = '<div style="font-size:13px;color:#64748b;">Geen relevant nieuws gevonden voor de watchlist.</div>';
+      return;
+    }
+    inhoud.innerHTML = symbolen.map(([sym, data]) => {
+      const item = WATCHLIST.find(w => w.symbol === sym);
+      const vlag = item?.vlag || '';
+      const label = item?.label || sym;
+      const sentiment = data.bullish > data.bearish ? '🟢' : data.bearish > data.bullish ? '🔴' : '🟡';
+      preMarketNieuwsSymbolen.add(sym);
+      return `<div style="padding:10px 12px;background:#f8fafc;border-radius:8px;border-left:3px solid ${data.bullish > data.bearish ? '#16a34a' : data.bearish > data.bullish ? '#dc2626' : '#f59e0b'};">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${sentiment} ${vlag} ${label} <span style="font-weight:400;color:#64748b;font-size:11px;">${data.bullish}↑ ${data.bearish}↓</span></div>
+        ${data.headlines.slice(0,3).map(h => `<div style="font-size:12px;color:#475569;margin-bottom:3px;">• ${h}</div>`).join('')}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    if (status) status.textContent = 'Fout bij laden';
+    console.warn('Pre-market briefing fout:', e.message);
+  }
+}
+
+async function checkOpeningTrigger() {
+  if (openingTriggerGedaan || window.analyseBezig) return;
+  const nu = new Date();
+  const amst = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+  const totMin = amst.getHours() * 60 + amst.getMinutes();
+  // Trigger exact bij US opening (15:30) als er pre-market nieuws is
+  if (totMin >= 15 * 60 + 30 && preMarketNieuwsSymbolen.size > 0) {
+    openingTriggerGedaan = true;
+    const teAnalyseren = WATCHLIST.filter(w => USD_SYMBOLS.includes(w.symbol) && preMarketNieuwsSymbolen.has(w.symbol));
+    if (teAnalyseren.length === 0) return;
+    console.log(`Opening trigger: ${teAnalyseren.map(w=>w.symbol).join(', ')}`);
+    const alertEl = document.getElementById('nieuws-alert');
+    const alertTekst = document.getElementById('nieuws-alert-tekst');
+    if (alertEl && alertTekst) {
+      alertTekst.textContent = `US markt open — directe analyse voor ${teAnalyseren.map(w=>w.label).join(', ')} (pre-market nieuws)`;
+      alertEl.style.display = 'block';
+      setTimeout(() => { alertEl.style.display = 'none'; }, 60000);
+    }
+    window.analyseBezig = true;
+    for (const item of teAnalyseren) {
+      try {
+        await new Promise(r => setTimeout(r, 2000)); // kleine stagger
+        const resultaat = await haalAnalyseOp(item);
+        huidigeAnalyses.push(resultaat);
+        await simuleerTradesB([resultaat]);
+        renderSimulaties();
+        console.log(`Opening analyse klaar: ${item.symbol} → ${resultaat.signaal}`);
+      } catch(e) { console.warn(`Opening analyse mislukt: ${item.symbol}`, e.message); }
+    }
+    await checkOpenPosities();
+    renderSimulaties();
+    window.analyseBezig = false;
+  }
+}
+
+// ============================================
 // NIEUWS TRIGGER — elke 5 min tijdens US markt
 // ============================================
 const bekendNieuws = {};       // { symbol: Set<headline> }
@@ -2802,14 +2890,55 @@ window.addEventListener('load', () => {
   updateAutoAnalyseStatus();
   Notification.requestPermission();
   setTimeout(checkOpenPosities, 3000);
-  // Nieuws trigger: start polling elke 5 min tijdens US markturen
+
   const nu = new Date();
   const amst = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
   const totMin = amst.getHours() * 60 + amst.getMinutes();
-  if (totMin >= 15 * 60 + 30 && totMin < 22 * 60) {
+  const euOpen    = 8 * 60;          // 08:00
+  const usOpen    = 15 * 60 + 30;    // 15:30
+  const usSluit   = 22 * 60;         // 22:00
+  const preAlert  = 15 * 60 + 15;    // 15:15 — opening alert tonen
+
+  if (totMin >= euOpen && totMin < usSluit) {
+    // Pre-market briefing: laden + elke 15 min verversen
+    setTimeout(laadPreMarketBriefing, 3000);
+    setInterval(laadPreMarketBriefing, 15 * 60 * 1000);
+
+    // Opening alert tonen bij 15:15
+    if (totMin >= preAlert && totMin < usOpen) {
+      const openingAlertEl = document.getElementById('premarket-opening-alert');
+      if (openingAlertEl) openingAlertEl.style.display = 'block';
+    } else if (totMin < preAlert) {
+      const msNaarAlert = (preAlert - totMin) * 60 * 1000;
+      setTimeout(() => {
+        const el = document.getElementById('premarket-opening-alert');
+        if (el) el.style.display = 'block';
+      }, msNaarAlert);
+    }
+
+    // Opening trigger: check elke minuut tussen 15:29 en 15:45
+    if (totMin >= usOpen - 1 && totMin < usOpen + 15) {
+      checkOpeningTrigger();
+      setInterval(checkOpeningTrigger, 60 * 1000);
+    } else if (totMin < usOpen) {
+      const msNaarOpening = (usOpen - totMin) * 60 * 1000 - 30000; // 30s voor opening
+      setTimeout(() => {
+        checkOpeningTrigger();
+        setInterval(checkOpeningTrigger, 60 * 1000);
+      }, msNaarOpening);
+    }
+  }
+
+  // US markt open: nieuws trigger elke 5 min
+  if (totMin >= usOpen && totMin < usSluit) {
     console.log('US markt open — nieuws trigger actief (elke 5 min)');
-    setTimeout(checkNieuwsTrigger, 5000); // eerste check na 5s (initialiseer bekendNieuws)
+    setTimeout(checkNieuwsTrigger, 5000);
     setInterval(checkNieuwsTrigger, 5 * 60 * 1000);
+  } else if (totMin >= euOpen && totMin < usOpen) {
+    // Pre-market: start nieuws trigger klaar zodat bekendNieuws gevuld is voor US opening
+    setTimeout(checkNieuwsTrigger, 5000);
+    const msNaarUs = (usOpen - totMin) * 60 * 1000;
+    setTimeout(() => setInterval(checkNieuwsTrigger, 5 * 60 * 1000), msNaarUs);
   }
 });
 </script>

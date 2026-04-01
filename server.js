@@ -33,11 +33,15 @@ const MACRO_KEYWORDS = ['trump','tariff','fed ','federal reserve','interest rate
 
 // Categorie RSS-feeds (30 min cache)
 const CATEGORIE_FEEDS = [
-  { naam: 'Reuters Top',   url: 'https://feeds.reuters.com/reuters/topNews' },
-  { naam: 'Reuters Tech',  url: 'https://feeds.reuters.com/reuters/technologyNews' },
-  { naam: 'CNBC Markets',  url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html' },
-  { naam: 'CNBC Tech',     url: 'https://www.cnbc.com/id/19854910/device/rss/rss.html' },
-  { naam: 'MarketWatch',   url: 'https://feeds.marketwatch.com/marketwatch/topstories/' },
+  { naam: 'Reuters Top',    url: 'https://feeds.reuters.com/reuters/topNews' },
+  { naam: 'Reuters World',  url: 'https://feeds.reuters.com/Reuters/worldNews' },
+  { naam: 'Reuters Tech',   url: 'https://feeds.reuters.com/reuters/technologyNews' },
+  { naam: 'Reuters Biz',    url: 'https://feeds.reuters.com/reuters/businessNews' },
+  { naam: 'CNBC Markets',   url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html' },
+  { naam: 'CNBC Tech',      url: 'https://www.cnbc.com/id/19854910/device/rss/rss.html' },
+  { naam: 'CNBC World',     url: 'https://www.cnbc.com/id/100727362/device/rss/rss.html' },
+  { naam: 'MarketWatch',    url: 'https://feeds.marketwatch.com/marketwatch/topstories/' },
+  { naam: 'AP Business',    url: 'https://feeds.apnews.com/rss/apf-business' },
 ];
 
 function parseRssTitels(xml) {
@@ -265,6 +269,33 @@ app.get('/api/quote/:symbol', async (req, res) => {
     console.error('Quote error:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/news/briefing — pre-market overzicht: nieuws gegroepeerd per symbool met score
+app.get('/api/news/briefing', async (req, res) => {
+  const alleSymbolen = ['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML','ASML.AS','ADYEN.AS','RHM.DE'];
+  const categorieHeadlines = await haalCategorieNieuwsOp();
+  const briefing = {};
+  for (const sym of alleSymbolen) {
+    const symKeywords = SYMBOOL_KEYWORDS[sym] || [];
+    const alleKeywords = [...symKeywords, ...MACRO_KEYWORDS];
+    // Yahoo per-symbool
+    const yahooH = await haalNieuwsOp(sym);
+    // Filter categorie op keywords
+    const catH = categorieHeadlines.filter(h =>
+      symKeywords.some(kw => h.toLowerCase().includes(kw))
+    );
+    const alleH = [...new Set([...yahooH, ...catH])].slice(0, 8);
+    if (alleH.length > 0) {
+      briefing[sym] = {
+        headlines: alleH,
+        score: alleH.length, // simpele relevantiescore
+        bullish: alleH.filter(h => /upgrad|deal|partner|contract|record|beat|surge|jump|rally|win|award/i.test(h)).length,
+        bearish: alleH.filter(h => /downgrad|miss|cut|fine|ban|tariff|sanction|probe|lawsuit|recall|crash/i.test(h)).length,
+      };
+    }
+  }
+  res.json(briefing);
 });
 
 // GET /api/news/watchlist — headlines per US symbool (gebruikt cache, geen extra credits)
