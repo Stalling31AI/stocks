@@ -225,7 +225,7 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
         </div>
         <span style="font-size:13px;font-weight:600;
           color:#64748b;">
-          Elke 30 min
+          Elke 15 min
         </span>
       </label>
     </div>
@@ -791,11 +791,6 @@ function berekenBollinger(closes, period=20) {
   const std=Math.sqrt(sl.map(x=>(x-avg)**2).reduce((a,b)=>a+b,0)/sl.length);
   return {upper:avg+2*std, middle:avg, lower:avg-2*std};
 }
-async function analyseAlleAandelen() {
-  const btn = document.getElementById('analyse-btn');
-  btn.disabled = true;
-  btn.textContent = '⏳ Bezig...';
-  document.getElementById('voortgang-wrap').style.display = 'block';
 // ============================================
 // KERN ANALYSE — herbruikbaar door cyclus én nieuws-trigger
 // ============================================
@@ -844,6 +839,12 @@ async function haalAnalyseOp(item) {
   };
 }
 
+async function analyseAlleAandelen() {
+  const btn = document.getElementById('analyse-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Bezig...';
+  window.analyseBezig = true;
+  document.getElementById('voortgang-wrap').style.display = 'block';
 
   huidigeAnalyses = [];
   renderLadenKaarten();
@@ -2607,37 +2608,57 @@ async function checkOpenPosities() {
   }
 }
 
+const AUTO_INTERVAL_MIN = 15; // kwartier
 let autoAnalyseTimer = null;
 let autoAnalyseActief = false;
+let autoAnalyseLaatsteRun = 0; // timestamp van laatste run
+
 function startAutoAnalyse() {
   stopAutoAnalyse();
+  planVolgendeAutoAnalyse();
+  updateAutoAnalyseStatus();
+}
+
+function planVolgendeAutoAnalyse() {
+  if (!autoAnalyseActief) return;
   const nu = new Date();
   const minuten = nu.getMinutes();
   const seconden = nu.getSeconds();
-  let minutenTotVolgende;
-  if (minuten < 30) {
-    minutenTotVolgende = 30 - minuten;
-  } else {
-    minutenTotVolgende = 60 - minuten;
-  }
+  // Sync naar kwartiergrens: :00, :15, :30, :45
+  const minutenInKwartier = minuten % AUTO_INTERVAL_MIN;
+  const minutenTotVolgende = AUTO_INTERVAL_MIN - minutenInKwartier;
   const msTotVolgende = (minutenTotVolgende * 60 - seconden) * 1000;
-  updateAutoAnalyseStatus();
   autoAnalyseTimer = setTimeout(async () => {
+    autoAnalyseTimer = null;
     await voerAutoAnalyseUit();
-    autoAnalyseTimer = setInterval(async () => {
-      await voerAutoAnalyseUit();
-    }, 30 * 60 * 1000);
+    autoAnalyseLaatsteRun = Date.now();
+    planVolgendeAutoAnalyse(); // herplan na elke run
   }, msTotVolgende);
-  console.log('Auto-analyse gepland over', minutenTotVolgende, 'minuten');
+  console.log('Auto-analyse gepland over', minutenTotVolgende, 'min (volgende kwartier)');
 }
+
 function stopAutoAnalyse() {
   if (autoAnalyseTimer) {
     clearTimeout(autoAnalyseTimer);
-    clearInterval(autoAnalyseTimer);
     autoAnalyseTimer = null;
   }
   updateAutoAnalyseStatus();
 }
+
+// Herstel na tab-switch: als de tab lang inactief was en een run gemist is
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !autoAnalyseActief) return;
+  const nu = Date.now();
+  const secsSindsRun = (nu - autoAnalyseLaatsteRun) / 1000;
+  if (secsSindsRun > AUTO_INTERVAL_MIN * 60 + 30) {
+    console.log('Tab was inactief, gemiste auto-analyse nu uitvoeren...');
+    stopAutoAnalyse();
+    voerAutoAnalyseUit().then(() => {
+      autoAnalyseLaatsteRun = Date.now();
+      planVolgendeAutoAnalyse();
+    });
+  }
+});
 async function voerAutoAnalyseUit() {
   if (!autoAnalyseActief) return;
 
@@ -2701,7 +2722,7 @@ function updateAutoAnalyseStatus() {
   }
   const nu = new Date();
   const minuten = nu.getMinutes();
-  const minutenTotVolgende = minuten < 30 ? 30 - minuten : 60 - minuten;
+  const minutenTotVolgende = AUTO_INTERVAL_MIN - (minuten % AUTO_INTERVAL_MIN);
   const openAandelen = WATCHLIST.filter(w => isBeursOpen(w.symbol));
   if (openAandelen.length === 0) {
     el.textContent = '😴 Geen beurzen open — auto-analyse wacht';
