@@ -267,8 +267,16 @@ app.get('/api/quote/:symbol', async (req, res) => {
   }
 });
 
-// POST /api/trades/save  — sla afgeronde trade op in history
-app.post('/api/trades/save', (req, res) => {
+// GET /api/news/watchlist — headlines per US symbool (gebruikt cache, geen extra credits)
+app.get('/api/news/watchlist', async (req, res) => {
+  const result = {};
+  for (const sym of TWELVE_DATA_SYMBOLS) {
+    result[sym] = await haalNieuwsOp(sym);
+  }
+  res.json(result);
+});
+
+// POST /api/trades/save  — sla afgeronde trade op in historyapp.post('/api/trades/save', (req, res) => {
   const { symbol, resultaat, winst, entry, stop_loss, target, rsi, signaal, tijdstip, datum, label } = req.body;
   if (!symbol || !resultaat) return res.status(400).json({ error: 'symbol en resultaat zijn verplicht' });
   tradeHistory.unshift({ symbol, resultaat, winst, entry, stop_loss, target, rsi, signaal, tijdstip, datum, label, opgeslagenOm: new Date().toISOString() });

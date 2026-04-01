@@ -254,6 +254,10 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     <span id="selectie-info" style="font-size:12px;color:#94a3b8;"></span>
   </div>
 </div>
+  <!-- Nieuws trigger alert -->
+  <div id="nieuws-alert" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:12px 16px;margin-bottom:12px;font-size:13px;color:#92400e;">
+    <strong>🚨 Nieuws trigger:</strong> <span id="nieuws-alert-tekst"></span>
+  </div>
   <!-- Voortgang -->
   <div id="voortgang-wrap" style="display:none;background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     <div style="font-size:13px;font-weight:600;color:#64748b;margin-bottom:8px;" id="voortgang-titel">Bezig...</div>
@@ -781,7 +785,55 @@ async function analyseAlleAandelen() {
   btn.disabled = true;
   btn.textContent = '⏳ Bezig...';
   document.getElementById('voortgang-wrap').style.display = 'block';
-  window.analyseBezig = true; // Pauzeer updateKoersen
+// ============================================
+// KERN ANALYSE — herbruikbaar door cyclus én nieuws-trigger
+// ============================================
+async function haalAnalyseOp(item) {
+  const quoteRes = await fetch(`/api/quote/${item.symbol}?interval=15m`);
+  const quoteData = await quoteRes.json();
+  if (!quoteRes.ok) throw new Error(`Server ${quoteRes.status}: ${quoteData.error || 'onbekend'}`);
+  const quotes = quoteData.quotes || [];
+  if (quotes.length < 2) throw new Error('Te weinig data');
+  const last = quotes[quotes.length - 1];
+  const closes = quotes.map(q => q.close);
+  const rsi = berekenRSI(closes);
+  const macdData = berekenMACD(closes);
+  const bb = berekenBollinger(closes);
+  const trend = closes.slice(-5).reduce((a,b)=>a+b,0)/5 > closes.slice(-10,-5).reduce((a,b)=>a+b,0)/5 ? 'OPWAARTS' : 'NEERWAARTS';
+  const rsiVorig = berekenRSI(closes.slice(0, -3));
+  const rsiTrend = rsi > rsiVorig + 1 ? 'STIJGEND' : rsi < rsiVorig - 1 ? 'DALEND' : 'STABIEL';
+  const macdVorig = berekenMACD(closes.slice(0, -1));
+  const macdRichting = macdData.histogram > macdVorig.histogram ? 'STIJGEND' : 'DALEND';
+  const huidigVolume = last.volume || 0;
+  const gemiddeldVolume = quotes.slice(-20).reduce((a, b) => a + (b.volume || 0), 0) / 20;
+  const volumeRatio = gemiddeldVolume > 0 ? (huidigVolume / gemiddeldVolume).toFixed(2) : '0.00';
+  const openingGap = quotes.length > 1 ? ((quotes[0].close - quotes[quotes.length-1].close) / quotes[quotes.length-1].close * 100).toFixed(2) : null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000);
+  const analyseRes = await fetch('/api/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: controller.signal,
+    body: JSON.stringify({ symbol: item.symbol, interval: '15m', quotes: quotes.slice(-30),
+      indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio } })
+  });
+  clearTimeout(timeoutId);
+  const ai = await analyseRes.json();
+  return {
+    symbol: item.symbol, label: item.label, vlag: item.vlag || '',
+    prijs: last.close,
+    tijdstip: new Date().toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit' }),
+    datum: new Date().toLocaleDateString('nl-NL'),
+    signaal: ai.signaal || 'WACHT', actie: ai.actie || ai.signaal || 'WACHT',
+    vertrouwen: ai.vertrouwen || 0,
+    entry: ai.entry, stop_loss: ai.stop_loss, target: ai.target, rr_ratio: ai.rr_ratio,
+    redenering: ai.redenering || '', instap_tijd: ai.instap_tijd || '',
+    dagtrend: ai.dagtrend || '', nieuws_sentiment: ai.nieuws_sentiment || '',
+    rsi: rsi.toFixed(1), macd: macdData.macd.toFixed(2), resultaat: 'onbekend',
+  };
+}
+
+
   huidigeAnalyses = [];
   renderLadenKaarten();
   const teAnalyseren = WATCHLIST.filter(w =>
@@ -796,73 +848,8 @@ async function analyseAlleAandelen() {
       ' (' + (i+1) + '/' + teAnalyseren.length + ')';
     document.getElementById('voortgang-status').textContent =
       i > 0 ? teAnalyseren.slice(0,i).map(w=>w.label).join(', ') + ' klaar' : '';
-      let quotes = [], last = null, rsi = null, macdData = null, bb = null, trend = null;
-    try {
-      const quoteRes = await fetch(`/api/quote/${item.symbol}?interval=15m`);
-      const quoteData = await quoteRes.json();
-      if (!quoteRes.ok) throw new Error(`Server ${quoteRes.status}: ${quoteData.error || 'onbekend'}`);
-      quotes = quoteData.quotes || [];
-      last = quotes.length > 0
-        ? quotes[quotes.length - 1]
-        : null;
-      if (quotes.length < 2) throw new Error('Te weinig data');
-      const closes = quotes.map(q => q.close);
-      rsi = berekenRSI(closes);
-      macdData = berekenMACD(closes);
-      bb = berekenBollinger(closes);
-      trend = closes.slice(-5).reduce((a,b)=>a+b,0)/5 >
-                    closes.slice(-10,-5).reduce((a,b)=>a+b,0)/5
-                    ? 'OPWAARTS' : 'NEERWAARTS';
-      // RSI richting: vergelijk met 3 candles geleden
-      const rsiVorig = berekenRSI(closes.slice(0, -3));
-      const rsiTrend = rsi > rsiVorig + 1 ? 'STIJGEND' : rsi < rsiVorig - 1 ? 'DALEND' : 'STABIEL';
-      // MACD histogram richting: vergelijk met vorige candle
-      const macdVorig = berekenMACD(closes.slice(0, -1));
-      const macdRichting = macdData.histogram > macdVorig.histogram ? 'STIJGEND' : 'DALEND';
-      const huidigVolume = last.volume || 0;
-      const gemiddeldVolume = quotes.slice(-20).reduce((a, b) => a + (b.volume || 0), 0) / 20;
-      const volumeRatio = gemiddeldVolume > 0 ? (huidigVolume / gemiddeldVolume).toFixed(2) : '0.00';
-      const openingGap = quotes.length > 1
-        ? ((quotes[0].close - quotes[quotes.length-1].close)
-           / quotes[quotes.length-1].close * 100).toFixed(2)
-        : null;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000);
-      const analyseRes = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          symbol: item.symbol,
-          interval: '15m',
-          quotes: quotes.slice(-30),
-          indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio }
-        })
-      });
-      clearTimeout(timeoutId);
-      const ai = await analyseRes.json();
-      const resultaat = {
-        symbol: item.symbol,
-        label: item.label,
-        vlag: item.vlag,
-        prijs: last.close,
-        tijdstip: new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}),
-        datum: new Date().toLocaleDateString('nl-NL'),
-        signaal: ai.signaal || 'WACHT',
-        actie: ai.actie || ai.signaal || 'WACHT',
-        vertrouwen: ai.vertrouwen || 0,
-        entry: ai.entry,
-        stop_loss: ai.stop_loss,
-        target: ai.target,
-        rr_ratio: ai.rr_ratio,
-        redenering: ai.redenering || '',
-        instap_tijd: ai.instap_tijd || '',
-        dagtrend: ai.dagtrend || '',
-        nieuws_sentiment: ai.nieuws_sentiment || '',
-        rsi: rsi.toFixed(1),
-        macd: macdData.macd.toFixed(2),
-        resultaat: 'onbekend',
-      };
+      try {
+      const resultaat = await haalAnalyseOp(item);
       huidigeAnalyses.push(resultaat);
       await simuleerTradesB([resultaat]);
       renderSimulaties();
@@ -870,71 +857,12 @@ async function analyseAlleAandelen() {
       await new Promise(resolve => setTimeout(resolve, 2500));
     } catch(e) {
       console.error('Fout voor ' + item.symbol + ':', e.message);
-
-      // Bij timeout: probeer opnieuw met kortere analyse
-      if (e.name === 'AbortError') {
-        try {
-          const controller2 = new AbortController();
-          const timeoutId2 = setTimeout(() => controller2.abort(), 30000);
-
-          const retryRes = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller2.signal,
-            body: JSON.stringify({
-              symbol: item.symbol,
-              interval: '15m',
-              quotes: quotes.slice(-10),
-              indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, volumeRatio }
-            })
-          });
-          clearTimeout(timeoutId2);
-          const retryAi = await retryRes.json();
-
-          const resultaat = {
-            symbol: item.symbol,
-            label: item.label,
-            vlag: item.vlag,
-            prijs: last?.close,
-            tijdstip: new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}),
-            datum: new Date().toLocaleDateString('nl-NL'),
-            signaal: retryAi.signaal || 'WACHT',
-            actie: retryAi.actie || retryAi.signaal || 'WACHT',
-            vertrouwen: retryAi.vertrouwen || 0,
-            entry: retryAi.entry,
-            stop_loss: retryAi.stop_loss,
-            target: retryAi.target,
-            rr_ratio: retryAi.rr_ratio,
-            redenering: retryAi.redenering || '',
-            instap_tijd: retryAi.instap_tijd || '',
-            rsi: rsi.toFixed(1),
-            macd: macdData.macd.toFixed(2),
-            resultaat: 'onbekend',
-          };
-          huidigeAnalyses.push(resultaat);
-          await simuleerTradesB([resultaat]);
-          renderSimulaties();
-          updateKaart(i, resultaat);
-          await new Promise(resolve => setTimeout(resolve, 2500));
-          continue;
-        } catch(e2) {
-          console.error('Retry ook mislukt voor ' + item.symbol);
-        }
-      }
       const fout = {
-        symbol: item.symbol, label: item.label, vlag: item.vlag,
-        prijs: quotes?.length > 0
-          ? quotes[quotes.length-1]?.close
-          : null,
-        signaal: 'FOUT', actie: 'FOUT',
-        redenering: e.name === 'AbortError'
-          ? 'Analyse duurde te lang. Probeer later opnieuw tijdens beursopeningstijden.'
-          : 'Fout: ' + e.message,
+        symbol: item.symbol, label: item.label, vlag: item.vlag || '',
+        prijs: null, signaal: 'FOUT', actie: 'FOUT',
+        redenering: e.name === 'AbortError' ? 'Analyse duurde te lang.' : 'Fout: ' + e.message,
         tijdstip: new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}),
-        datum: new Date().toLocaleDateString('nl-NL'),
-        rsi: rsi?.toFixed(1),
-        macd: macdData?.macd?.toFixed(2),
-        resultaat: 'onbekend',
+        datum: new Date().toLocaleDateString('nl-NL'), resultaat: 'onbekend',
       };
       huidigeAnalyses.push(fout);
       updateKaart(i, fout);
@@ -2814,10 +2742,75 @@ async function updateKoersen() {
   console.log('updateKoersen: klaar.');
 }
 
+// ============================================
+// NIEUWS TRIGGER — elke 5 min tijdens US markt
+// ============================================
+const bekendNieuws = {};       // { symbol: Set<headline> }
+const nieuwsCooldown = {};     // { symbol: timestamp } — max 1 trigger per 10 min per symbool
+
+async function checkNieuwsTrigger() {
+  if (window.analyseBezig) return;
+  try {
+    const r = await fetch('/api/news/watchlist');
+    if (!r.ok) return;
+    const data = await r.json();
+    for (const [sym, headlines] of Object.entries(data)) {
+      if (!isBeursOpen(sym)) continue;
+      if (!headlines || headlines.length === 0) continue;
+      // Initialiseer bij eerste check — sla op zonder te triggeren
+      if (!bekendNieuws[sym]) { bekendNieuws[sym] = new Set(headlines); continue; }
+      const nieuw = headlines.filter(h => !bekendNieuws[sym].has(h));
+      if (nieuw.length === 0) continue;
+      nieuw.forEach(h => bekendNieuws[sym].add(h));
+      // Cooldown: niet meer dan 1x per 10 min per symbool
+      const nu = Date.now();
+      if (nieuwsCooldown[sym] && nu - nieuwsCooldown[sym] < 10 * 60 * 1000) continue;
+      nieuwsCooldown[sym] = nu;
+      const headline = nieuw[0];
+      console.log(`Nieuws trigger: ${sym} — ${headline}`);
+      // Toon alert banner
+      const alertEl = document.getElementById('nieuws-alert');
+      const alertTekst = document.getElementById('nieuws-alert-tekst');
+      if (alertEl && alertTekst) {
+        alertTekst.textContent = `${sym}: "${headline}" — analyse gestart`;
+        alertEl.style.display = 'block';
+        setTimeout(() => { alertEl.style.display = 'none'; }, 30000);
+      }
+      // Trigger directe analyse voor dit symbool
+      const item = WATCHLIST.find(w => w.symbol === sym);
+      if (!item) continue;
+      try {
+        window.analyseBezig = true;
+        const resultaat = await haalAnalyseOp(item);
+        huidigeAnalyses.push(resultaat);
+        await simuleerTradesB([resultaat]);
+        await checkOpenPosities();
+        renderSimulaties();
+        console.log(`Nieuws analyse klaar: ${sym} → ${resultaat.signaal}`);
+      } catch(e) {
+        console.warn(`Nieuws analyse mislukt voor ${sym}:`, e.message);
+      } finally {
+        window.analyseBezig = false;
+      }
+    }
+  } catch(e) {
+    console.warn('checkNieuwsTrigger fout:', e.message);
+  }
+}
+
 window.addEventListener('load', () => {
   updateAutoAnalyseStatus();
   Notification.requestPermission();
   setTimeout(checkOpenPosities, 3000);
+  // Nieuws trigger: start polling elke 5 min tijdens US markturen
+  const nu = new Date();
+  const amst = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+  const totMin = amst.getHours() * 60 + amst.getMinutes();
+  if (totMin >= 15 * 60 + 30 && totMin < 22 * 60) {
+    console.log('US markt open — nieuws trigger actief (elke 5 min)');
+    setTimeout(checkNieuwsTrigger, 5000); // eerste check na 5s (initialiseer bekendNieuws)
+    setInterval(checkNieuwsTrigger, 5 * 60 * 1000);
+  }
 });
 </script>
 </body>
