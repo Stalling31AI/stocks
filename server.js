@@ -202,41 +202,47 @@ app.get('/api/quote/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const { interval = '1d' } = req.query;
 
-    // Twelve Data voor US real-time symbolen
+    // Twelve Data voor US real-time symbolen (met Yahoo fallback bij kredietlimiet)
     if (TWELVE_DATA_SYMBOLS.has(symbol)) {
       // Controleer cache eerst — bespaart TD-credit als data recent genoeg is
       const cached = tdCacheGet(symbol, interval);
       if (cached) return res.json(cached);
 
-      const now = Date.now();
-      const recent = _tdCallTimes.filter(t => now - t < 60000).length;
-      console.log(`[TD] call aangevraagd: ${symbol} | credits deze minuut (voor call): ${recent} | route: ${req.headers.referer || 'onbekend'}`);
-      await tdRateLimit();
-      const tdIntervalMap = { '5m':'5min', '15m':'15min', '1h':'1h', '1d':'1day' };
-      const tdInterval = tdIntervalMap[interval] || '15min';
-      const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${tdInterval}&format=JSON&outputsize=100&timezone=UTC&apikey=${TWELVE_DATA_KEY}`;
-      console.log('Fetching TD:', symbol, tdInterval);
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
-      });
-      if (!response.ok) throw new Error(`Twelve Data returned ${response.status}`);
-      const data = await response.json();
-      if (data.status === 'error') throw new Error('Twelve Data: ' + (data.message || 'onbekende fout'));
-      const values = (data.values || []).slice().reverse(); // newest-first → oldest-first
-      const quotes = values.map(v => ({
-        date: new Date(v.datetime.replace(' ', 'T') + 'Z').toISOString(),
-        open:   +parseFloat(v.open).toFixed(4),
-        high:   +parseFloat(v.high).toFixed(4),
-        low:    +parseFloat(v.low).toFixed(4),
-        close:  +parseFloat(v.close).toFixed(4),
-        volume: parseInt(v.volume) || 0,
-      })).filter(q => q.open && q.close && q.high && q.low);
-      if (quotes.length === 0) {
-        return res.json({ symbol, interval, quotes: [], meta: { currency: 'USD', source: 'twelvedata' }, bericht: 'Geen data van Twelve Data.' });
+      try {
+        const now = Date.now();
+        const recent = _tdCallTimes.filter(t => now - t < 60000).length;
+        console.log(`[TD] call aangevraagd: ${symbol} | credits deze minuut (voor call): ${recent} | route: ${req.headers.referer || 'onbekend'}`);
+        await tdRateLimit();
+        const tdIntervalMap = { '5m':'5min', '15m':'15min', '1h':'1h', '1d':'1day' };
+        const tdInterval = tdIntervalMap[interval] || '15min';
+        const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${tdInterval}&format=JSON&outputsize=100&timezone=UTC&apikey=${TWELVE_DATA_KEY}`;
+        console.log('Fetching TD:', symbol, tdInterval);
+        const response = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
+        });
+        if (!response.ok) throw new Error(`Twelve Data returned ${response.status}`);
+        const data = await response.json();
+        if (data.status === 'error') throw new Error('Twelve Data: ' + (data.message || 'onbekende fout'));
+        const values = (data.values || []).slice().reverse();
+        const quotes = values.map(v => ({
+          date: new Date(v.datetime.replace(' ', 'T') + 'Z').toISOString(),
+          open:   +parseFloat(v.open).toFixed(4),
+          high:   +parseFloat(v.high).toFixed(4),
+          low:    +parseFloat(v.low).toFixed(4),
+          close:  +parseFloat(v.close).toFixed(4),
+          volume: parseInt(v.volume) || 0,
+        })).filter(q => q.open && q.close && q.high && q.low);
+        if (quotes.length === 0) {
+          return res.json({ symbol, interval, quotes: [], meta: { currency: 'USD', source: 'twelvedata' }, bericht: 'Geen data van Twelve Data.' });
+        }
+        const result = { symbol, interval, meta: { currency: 'USD', source: 'twelvedata' }, quotes };
+        tdCacheSet(symbol, interval, result);
+        return res.json(result);
+      } catch (tdErr) {
+        // TD faalde (credits op, timeout, etc.) — val terug op Yahoo Finance
+        console.warn(`[TD-fallback] ${symbol} via Yahoo (TD fout: ${tdErr.message})`);
+        // val door naar Yahoo-pad hieronder
       }
-      const result = { symbol, interval, meta: { currency: 'USD', source: 'twelvedata' }, quotes };
-      tdCacheSet(symbol, interval, result); // sla op in cache
-      return res.json(result);
     }
 
     const intervalMap = {
@@ -287,7 +293,9 @@ app.get('/api/quote/:symbol', async (req, res) => {
         bericht: 'Geen data beschikbaar voor dit timeframe. Beurs mogelijk gesloten.'
       });
     }
-    res.json({ symbol, interval, meta: result.meta, quotes });
+    const isUsFallback = TWELVE_DATA_SYMBOLS.has(symbol);
+    if (isUsFallback) console.log(`[Yahoo-fallback] ${symbol} ${interval}: ${quotes.length} candles (15m vertraagd)`);
+    res.json({ symbol, interval, meta: result.meta, quotes, bron: isUsFallback ? 'yahoo_fallback' : 'yahoo' });
   } catch (err) {
     console.error('Quote error:', err.message);
     res.status(500).json({ error: err.message });
