@@ -116,6 +116,23 @@ const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
 const TWELVE_DATA_SYMBOLS = new Set(['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML']);
 const _tdCallTimes = [];
 let _tdQueue = Promise.resolve(); // Serialiseert alle TD-calls: nooit gelijktijdig
+
+// Cache: voorkomt dubbele TD-calls binnen 14 minuten voor hetzelfde symbool+interval
+const _tdCache = new Map(); // key: "SYMBOL:interval" → { data, timestamp }
+const TD_CACHE_MS = 14 * 60 * 1000; // 14 minuten (15m candle verandert toch niet vaker)
+
+function tdCacheGet(symbol, interval) {
+  const key = `${symbol}:${interval}`;
+  const hit = _tdCache.get(key);
+  if (hit && Date.now() - hit.timestamp < TD_CACHE_MS) {
+    console.log(`[TD-cache] HIT ${symbol} ${interval} (${Math.round((Date.now()-hit.timestamp)/1000)}s oud) — TD-call gespaard`);
+    return hit.data;
+  }
+  return null;
+}
+function tdCacheSet(symbol, interval, data) {
+  _tdCache.set(`${symbol}:${interval}`, { data, timestamp: Date.now() });
+}
 async function tdRateLimit() {
   // Wacht tot vorige call klaar is (queue), dan minimaal 8s gap
   _tdQueue = _tdQueue.then(() => new Promise(async resolve => {
@@ -187,6 +204,10 @@ app.get('/api/quote/:symbol', async (req, res) => {
 
     // Twelve Data voor US real-time symbolen
     if (TWELVE_DATA_SYMBOLS.has(symbol)) {
+      // Controleer cache eerst — bespaart TD-credit als data recent genoeg is
+      const cached = tdCacheGet(symbol, interval);
+      if (cached) return res.json(cached);
+
       const now = Date.now();
       const recent = _tdCallTimes.filter(t => now - t < 60000).length;
       console.log(`[TD] call aangevraagd: ${symbol} | credits deze minuut (voor call): ${recent} | route: ${req.headers.referer || 'onbekend'}`);
@@ -213,7 +234,9 @@ app.get('/api/quote/:symbol', async (req, res) => {
       if (quotes.length === 0) {
         return res.json({ symbol, interval, quotes: [], meta: { currency: 'USD', source: 'twelvedata' }, bericht: 'Geen data van Twelve Data.' });
       }
-      return res.json({ symbol, interval, meta: { currency: 'USD', source: 'twelvedata' }, quotes });
+      const result = { symbol, interval, meta: { currency: 'USD', source: 'twelvedata' }, quotes };
+      tdCacheSet(symbol, interval, result); // sla op in cache
+      return res.json(result);
     }
 
     const intervalMap = {
