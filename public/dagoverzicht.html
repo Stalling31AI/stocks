@@ -77,6 +77,15 @@ tr:hover td { background:#f8fafc; }
     <span id="bijzondere-dag-label" style="font-size:12px;color:#d97706;font-weight:600;display:none;"></span>
   </div>
   <!-- Samenvatting balk -->
+  <!-- Marktcontext balk -->
+  <div id="markt-context-balk" style="background:#fff;border-radius:10px;padding:10px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:12px;">
+    <span style="font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-size:10px;">Marktregime</span>
+    <span id="ctx-spy" style="font-weight:600;">SPY —</span>
+    <span id="ctx-qqq" style="font-weight:600;">QQQ —</span>
+    <span id="ctx-vix" style="font-weight:600;">VIX —</span>
+    <span id="ctx-regime" style="color:#64748b;flex:1;">laden...</span>
+    <button onclick="laadMarktContext()" style="font-size:10px;padding:3px 8px;border:1px solid #e2e8f0;border-radius:5px;background:#f8fafc;cursor:pointer;color:#64748b;">↻</button>
+  </div>
   <div id="samenvatting" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
     <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;">
       <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Koop signalen</div>
@@ -2742,15 +2751,69 @@ document.addEventListener('visibilitychange', () => {
     });
   }
 });
+async function laadMarktContext() {
+  try {
+    const data = await fetch('/api/marktcontext').then(r => r.json());
+    const spyEl  = document.getElementById('ctx-spy');
+    const qqqEl  = document.getElementById('ctx-qqq');
+    const vixEl  = document.getElementById('ctx-vix');
+    const regEl  = document.getElementById('ctx-regime');
+    if (spyEl) {
+      const kleur = data.spyPct > 0 ? '#16a34a' : data.spyPct < 0 ? '#dc2626' : '#64748b';
+      spyEl.innerHTML = `<span style="color:${kleur};font-weight:700;">SPY ${data.spy}</span>`;
+    }
+    if (qqqEl) {
+      const kleur = data.qqqPct > 0 ? '#16a34a' : data.qqqPct < 0 ? '#dc2626' : '#64748b';
+      qqqEl.innerHTML = `<span style="color:${kleur};font-weight:700;">QQQ ${data.qqq}</span>`;
+    }
+    if (vixEl) {
+      const vixKleur = data.vixWaarde > 30 ? '#dc2626' : data.vixWaarde > 20 ? '#d97706' : '#16a34a';
+      vixEl.innerHTML = `<span style="color:${vixKleur};font-weight:700;">VIX ${data.vix}</span>`;
+    }
+    if (regEl) regEl.textContent = data.regime;
+    window.marktCtxCache = data;
+  } catch(e) {
+    const regEl = document.getElementById('ctx-regime');
+    if (regEl) regEl.textContent = 'marktcontext niet beschikbaar';
+  }
+}
+
+function isLunchPeriode() {
+  // US lunch = 12:00-13:30 ET = 18:00-19:30 Amsterdam
+  const nu = new Date();
+  const nlTijd = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+  const totMin = nlTijd.getHours() * 60 + nlTijd.getMinutes();
+  return totMin >= 18 * 60 && totMin < 19 * 60 + 30;
+}
+
 async function voerAutoAnalyseUit() {
   if (!autoAnalyseActief) return;
 
-  const openAandelen = WATCHLIST.filter(w =>
-    isBeursOpen(w.symbol)
-  );
+  // Ververs marktcontext elke run
+  laadMarktContext();
+
+  // Lunchfilter: 18:00-19:30 Amsterdam = US lunch (laag volume, valse signalen)
+  const lunchNu = isLunchPeriode();
+
+  const openAandelen = WATCHLIST.filter(w => {
+    if (!isBeursOpen(w.symbol)) return false;
+    // Sla US aandelen over tijdens lunchperiode, tenzij er al een open positie is
+    if (lunchNu && USD_SYMBOLS.includes(w.symbol)) {
+      const heeftOpenPos = geselecteerdeSimB && geselecteerdeSimB.some &&
+        geselecteerdeSimB.some(s => s.symbol === w.symbol && s.resultaat === null);
+      if (!heeftOpenPos) {
+        console.log(`[Lunchfilter] ${w.symbol} overgeslagen (US lunch 18:00-19:30)`);
+        return false;
+      }
+    }
+    return true;
+  });
 
   if (openAandelen.length === 0) {
-    console.log('Auto-analyse: geen beurzen open');
+    const reden = lunchNu ? 'lunchpauze US (18:00-19:30)' : 'geen beurzen open';
+    console.log('Auto-analyse: geen aandelen —', reden);
+    const el = document.getElementById('auto-analyse-status');
+    if (el && lunchNu) el.textContent = '🍽 Lunchpauze US markt (18:00-19:30) — volgende run na 19:30';
     updateAutoAnalyseStatus();
     return;
   }
@@ -3051,6 +3114,10 @@ window.addEventListener('load', () => {
   updateAutoAnalyseStatus();
   Notification.requestPermission();
   setTimeout(checkOpenPosities, 3000);
+
+  // Marktcontext laden bij start + elke 15 min verversen
+  laadMarktContext();
+  setInterval(laadMarktContext, 15 * 60 * 1000);
 
   const nu = new Date();
   const amst = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));

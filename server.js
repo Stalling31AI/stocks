@@ -329,6 +329,77 @@ app.get('/api/news/briefing', async (req, res) => {
   res.json(briefing);
 });
 
+// ── MARKTCONTEXT CACHE (SPY/QQQ/VIX) ─────────────────────────────────────
+let _marktContextCache = null;
+let _marktContextTs = 0;
+const MARKT_CACHE_MS = 14 * 60 * 1000;
+
+async function haalMarktContext() {
+  if (_marktContextCache && Date.now() - _marktContextTs < MARKT_CACHE_MS) {
+    return _marktContextCache;
+  }
+  try {
+    const symbolen = ['SPY', 'QQQ', '^VIX'];
+    const resultaten = await Promise.all(symbolen.map(async sym => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d&includePrePost=false`;
+        const resp = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
+        });
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        const r = data?.chart?.result?.[0];
+        if (!r || !r.timestamp || r.timestamp.length < 2) return null;
+        const closes = r.indicators?.quote?.[0]?.close;
+        if (!closes) return null;
+        const valid = closes.filter(c => c != null);
+        if (valid.length < 2) return null;
+        const gisteren = valid[valid.length - 2];
+        const vandaag  = valid[valid.length - 1];
+        const pct = +((vandaag - gisteren) / gisteren * 100).toFixed(2);
+        return { sym, prijs: +vandaag.toFixed(2), pct };
+      } catch {
+        return null;
+      }
+    }));
+    const spy  = resultaten.find(r => r?.sym === 'SPY');
+    const qqq  = resultaten.find(r => r?.sym === 'QQQ');
+    const vix  = resultaten.find(r => r?.sym === '^VIX');
+    if (!spy && !qqq && !vix) return null;
+
+    const vixWaarde = vix?.prijs ?? null;
+    let regime = 'neutraal';
+    if (vixWaarde !== null) {
+      if (vixWaarde > 30) regime = 'hoge angst — defensief handelen, kleinere posities';
+      else if (vixWaarde > 20) regime = 'verhoogde volatiliteit — let op plotse bewegingen';
+      else regime = 'laag — trend-following werkt goed';
+    }
+    const ctx = {
+      spy:   spy  ? `${spy.pct > 0 ? '+' : ''}${spy.pct}% ($${spy.prijs})`  : 'N/A',
+      qqq:   qqq  ? `${qqq.pct > 0 ? '+' : ''}${qqq.pct}% ($${qqq.prijs})`  : 'N/A',
+      vix:   vix  ? `${vix.prijs}`  : 'N/A',
+      regime,
+      spyPct: spy?.pct ?? null,
+      qqqPct: qqq?.pct ?? null,
+      vixWaarde,
+    };
+    _marktContextCache = ctx;
+    _marktContextTs = Date.now();
+    console.log(`[MarktCtx] SPY ${ctx.spy} | QQQ ${ctx.qqq} | VIX ${ctx.vix} → ${regime}`);
+    return ctx;
+  } catch (err) {
+    console.warn('[MarktCtx] fout:', err.message);
+    return null;
+  }
+}
+
+// GET /api/marktcontext — SPY/QQQ/VIX marktregime
+app.get('/api/marktcontext', async (req, res) => {
+  const ctx = await haalMarktContext();
+  if (!ctx) return res.status(503).json({ error: 'Marktcontext niet beschikbaar' });
+  res.json(ctx);
+});
+
 // GET /api/news/watchlist — headlines per US symbool (gebruikt cache, geen extra credits)
 app.get('/api/news/watchlist', async (req, res) => {
   const result = {};
@@ -353,10 +424,11 @@ app.post('/api/analyze', async (req, res) => {
   try {
     const { symbol, interval, quotes, indicators } = req.body;
 
-    // Haal nieuws en trade history parallel op
-    const [headlines, symHistory] = await Promise.all([
+    // Haal nieuws, trade history en marktcontext parallel op
+    const [headlines, symHistory, marktCtx] = await Promise.all([
       haalNieuwsOp(symbol),
-      Promise.resolve(tradeHistory.filter(t => t.symbol === symbol).slice(0, 10))
+      Promise.resolve(tradeHistory.filter(t => t.symbol === symbol).slice(0, 10)),
+      haalMarktContext(),
     ]);
 
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -453,25 +525,41 @@ app.post('/api/analyze', async (req, res) => {
             ? `✅ STIJGENDE DAG: +${intradayPct}% boven openingskoers`
             : `Neutraal: ${intradayPct}% t.o.v. open`)
       : '';
+    const isUS = !symbol.includes('.') || symbol.endsWith('');
+    const marktContextRegel = marktCtx
+      ? `MARKTREGIME (SPY/QQQ/VIX):
+SPY: ${marktCtx.spy} | QQQ: ${marktCtx.qqq} | VIX: ${marktCtx.vix}
+Regime: ${marktCtx.regime}
+${marktCtx.vixWaarde > 30 ? '⚠️ HOGE ANGST (VIX>30): verlaag positiegrootte, wijd stops, alleen STERKE signalen handelen' :
+  marktCtx.vixWaarde > 20 ? '⚠️ VERHOOGDE VOLATILITEIT: extra bevestiging vereist voor instap' :
+  marktCtx.spyPct < -1.0 ? '⚠️ MARKT DAALT: alleen handelen bij uitzonderlijk sterke relatieve kracht' :
+  marktCtx.spyPct > 0.5 && marktCtx.qqqPct > 0.5 ? '✅ MARKT STIJGT: trend-following kansen groot, koop momentum breakouts' :
+  'Neutraal marktklimaat'}`
+      : '';
+
     const prompt = `Elite daytrader analyse voor ${symbol}.
 Tijd: ${amsterdamTijd} | Markt: ${marktContext}
+${marktContextRegel}
 INTRADAY SITUATIE:
 ${intradayWaarschuwing}
 ${lhll ? `❌ PATROON: ${lhll} — GEEN KOOP tegen de trend in` : ''}
-KRITISCHE LEERREGEL: Als een aandeel de hele dag daalt (LH+LL patroon, >1.5% onder open),
-geef dan WACHT. Koop NOOIT herhaaldelijk in een duidelijke downtrend.
-Sector focus: Halfgeleiders (ASML/AMD/NVDA) bewegen vaak synchroon.
+KERNSTRATEGIE: Handel MET de trend. Koop momentum, geen dips in dalende aandelen.
+✅ Trend-volgende koop: RSI STIJGEND + MACD STIJGEND + volume > 1.2x + koers boven vorige candle-high
+✅ Pullback in uptrend: intraday > +0.5%, korte terugval naar support, RSI > 45 en stijgend
+❌ Koop NOOIT: dalend aandeel (LH+LL), RSI < 45 EN dalend, MACD bearish, intraday < -1.5%
+KRITISCHE LEERREGEL: Sla een cyclus over als er geen duidelijk momentum is. Een gemiste kans is beter dan een verliesgevende trade.
+Sector focus: Halfgeleiders (ASML/AMD/NVDA/AMAT) bewegen vaak synchroon. Relatieve kracht = goud.
 ${symbol === 'LMT' ? '⚠️ LMT WAARSCHUWING: Dit aandeel heeft weinig intraday beweging. Alleen handelen bij vertrouwen ≥75% EN duidelijk technisch signaal.' : ''}
 KOERS & DAG:
 Prijs: €${fmt(last.close)} | Gap: ${openingGap || 0}% | Intraday: ${intradayPct !== null ? intradayPct + '%' : 'N/A'} t.o.v. open
 Dag range: €${dagLaag} - €${dagHoog} (€${dagRange.toFixed(0)}, ${rangePct}%)
 Positie in range: ${positieInRange}% ${Number(positieInRange) < 25 ? '← DICHT BIJ DAGLAAG' : Number(positieInRange) > 75 ? '← DICHT BIJ DAGHOOG' : ''}
 INDICATOREN:
-RSI: ${fmt(indicators.rsi)} (${indicators.rsiTrend || '?'}) ${Number(indicators.rsi) < 40 ? '← OVERSOLD ✅' : Number(indicators.rsi) > 65 ? '← OVERBOUGHT ❌' : '← neutraal'}
-MACD histogram: ${fmt(indicators.macd?.histogram, 4)} (${indicators.macdRichting || '?'}) ${indicators.macd?.histogram > 0 ? '← bullish' : '← bearish'}
+RSI: ${fmt(indicators.rsi)} (${indicators.rsiTrend || '?'}) ${Number(indicators.rsi) > 55 && indicators.rsiTrend === 'STIJGEND' ? '← MOMENTUM ✅' : Number(indicators.rsi) < 40 ? '← OVERSOLD ⚠️ (alleen kopen als RSI nu omhoog draait)' : Number(indicators.rsi) > 65 ? '← OVERBOUGHT ❌' : '← neutraal'}
+MACD histogram: ${fmt(indicators.macd?.histogram, 4)} (${indicators.macdRichting || '?'}) ${indicators.macd?.histogram > 0 && indicators.macdRichting === 'STIJGEND' ? '← bullish momentum ✅' : indicators.macd?.histogram > 0 ? '← bullish' : '← bearish'}
 Bollinger: L=${fmt(indicators.bb?.lower)} M=${fmt(indicators.bb?.middle)} U=${fmt(indicators.bb?.upper)}
-Koers vs BB: ${Number(last.close) < Number(indicators.bb?.lower) ? '← ONDER lower ✅ KOOP SIGNAAL' : Number(last.close) > Number(indicators.bb?.upper) ? '← BOVEN upper ❌' : '← binnen bands'}
-VOLUME: ${volumeRatio}x gemiddeld ${Number(volumeRatio) > 1.5 ? '← HOOG ✅' : Number(volumeRatio) < 0.3 ? '← LAAG ⚠️' : ''}
+Koers vs BB: ${Number(last.close) < Number(indicators.bb?.lower) ? '← ONDER lower (wacht op terugkeer boven lower, dan koop)' : Number(last.close) > Number(indicators.bb?.upper) ? '← BOVEN upper ❌ uitgestrektheid' : '← binnen bands'}
+VOLUME: ${volumeRatio}x gemiddeld ${Number(volumeRatio) > 1.5 ? '← HOOG ✅ momentum bevestigd' : Number(volumeRatio) < 0.3 ? '← LAAG ⚠️ geen momentum' : ''}
 LAATSTE 5 KAARSEN:
 ${recent.slice(-5).map(q => {
   const d = new Date(q.date);
@@ -480,16 +568,18 @@ ${recent.slice(-5).map(q => {
 }).join('\n')}
 ATR (15m, 14 periodes): ${indicators.atr ? fmt(indicators.atr) : 'N/A'} ${indicators.atr ? `← normale candle-beweging = €${fmt(indicators.atr)}` : ''}
 TRADING PROFIEL: Day trader. Risico per trade: €75 vast. Positiegrootte = floor(75/stop_EUR), max 10. Dagdoel: €200-300 netto via 3-5 trades.
-KOOP CRITERIA (alleen als ALLE checks groen zijn):
-✓ OVERSOLD BOUNCE: RSI < 40 EN prijs toont bodemvorming (candle-wick omhoog) EN intraday NIET < -1.5% → KOOP NU.
-✓ MOMENTUM BREAKOUT: RSI 44-58 EN RSI STIJGEND EN MACD STIJGEND EN volume > 1.2x EN intradag neutraal/positief → KOOP NU.
-✓ BOLLINGER SQUEEZE: Prijs onder Middle BB met RSI STIJGEND EN geen LH+LL patroon → KOOP NU.
+KOOP CRITERIA (momentum-first, alleen als ALLE checks groen):
+✓ MOMENTUM BREAKOUT (voorkeur): RSI > 50 EN STIJGEND + MACD STIJGEND + volume > 1.2x + koers breekt boven vorige candle-high → KOOP NU
+✓ PULLBACK IN UPTREND: intraday > +0.5% + korte dip naar support + RSI > 45 STIJGEND + MACD neutraal/bullish → KOOP NU
+✓ HERSTEL NA OVERSOLD (alleen als markt ook herstelt): RSI < 40 EN nu STIJGEND + MACD draait omhoog + intraday max -1% + markt groen → KOOP NU
 WACHT CRITERIA (verplicht bij één of meer van):
 ✗ Intradag < -1.5%: aandeel daalt de hele dag, geen koop
 ✗ LH+LL patroon (4 candles): duidelijke downtrend, wacht op omkering
-✗ RSI DALEND + MACD bearish: dubbele bevestiging van zwakte
+✗ RSI DALEND (ongeacht niveau): momentum ontbreekt
+✗ MACD bearish EN dalend: geen instap
 ✗ Al 2 stops geraakt vandaag op dit symbool: dag is voorbij voor dit aandeel
 ✗ LMT zonder ≥75% vertrouwen: te weinig beweging voor rendabele trade
+✗ VIX > 30 EN signaal < 70%: markt te onrustig voor lage-kans setup
 STOP-LOSS REGELS:
 - Minimale stop afstand: 1.2× ATR (≈ €${indicators.atr ? fmt(indicators.atr * 1.2) : '?'}) of minimaal 0.5% van entry
 - Geen stop tighter dan ATR: PYPL $78 met ATR $0.80 → stop minimaal bij $77.04
@@ -499,7 +589,7 @@ TARGET REGELS:
 - Minimaal 2.5× risico afstand (R:R ≥ 2.5:1) — voor consistent positief dagresultaat
 - Voorbeeld: entry $78, stop $77.04 (risico $0.96) → target minimaal $80.40
 - Bij sterke momentum (RSI STIJGEND, MACD STIJGEND, volume >1.5x): schaal target naar 3:1
-- Bij rangy markt of lunchperiode: hou 2.5:1 en wacht niet op maximaal target
+- Bij VIX > 25 of rangy markt: hou 2.5:1 en neem winst vroeg
 WACHT alleen als er werkelijk geen koopmoment is vandaag.
 Als WACHT: geef CONCREET aan bij welke prijs/conditie je WEL zou kopen.
 Geen vage antwoorden - altijd een concreet level noemen.
