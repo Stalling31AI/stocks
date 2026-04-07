@@ -846,6 +846,24 @@ async function haalAnalyseOp(item) {
   const gemiddeldVolume = quotes.slice(-20).reduce((a, b) => a + (b.volume || 0), 0) / 20;
   const volumeRatio = gemiddeldVolume > 0 ? (huidigVolume / gemiddeldVolume).toFixed(2) : '0.00';
   const openingGap = quotes.length > 1 ? ((quotes[0].close - quotes[quotes.length-1].close) / quotes[quotes.length-1].close * 100).toFixed(2) : null;
+  // Intraday trend: hoe staat het aandeel t.o.v. de eerste candle van vandaag?
+  const nu = new Date();
+  const vandaagCandles = quotes.filter(q => {
+    const d = new Date(q.date);
+    const nl = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+    return nl.getFullYear() === nu.getFullYear() && nl.getMonth() === nu.getMonth() && nl.getDate() === nu.getDate();
+  });
+  const dagOpen = vandaagCandles.length > 0 ? vandaagCandles[0].open || vandaagCandles[0].close : null;
+  const intradayPct = dagOpen ? +((last.close - dagOpen) / dagOpen * 100).toFixed(2) : null;
+  // Lower Highs/Lower Lows: zijn de laatste 4 candle-highs dalend?
+  const lhll = (() => {
+    if (vandaagCandles.length < 4) return null;
+    const recent4 = vandaagCandles.slice(-4);
+    const dalendHigh = recent4[0].high > recent4[1].high && recent4[1].high > recent4[2].high && recent4[2].high > recent4[3].high;
+    const dalendLow  = recent4[0].low  > recent4[1].low  && recent4[1].low  > recent4[2].low  && recent4[2].low  > recent4[3].low;
+    if (dalendHigh && dalendLow) return 'DUIDELIJKE DOWNTREND (LH+LL)';
+    return null;
+  })();
   const atr = berekenATR(quotes);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000);
@@ -854,7 +872,7 @@ async function haalAnalyseOp(item) {
     headers: { 'Content-Type': 'application/json' },
     signal: controller.signal,
     body: JSON.stringify({ symbol: item.symbol, interval: '15m', quotes: quotes.slice(-30),
-      indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio, atr } })
+      indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio, atr, intradayPct, lhll } })
   });
   clearTimeout(timeoutId);
   const ai = await analyseRes.json();
@@ -868,7 +886,8 @@ async function haalAnalyseOp(item) {
     entry: ai.entry, stop_loss: ai.stop_loss, target: ai.target, rr_ratio: ai.rr_ratio,
     redenering: ai.redenering || '', instap_tijd: ai.instap_tijd || '',
     dagtrend: ai.dagtrend || '', nieuws_sentiment: ai.nieuws_sentiment || '',
-    rsi: rsi.toFixed(1), macd: macdData.macd.toFixed(2), atr: +atr.toFixed(4), resultaat: 'onbekend',
+    rsi: rsi.toFixed(1), macd: macdData.macd.toFixed(2), atr: +atr.toFixed(4),
+    intradayPct, lhll, resultaat: 'onbekend',
   };
 }
 
@@ -1757,7 +1776,18 @@ async function simuleerTrades(analyses) {
     if (!isBeursOpen(a.symbol)) continue;
     const bestaat = simData[datum].find(s => s.symbol === a.symbol && s.tijdstip === a.tijdstip);
     if (bestaat) continue;
-    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol);
+    // Stop na 2 stops op hetzelfde symbool vandaag
+    const stopsVandaag = simData[datum].filter(s => s.symbol === a.symbol && s.resultaat === 'stop_geraakt').length;
+    if (stopsVandaag >= 2) {
+      console.log(`SimA: ${a.symbol} overgeslagen — dagstoplimiet bereikt (${stopsVandaag} stops)`);
+      continue;
+    }
+    // Dagtrend filter: niet kopen als aandeel al >1.5% onder openingskoers staat
+    if (a.intradayPct !== null && a.intradayPct < -1.5) {
+      console.log(`SimA: ${a.symbol} overgeslagen — dagtrend te negatief (${a.intradayPct}% t.o.v. open)`);
+      continue;
+    }
+    const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
     if (!trade) continue;
     const isKoopNuA = a.actie && a.actie.toUpperCase() === 'KOOP NU';
     const aantA = berekenAantal(trade.entry, trade.stop, a.symbol, a.vertrouwen);
@@ -2075,6 +2105,17 @@ async function simuleerTradesB(analyses) {
         bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: bestaandeTrade.entry, stop_loss: a.stop_loss, target: a.target, gekocht: true });
         continue;
       }
+    }
+    // Stop na 2 stops op hetzelfde symbool vandaag
+    const stopsVandaagB = simData[datum].filter(s => s.symbol === a.symbol && s.resultaat === 'stop_geraakt').length;
+    if (stopsVandaagB >= 2) {
+      console.log(`SimB: ${a.symbol} overgeslagen — dagstoplimiet bereikt (${stopsVandaagB} stops)`);
+      continue;
+    }
+    // Dagtrend filter
+    if (a.intradayPct !== null && a.intradayPct < -1.5) {
+      console.log(`SimB: ${a.symbol} overgeslagen — dagtrend te negatief (${a.intradayPct}%)`);
+      continue;
     }
     // Nieuwe trade aanmaken (ook na verlopen setup)
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);

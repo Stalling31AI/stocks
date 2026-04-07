@@ -444,13 +444,26 @@ app.post('/api/analyze', async (req, res) => {
       const nuMin = nlUur * 60 + nlMin;
       return nuMin >= oH * 60 + oM && nuMin < sH * 60 + sM;
     })();
+    const intradayPct = indicators.intradayPct;
+    const lhll = indicators.lhll;
+    const intradayWaarschuwing = intradayPct !== null && intradayPct !== undefined
+      ? (intradayPct < -1.5
+          ? `⚠️ DALENDE DAG: ${intradayPct}% onder openingskoers — bij downtrend WACHT tenzij duidelijke bodem`
+          : intradayPct > 1.5
+            ? `✅ STIJGENDE DAG: +${intradayPct}% boven openingskoers`
+            : `Neutraal: ${intradayPct}% t.o.v. open`)
+      : '';
     const prompt = `Elite daytrader analyse voor ${symbol}.
 Tijd: ${amsterdamTijd} | Markt: ${marktContext}
-MARKT CONTEXT (AEX/NASDAQ):
-- Huidige sentiment: Houd rekening met algemene markttrend
-- Sector focus: Halfgeleiders (ASML/AMD/NVDA) bewegen vaak synchroon.
+INTRADAY SITUATIE:
+${intradayWaarschuwing}
+${lhll ? `❌ PATROON: ${lhll} — GEEN KOOP tegen de trend in` : ''}
+KRITISCHE LEERREGEL: Als een aandeel de hele dag daalt (LH+LL patroon, >1.5% onder open),
+geef dan WACHT. Koop NOOIT herhaaldelijk in een duidelijke downtrend.
+Sector focus: Halfgeleiders (ASML/AMD/NVDA) bewegen vaak synchroon.
+${symbol === 'LMT' ? '⚠️ LMT WAARSCHUWING: Dit aandeel heeft weinig intraday beweging. Alleen handelen bij vertrouwen ≥75% EN duidelijk technisch signaal.' : ''}
 KOERS & DAG:
-Prijs: €${fmt(last.close)} | Gap: ${openingGap || 0}%
+Prijs: €${fmt(last.close)} | Gap: ${openingGap || 0}% | Intraday: ${intradayPct !== null ? intradayPct + '%' : 'N/A'} t.o.v. open
 Dag range: €${dagLaag} - €${dagHoog} (€${dagRange.toFixed(0)}, ${rangePct}%)
 Positie in range: ${positieInRange}% ${Number(positieInRange) < 25 ? '← DICHT BIJ DAGLAAG' : Number(positieInRange) > 75 ? '← DICHT BIJ DAGHOOG' : ''}
 INDICATOREN:
@@ -467,13 +480,16 @@ ${recent.slice(-5).map(q => {
 }).join('\n')}
 ATR (15m, 14 periodes): ${indicators.atr ? fmt(indicators.atr) : 'N/A'} ${indicators.atr ? `← normale candle-beweging = €${fmt(indicators.atr)}` : ''}
 TRADING PROFIEL: Day trader. Risico per trade: €75 vast. Positiegrootte = floor(75/stop_EUR), max 10. Dagdoel: €200-300 netto via 3-5 trades.
-KOOP CRITERIA:
-✓ OVERSOLD BOUNCE: RSI < 40 EN prijs toont bodemvorming → KOOP NU.
-✓ MOMENTUM BREAKOUT: RSI 44-58 EN RSI STIJGEND EN MACD histogram STIJGEND EN volume > 1.2x → KOOP NU (entry = huidige prijs). Dit vangt stijgingen zoals RHM.DE van 1374→1387.
-✓ BOLLINGER SQUEEZE: Prijs onder Middle Bollinger Band met RSI STIJGEND → KOOP NU.
-✓ Target > 1% boven huidige koers vereist voor KOOP. Bij momentum breakout mag 0.8% als dagrange groot genoeg is.
-✓ Accepteer Risk/Reward van 1:1 voor snelle scalp-trades.
-✓ GEEN koop bij sterke downtrend (Lower Highs/Lower Lows) of RSI DALEND zonder bodemvorming.
+KOOP CRITERIA (alleen als ALLE checks groen zijn):
+✓ OVERSOLD BOUNCE: RSI < 40 EN prijs toont bodemvorming (candle-wick omhoog) EN intraday NIET < -1.5% → KOOP NU.
+✓ MOMENTUM BREAKOUT: RSI 44-58 EN RSI STIJGEND EN MACD STIJGEND EN volume > 1.2x EN intradag neutraal/positief → KOOP NU.
+✓ BOLLINGER SQUEEZE: Prijs onder Middle BB met RSI STIJGEND EN geen LH+LL patroon → KOOP NU.
+WACHT CRITERIA (verplicht bij één of meer van):
+✗ Intradag < -1.5%: aandeel daalt de hele dag, geen koop
+✗ LH+LL patroon (4 candles): duidelijke downtrend, wacht op omkering
+✗ RSI DALEND + MACD bearish: dubbele bevestiging van zwakte
+✗ Al 2 stops geraakt vandaag op dit symbool: dag is voorbij voor dit aandeel
+✗ LMT zonder ≥75% vertrouwen: te weinig beweging voor rendabele trade
 STOP-LOSS REGELS:
 - Minimale stop afstand: 1.2× ATR (≈ €${indicators.atr ? fmt(indicators.atr * 1.2) : '?'}) of minimaal 0.5% van entry
 - Geen stop tighter dan ATR: PYPL $78 met ATR $0.80 → stop minimaal bij $77.04
