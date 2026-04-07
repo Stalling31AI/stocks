@@ -874,6 +874,69 @@ async function haalAnalyseOp(item) {
     return null;
   })();
   const atr = berekenATR(quotes);
+
+  // ── VWAP (Volume Weighted Average Price) ───────────────────────
+  const vwap = (() => {
+    if (vandaagCandles.length === 0) return null;
+    let cumPV = 0, cumV = 0;
+    for (const c of vandaagCandles) {
+      const tp = (c.high + c.low + c.close) / 3;
+      cumPV += tp * (c.volume || 0);
+      cumV  += (c.volume || 0);
+    }
+    return cumV > 0 ? +(cumPV / cumV).toFixed(4) : null;
+  })();
+  const vwapPositie = vwap ? (last.close > vwap ? 'BOVEN' : 'ONDER') : null;
+
+  // ── RSI-divergentie ─────────────────────────────────────────────
+  const rsiDivergentie = (() => {
+    if (vandaagCandles.length < 8) return null;
+    const allCloses = quotes.map(q => q.close);
+    const recent4 = vandaagCandles.slice(-4);
+    const prev4   = vandaagCandles.slice(-8, -4);
+    const rsiNu   = berekenRSI(allCloses);
+    const rsiPrev = berekenRSI(allCloses.slice(0, allCloses.length - 4));
+    const recentLow  = Math.min(...recent4.map(c => c.low));
+    const prevLow    = Math.min(...prev4.map(c => c.low));
+    const recentHigh = Math.max(...recent4.map(c => c.high));
+    const prevHigh   = Math.max(...prev4.map(c => c.high));
+    if (recentLow < prevLow  && rsiNu > rsiPrev + 2)
+      return 'BULLISH DIVERGENTIE (prijs lager low, RSI hoger low → bodem in aantocht)';
+    if (recentHigh > prevHigh && rsiNu < rsiPrev - 2)
+      return 'BEARISH DIVERGENTIE (prijs hoger high, RSI lager high → top in aantocht)';
+    return null;
+  })();
+
+  // ── Candle-patroon ──────────────────────────────────────────────
+  const candlePatroon = (() => {
+    if (vandaagCandles.length < 2) return null;
+    const c    = vandaagCandles[vandaagCandles.length - 1];
+    const prev = vandaagCandles[vandaagCandles.length - 2];
+    const body  = Math.abs(c.close - c.open);
+    const range = c.high - c.low;
+    if (range === 0) return null;
+    const upperWick = c.high - Math.max(c.open, c.close);
+    const lowerWick = Math.min(c.open, c.close) - c.low;
+    if (lowerWick > body * 2 && upperWick < body && body < range * 0.4)
+      return 'HAMMER (lange staart onder → mogelijke bodem)';
+    if (upperWick > body * 2 && lowerWick < body && body < range * 0.4)
+      return 'SHOOTING STAR (lange staart boven → mogelijke top)';
+    if (c.close > c.open && prev.close < prev.open &&
+        c.open <= prev.close && c.close >= prev.open)
+      return 'BULLISH ENGULFING (grote groene candle → momentum omslag omhoog)';
+    if (c.close < c.open && prev.close > prev.open &&
+        c.open >= prev.close && c.close <= prev.open)
+      return 'BEARISH ENGULFING (grote rode candle → momentum omslag omlaag)';
+    return null;
+  })();
+
+  // ── Relatieve kracht vs SPY ─────────────────────────────────────
+  const relKracht = (() => {
+    const spyPct = window.marktCtxCache?.spyPct;
+    if (spyPct == null || intradayPct == null || Math.abs(spyPct) < 0.1) return null;
+    return +(intradayPct / Math.abs(spyPct)).toFixed(2);
+  })();
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000);
   const analyseRes = await fetch('/api/analyze', {
@@ -881,7 +944,8 @@ async function haalAnalyseOp(item) {
     headers: { 'Content-Type': 'application/json' },
     signal: controller.signal,
     body: JSON.stringify({ symbol: item.symbol, interval: '15m', quotes: quotes.slice(-30),
-      indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio, atr, intradayPct, lhll } })
+      indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio,
+        atr, intradayPct, lhll, vwap, vwapPositie, rsiDivergentie, candlePatroon, relKracht } })
   });
   clearTimeout(timeoutId);
   const ai = await analyseRes.json();
@@ -896,7 +960,8 @@ async function haalAnalyseOp(item) {
     redenering: ai.redenering || '', instap_tijd: ai.instap_tijd || '',
     dagtrend: ai.dagtrend || '', nieuws_sentiment: ai.nieuws_sentiment || '',
     rsi: rsi.toFixed(1), macd: macdData.macd.toFixed(2), atr: +atr.toFixed(4),
-    intradayPct, lhll, resultaat: 'onbekend',
+    intradayPct, lhll, vwap, vwapPositie, rsiDivergentie, candlePatroon, relKracht,
+    resultaat: 'onbekend',
   };
 }
 

@@ -567,16 +567,27 @@ ${recent.slice(-5).map(q => {
   return t+': '+fmt(q.open)+' → '+fmt(q.close)+' (H:'+fmt(q.high)+' L:'+fmt(q.low)+') '+(q.close>=q.open?'🟢':'🔴');
 }).join('\n')}
 ATR (15m, 14 periodes): ${indicators.atr ? fmt(indicators.atr) : 'N/A'} ${indicators.atr ? `← normale candle-beweging = €${fmt(indicators.atr)}` : ''}
+VWAP: ${indicators.vwap ? fmt(indicators.vwap) : 'N/A'} | Koers ${indicators.vwapPositie || 'N/A'} VWAP ${indicators.vwapPositie === 'BOVEN' ? '✅ bulls in control' : indicators.vwapPositie === 'ONDER' ? '❌ bears in control' : ''}
+${indicators.rsiDivergentie ? `⚡ RSI DIVERGENTIE: ${indicators.rsiDivergentie}` : ''}
+${indicators.candlePatroon ? `🕯 CANDLE PATROON: ${indicators.candlePatroon}` : ''}
+${indicators.relKracht != null ? `📊 RELATIEVE KRACHT vs SPY: ${indicators.relKracht}x ${indicators.relKracht > 1.5 ? '✅ OUTPERFORMER — koop de leider' : indicators.relKracht < 0.5 ? '⚠️ ACHTERBLIJVER — vermijd of wacht' : '— neutraal'}` : ''}
 TRADING PROFIEL: Day trader. Risico per trade: €75 vast. Positiegrootte = floor(75/stop_EUR), max 10. Dagdoel: €200-300 netto via 3-5 trades.
-KOOP CRITERIA (momentum-first, alleen als ALLE checks groen):
-✓ MOMENTUM BREAKOUT (voorkeur): RSI > 50 EN STIJGEND + MACD STIJGEND + volume > 1.2x + koers breekt boven vorige candle-high → KOOP NU
-✓ PULLBACK IN UPTREND: intraday > +0.5% + korte dip naar support + RSI > 45 STIJGEND + MACD neutraal/bullish → KOOP NU
-✓ HERSTEL NA OVERSOLD (alleen als markt ook herstelt): RSI < 40 EN nu STIJGEND + MACD draait omhoog + intraday max -1% + markt groen → KOOP NU
+KOOP CRITERIA (momentum-first, meerdere bevestigingen = hogere kans):
+✓ STERKSTE SETUP: koers BOVEN VWAP + RSI > 50 STIJGEND + MACD STIJGEND + volume > 1.2x + relKracht > 1.2 → KOOP NU (vertrouwen 80%+)
+✓ VWAP BREAKOUT: koers net BOVEN VWAP gekruist + RSI STIJGEND + volume > 1.5x → KOOP NU
+✓ PULLBACK NAAR VWAP: koers daalt naar VWAP, RSI > 45 STIJGEND, geen LH+LL → KOOP bij aanraking VWAP
+✓ BULLISH DIVERGENTIE: RSI divergentie signaal + koers boven vorige low + RSI STIJGEND → KOOP NU
+✓ HAMMER/BULLISH ENGULFING aan support of VWAP + RSI STIJGEND → KOOP NU
+EXIT/WACHT CRITERIA bij top-signalen:
+⚠️ BEARISH DIVERGENTIE: top in aantocht — wacht af, geen nieuwe instap
+⚠️ SHOOTING STAR/BEARISH ENGULFING aan daghoog of weerstand: mogelijke top
+⚠️ Koers ONDER VWAP + RSI DALEND: bears in control, geen koop
 WACHT CRITERIA (verplicht bij één of meer van):
 ✗ Intradag < -1.5%: aandeel daalt de hele dag, geen koop
 ✗ LH+LL patroon (4 candles): duidelijke downtrend, wacht op omkering
 ✗ RSI DALEND (ongeacht niveau): momentum ontbreekt
 ✗ MACD bearish EN dalend: geen instap
+✗ relKracht < 0.5: achterblijver, koop de leider in plaats hiervan
 ✗ Al 2 stops geraakt vandaag op dit symbool: dag is voorbij voor dit aandeel
 ✗ LMT zonder ≥75% vertrouwen: te weinig beweging voor rendabele trade
 ✗ VIX > 30 EN signaal < 70%: markt te onrustig voor lage-kans setup
