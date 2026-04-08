@@ -407,87 +407,104 @@ app.get('/api/marktcontext', async (req, res) => {
 // GET /api/ochtendselect — dagelijkse top-5 symboolselectie op basis van nieuws + marktregime
 app.get('/api/ochtendselect', async (req, res) => {
   try {
-    const ALLE_SYMBOLEN = ['NVDA','AMD','AMAT','ASML','META','NFLX','PYPL','LMT','XOM','RTX','GLD','AAPL','RHM.DE','ASML.AS','ADYEN.AS'];
+    // Alleen US symbols met realtime data — geen EU (15-min vertraging)
+    const EU_SYMS = ['ASML.AS','ADYEN.AS','RHM.DE'];
+    const ALLE_SYMBOLEN = ['NVDA','AMD','AMAT','ASML','META','NFLX','PYPL','LMT','XOM','RTX','GLD','AAPL'];
     const marktCtx = await haalMarktContext();
     const categorieHeadlines = await haalCategorieNieuwsOp();
 
-    // Score elke symbool op relevantie vandaag
     const scores = await Promise.all(ALLE_SYMBOLEN.map(async sym => {
       const keywords = SYMBOOL_KEYWORDS[sym] || [];
-      // Nieuws-score: hoeveel headlines matchen dit symbool vandaag?
       const yahooH  = await haalNieuwsOp(sym);
       const catH    = categorieHeadlines.filter(h =>
         keywords.some(kw => h.toLowerCase().includes(kw))
       );
       const nieuwsScore = Math.min(10, yahooH.length * 2 + catH.length);
 
-      // Regime-bonus: welke sectoren passen bij het huidige marktregime?
+      // Negatief nieuws-signaal: waarschuwingskeywords verlagen score direct
+      const allHeadlines = [...yahooH, ...catH].join(' ').toLowerCase();
+      const risicoKeywords = ['earnings','results','warning','downgrade','miss','recall','fine','ban','lawsuit','probe','investigation'];
+      const risicoTreffer = risicoKeywords.filter(k => allHeadlines.includes(k)).length;
+      const risicoMalus = risicoTreffer * -2; // per risico-keyword -2 punt
+
       let regimeBonus = 0;
       const vix = marktCtx?.vixWaarde ?? 15;
       const spyPct = marktCtx?.spyPct ?? 0;
-      const isDefense  = ['LMT','RTX','RHM.DE'].includes(sym);
-      const isOlie     = sym === 'XOM';
-      const isGoud     = sym === 'GLD';
-      const isChips    = ['NVDA','AMD','AMAT','ASML','ASML.AS'].includes(sym);
-      const isConsumer = ['META','NFLX','PYPL','ADYEN.AS'].includes(sym);
-      const isAapl     = sym === 'AAPL';
+      const isDefense = ['LMT','RTX'].includes(sym);
+      const isOlie    = sym === 'XOM';
+      const isGoud    = sym === 'GLD';
+      const isChips   = ['NVDA','AMD','AMAT','ASML'].includes(sym);
+      const isConsumer= ['META','NFLX','PYPL'].includes(sym);
 
       if (vix > 25) {
-        // Crisis/angst modus: defensie, goud, olie
         if (isDefense) regimeBonus += 4;
         if (isGoud)    regimeBonus += 4;
         if (isOlie)    regimeBonus += 3;
-        if (isChips)   regimeBonus -= 2; // chips zwak bij tariff-angst
+        if (isChips)   regimeBonus -= 2;
         if (isConsumer) regimeBonus -= 2;
       } else if (spyPct > 0.5) {
-        // Risk-on: tech en chips outperformen
         if (isChips)   regimeBonus += 3;
-        if (isAapl)    regimeBonus += 2;
+        if (sym === 'AAPL') regimeBonus += 2;
         if (isConsumer) regimeBonus += 2;
-        if (isGoud)    regimeBonus -= 1; // safe haven minder gevraagd
+        if (isGoud)    regimeBonus -= 1;
       } else if (spyPct < -0.5) {
-        // Risk-off: defensief
         if (isDefense) regimeBonus += 3;
         if (isGoud)    regimeBonus += 3;
         if (isOlie)    regimeBonus += 2;
       }
 
-      const totaal = nieuwsScore + regimeBonus;
-      return { sym, nieuwsScore, regimeBonus, totaal, headlines: [...yahooH, ...catH].slice(0, 3) };
+      const totaal = nieuwsScore + regimeBonus + risicoMalus;
+      return { sym, nieuwsScore, regimeBonus, risicoMalus, totaal,
+               headlines: [...new Set([...yahooH, ...catH])].slice(0, 3) };
     }));
 
-    // Sorteer op totaalscore, neem top 6
     scores.sort((a, b) => b.totaal - a.totaal);
-    const top6 = scores.slice(0, 6);
+    const top8 = scores.slice(0, 8); // stuur top 8 naar Claude, die kiest top 5
 
-    // Laat Claude een korte dagbriefing schrijven
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const promptTekst = `Geef een ultra-korte dagselectie voor een day trader. Vandaag: ${new Date().toLocaleDateString('nl-NL')}.
+    const promptTekst = `Dagselectie voor US day trader. Vandaag: ${new Date().toLocaleDateString('nl-NL')}.
 Marktregime: SPY ${marktCtx?.spy || 'N/A'} | QQQ ${marktCtx?.qqq || 'N/A'} | VIX ${marktCtx?.vix || 'N/A'} → ${marktCtx?.regime || 'onbekend'}
-Top gescoorde symbolen (nieuws + regime): ${top6.map(s => `${s.sym}(score ${s.totaal})`).join(', ')}
-Headlines per symbool:
-${top6.map(s => `${s.sym}: ${s.headlines.slice(0,2).join(' | ') || 'geen nieuws'}`).join('\n')}
-Reageer ALLEEN met dit JSON:
+
+Kandidaten (score = nieuws + marktregime - risicomalus):
+${top8.map(s => `${s.sym} (score ${s.totaal}): ${s.headlines.slice(0,2).join(' | ') || 'geen nieuws'}`).join('\n')}
+
+REGELS:
+- Kies MAX 5 symbolen voor top5
+- Een symbool mag NIET in zowel top5 als vermijd staan
+- Sluit uit bij earnings-risico, downgrade, of fundamentele waarschuwing vandaag
+- Geef voorkeur aan symbolen met momentum EN geen risico-nieuws
+- Alle gekozen symbolen zijn US stocks met realtime data
+
+Reageer ALLEEN met dit JSON (geen uitleg erbuiten):
 {
-  "thema": "één zin: wat is het thema vandaag (bv 'tariefescalatie, defensie en olie favoriet')",
+  "thema": "één zin: wat is het thema vandaag",
   "top5": ["SYM1","SYM2","SYM3","SYM4","SYM5"],
   "vermijd": ["SYM1","SYM2"],
-  "reden": { "SYM1": "één zin waarom", "SYM2": "één zin waarom", ... },
-  "max_trades": 3-6
+  "reden": { "SYM1": "één zin waarom top5 of vermijd", ... },
+  "max_trades": 3
 }`;
 
     const msg = await client.messages.create({
-      model: 'claude-sonnet-4-6', max_tokens: 400,
+      model: 'claude-sonnet-4-6', max_tokens: 500,
       messages: [{ role: 'user', content: promptTekst }]
     });
     const txt = msg.content.find(b => b.type === 'text')?.text || '';
     const match = txt.match(/\{[\s\S]*\}/);
-    const parsed = match ? JSON.parse(match[0]) : null;
+    let parsed = match ? JSON.parse(match[0]) : null;
+
+    // Validatie: verwijder uit top5 elk symbool dat ook in vermijd staat
+    if (parsed) {
+      const vermijdSet = new Set((parsed.vermijd || []).map(s => s.toUpperCase()));
+      parsed.top5 = (parsed.top5 || [])
+        .map(s => s.toUpperCase())
+        .filter(s => !vermijdSet.has(s) && ALLE_SYMBOLEN.includes(s));
+      parsed.vermijd = (parsed.vermijd || []).map(s => s.toUpperCase());
+    }
 
     res.json({
       datum: new Date().toLocaleDateString('nl-NL'),
       marktRegime: marktCtx?.regime || 'onbekend',
-      scores: top6,
+      scores: top8,
       selectie: parsed,
     });
   } catch (err) {
