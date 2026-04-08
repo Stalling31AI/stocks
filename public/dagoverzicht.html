@@ -3371,9 +3371,6 @@ window.addEventListener('load', () => {
   laadMarktContext();
   setInterval(laadMarktContext, 15 * 60 * 1000);
 
-  // Ochtend selectie laden bij start (eenmalig — handmatig verversen via knop)
-  laadOchtendSelectie();
-
   const nu = new Date();
   const amst = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
   const totMin = amst.getHours() * 60 + amst.getMinutes();
@@ -3381,6 +3378,44 @@ window.addEventListener('load', () => {
   const usOpen    = 15 * 60 + 30;    // 15:30
   const usSluit   = 22 * 60;         // 22:00
   const preAlert  = 15 * 60 + 15;    // 15:15 — opening alert tonen
+  const preSelect = 15 * 60;         // 15:00 — automatische dagselectie
+
+  // ── Automatische dagselectie om 15:00 (30 min voor US open) ──────────────
+  async function triggerPreMarketSelectie() {
+    console.log('[15:00] Pre-market dagselectie gestart');
+    const panel = document.getElementById('ochtendselect-panel');
+    if (panel) {
+      panel.style.borderColor = '#f59e0b';
+      panel.style.boxShadow = '0 0 0 3px rgba(245,158,11,.2)';
+      setTimeout(() => { panel.style.boxShadow = ''; }, 5000);
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    await laadOchtendSelectie();
+    // Browsernotificatie
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification('🎯 Yappi — Dagselectie klaar', {
+          body: 'US markt opent over 30 min. Bekijk welke aandelen vandaag focus krijgen.',
+          icon: '/logo.png'
+        });
+      } catch(e) {}
+    }
+  }
+
+  if (totMin < preSelect) {
+    // Pagina geladen voor 15:00 → schedule voor 15:00
+    const msNaarSelect = (preSelect - totMin) * 60 * 1000;
+    console.log(`Dagselectie gepland om 15:00 (over ${Math.round(msNaarSelect/60000)} min)`);
+    setTimeout(triggerPreMarketSelectie, msNaarSelect);
+  } else if (totMin >= preSelect && totMin < usOpen) {
+    // Pagina geladen tussen 15:00-15:30 → direct uitvoeren
+    setTimeout(triggerPreMarketSelectie, 2000);
+  } else {
+    // Pagina geladen na opening → ochtendselect laden op pagina load (al gedaan hieronder)
+  }
+
+  // Ochtend selectie laden bij start
+  laadOchtendSelectie();
 
   if (totMin >= euOpen && totMin < usSluit) {
     // Pre-market briefing: laden + elke 15 min verversen
