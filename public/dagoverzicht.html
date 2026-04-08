@@ -3122,14 +3122,19 @@ function updateAutoAnalyseStatus() {
   const nu = new Date();
   const minuten = nu.getMinutes();
   const minutenTotVolgende = AUTO_INTERVAL_MIN - (minuten % AUTO_INTERVAL_MIN);
-  const openAandelen = WATCHLIST.filter(w => isBeursOpen(w.symbol));
-  if (openAandelen.length === 0) {
-    el.textContent = '😴 Geen beurzen open — auto-analyse wacht';
+  // Toon alleen US stocks die daadwerkelijk geanalyseerd worden (geen EU, geen gesloten)
+  const teAnalyseren = WATCHLIST.filter(w =>
+    !EU_SYMBOLS.includes(w.symbol) && isBeursOpen(w.symbol)
+  );
+  if (isLunchPeriode()) {
+    el.textContent = '🍽 Lunchpauze US markt (18:00-19:30) — volgende run na 19:30';
+    el.style.color = '#d97706';
+  } else if (teAnalyseren.length === 0) {
+    el.textContent = '😴 US markt nog niet open — auto-analyse start om 15:30';
     el.style.color = '#94a3b8';
   } else {
-    el.textContent = '⏰ Volgende auto-analyse over ' +
-      minutenTotVolgende + ' min voor: ' +
-      openAandelen.map(w => w.vlag + ' ' + w.label).join(', ');
+    el.innerHTML = '⏰ Volgende analyse over <strong>' + minutenTotVolgende + ' min</strong> voor: ' +
+      teAnalyseren.map(w => w.vlag + ' ' + w.label).join(', ');
     el.style.color = '#2563eb';
   }
 }
