@@ -937,6 +937,52 @@ async function haalAnalyseOp(item) {
     return +(intradayPct / Math.abs(spyPct)).toFixed(2);
   })();
 
+  // ── Candle momentum score (0-10): kwaliteit laatste 5 candles ──
+  const momentumScore = (() => {
+    const c5 = vandaagCandles.slice(-5);
+    if (c5.length < 3) return null;
+    const greenCount = c5.filter(c => c.close > c.open).length;
+    const avgBodyRatio = c5.reduce((s, c) => {
+      const range = c.high - c.low;
+      return s + (range > 0 ? Math.abs(c.close - c.open) / range : 0);
+    }, 0) / c5.length;
+    const last3 = c5.slice(-3);
+    const hhScore = (last3[2].high > last3[1].high && last3[1].high > last3[0].high) ? 1 : 0;
+    return Math.min(10, +(greenCount * 1.4 + avgBodyRatio * 2.5 + hhScore).toFixed(1));
+  })();
+
+  // ── Opening Range Breakout (eerste 15m-candle van vandaag) ─────
+  const openingRange = (() => {
+    if (vandaagCandles.length < 1) return null;
+    const first = vandaagCandles[0];
+    const orHigh = first.high;
+    const orLow  = first.low;
+    const breakoutBoven = last.close > orHigh
+      ? +((last.close - orHigh) / orHigh * 100).toFixed(2) : null;
+    const breakoutOnder = last.close < orLow
+      ? +((orLow - last.close) / orLow * 100).toFixed(2) : null;
+    return { orHigh, orLow, breakoutBoven, breakoutOnder };
+  })();
+
+  // ── Gisteren's niveaus (steun/weerstand) ───────────────────────
+  const gisterenNiveaus = (() => {
+    const gisteren = new Date(nu);
+    gisteren.setDate(gisteren.getDate() - 1);
+    const gisCandles = quotes.filter(q => {
+      const d = new Date(q.date);
+      const nl = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
+      return nl.getFullYear() === gisteren.getFullYear() &&
+             nl.getMonth()    === gisteren.getMonth()    &&
+             nl.getDate()     === gisteren.getDate();
+    });
+    if (gisCandles.length === 0) return null;
+    return {
+      close: gisCandles[gisCandles.length - 1].close,
+      high:  Math.max(...gisCandles.map(c => c.high)),
+      low:   Math.min(...gisCandles.map(c => c.low)),
+    };
+  })();
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000);
   const analyseRes = await fetch('/api/analyze', {
@@ -945,7 +991,8 @@ async function haalAnalyseOp(item) {
     signal: controller.signal,
     body: JSON.stringify({ symbol: item.symbol, interval: '15m', quotes: quotes.slice(-30),
       indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio,
-        atr, intradayPct, lhll, vwap, vwapPositie, rsiDivergentie, candlePatroon, relKracht } })
+        atr, intradayPct, lhll, vwap, vwapPositie, rsiDivergentie, candlePatroon, relKracht,
+        momentumScore, openingRange, gisterenNiveaus } })
   });
   clearTimeout(timeoutId);
   const ai = await analyseRes.json();
@@ -961,6 +1008,7 @@ async function haalAnalyseOp(item) {
     dagtrend: ai.dagtrend || '', nieuws_sentiment: ai.nieuws_sentiment || '',
     rsi: rsi.toFixed(1), macd: macdData.macd.toFixed(2), atr: +atr.toFixed(4),
     intradayPct, lhll, vwap, vwapPositie, rsiDivergentie, candlePatroon, relKracht,
+    momentumScore, openingRange, gisterenNiveaus,
     resultaat: 'onbekend',
   };
 }
@@ -1778,7 +1826,9 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdsti
       sluitTijdstip: null
     };
   }
-  // Check stop en target in candles na entry
+  // Check stop en target in candles na entry — met trailing stop
+  const risico = effectiveEntry - stop; // initieel risico in €
+  let dynamischeStop = stop;
   for (const candle of candlesNaEntry) {
     const nl = new Date(
       new Date(candle.date).toLocaleString(
@@ -1788,15 +1838,30 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdsti
     const tijdstip =
       nl.getHours().toString().padStart(2,'0') + ':' +
       nl.getMinutes().toString().padStart(2,'0');
-    if (candle.low <= stop) {
-      const effectiveExit = stop * (1 - SLIP);
+
+    // Trailing stop: beweeg stop mee als prijs +1R of +1.5R heeft gemaakt
+    const hoogsteKoers = candle.high;
+    if (risico > 0) {
+      if (hoogsteKoers >= effectiveEntry + risico * 1.5) {
+        // +1.5R bereikt: trail stop naar +0.5R (lock in halve winst)
+        const nieuweStop = effectiveEntry + risico * 0.5;
+        if (nieuweStop > dynamischeStop) dynamischeStop = +nieuweStop.toFixed(4);
+      } else if (hoogsteKoers >= effectiveEntry + risico) {
+        // +1R bereikt: move stop naar breakeven
+        if (effectiveEntry > dynamischeStop) dynamischeStop = +effectiveEntry.toFixed(4);
+      }
+    }
+
+    if (candle.low <= dynamischeStop) {
+      const effectiveExit = dynamischeStop * (1 - SLIP);
       return {
         entry_bereikt: true,
         entryTijdstip,
-        resultaat: 'stop_geraakt',
-        slotkoers: stop,
+        resultaat: dynamischeStop >= effectiveEntry ? 'target_bereikt' : 'stop_geraakt',
+        slotkoers: dynamischeStop,
         winst: +((effectiveExit - effectiveEntry) * aantal).toFixed(2),
-        sluitTijdstip: tijdstip
+        sluitTijdstip: tijdstip,
+        trailingStop: dynamischeStop !== stop
       };
     }
     if (candle.high >= target) {
@@ -1807,7 +1872,8 @@ function berekenResultaat(entry, stop, target, candles, isKoopNu, analyseTijdsti
         resultaat: 'target_bereikt',
         slotkoers: target,
         winst: +((effectiveExit - effectiveEntry) * aantal).toFixed(2),
-        sluitTijdstip: tijdstip
+        sluitTijdstip: tijdstip,
+        trailingStop: false
       };
     }
   }

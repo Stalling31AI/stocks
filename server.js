@@ -431,6 +431,22 @@ app.post('/api/analyze', async (req, res) => {
       haalMarktContext(),
     ]);
 
+    // Sector sync: welke symbolen in dezelfde sector hebben ook een signaal?
+    const CHIP_SYMBOLS = ['NVDA','AMD','AMAT','ASML','ASML.AS'];
+    const FINTECH_SYMBOLS = ['PYPL','ADYEN.AS'];
+    const DEFENSE_SYMBOLS = ['LMT','RHM.DE'];
+    const sectorGenoten = symbol === 'NFLX' || symbol === 'META' ? [] :
+      (CHIP_SYMBOLS.includes(symbol) ? CHIP_SYMBOLS :
+       FINTECH_SYMBOLS.includes(symbol) ? FINTECH_SYMBOLS :
+       DEFENSE_SYMBOLS.includes(symbol) ? DEFENSE_SYMBOLS : [])
+        .filter(s => s !== symbol && lastAnalysePerSymbol[s]);
+    const sectorSyncRegel = sectorGenoten.length > 0
+      ? `SECTOR SYNC (${symbol}):\n` + sectorGenoten.map(s => {
+          const a = lastAnalysePerSymbol[s];
+          return `${s}: ${a.signaal} | RSI ${a.rsi || '?'} (${a.rsiTrend || '?'}) | vertrouwen ${a.vertrouwen || '?'}%`;
+        }).join('\n')
+      : '';
+
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(400).json({ error: 'ANTHROPIC_API_KEY is niet ingesteld op de server.' });
     }
@@ -525,7 +541,7 @@ app.post('/api/analyze', async (req, res) => {
             ? `✅ STIJGENDE DAG: +${intradayPct}% boven openingskoers`
             : `Neutraal: ${intradayPct}% t.o.v. open`)
       : '';
-    const isUS = !symbol.includes('.') || symbol.endsWith('');
+    const isUS = !symbol.includes('.');
     const marktContextRegel = marktCtx
       ? `MARKTREGIME (SPY/QQQ/VIX):
 SPY: ${marktCtx.spy} | QQQ: ${marktCtx.qqq} | VIX: ${marktCtx.vix}
@@ -537,9 +553,21 @@ ${marktCtx.vixWaarde > 30 ? '⚠️ HOGE ANGST (VIX>30): verlaag positiegrootte,
   'Neutraal marktklimaat'}`
       : '';
 
+    // Gisteren's niveaus
+    const gis = indicators.gisterenNiveaus;
+    const gisterenRegel = gis
+      ? `Gisteren: close ${fmt(gis.close)} | high ${fmt(gis.high)} | low ${fmt(gis.low)}`
+      : '';
+    // Opening Range Breakout
+    const orb = indicators.openingRange;
+    const orbRegel = orb
+      ? `Opening Range: H=${fmt(orb.orHigh)} L=${fmt(orb.orLow)}${orb.breakoutBoven != null ? ` ✅ BREAKOUT BOVEN +${orb.breakoutBoven}%` : orb.breakoutOnder != null ? ` ❌ BREAKDOWN ONDER -${orb.breakoutOnder}%` : ' (binnen range)'}`
+      : '';
+
     const prompt = `Elite daytrader analyse voor ${symbol}.
 Tijd: ${amsterdamTijd} | Markt: ${marktContext}
 ${marktContextRegel}
+${sectorSyncRegel}
 INTRADAY SITUATIE:
 ${intradayWaarschuwing}
 ${lhll ? `❌ PATROON: ${lhll} — GEEN KOOP tegen de trend in` : ''}
@@ -568,26 +596,35 @@ ${recent.slice(-5).map(q => {
 }).join('\n')}
 ATR (15m, 14 periodes): ${indicators.atr ? fmt(indicators.atr) : 'N/A'} ${indicators.atr ? `← normale candle-beweging = €${fmt(indicators.atr)}` : ''}
 VWAP: ${indicators.vwap ? fmt(indicators.vwap) : 'N/A'} | Koers ${indicators.vwapPositie || 'N/A'} VWAP ${indicators.vwapPositie === 'BOVEN' ? '✅ bulls in control' : indicators.vwapPositie === 'ONDER' ? '❌ bears in control' : ''}
+${orbRegel}
+${gisterenRegel}
+MOMENTUM SCORE: ${indicators.momentumScore != null ? indicators.momentumScore + '/10' : 'N/A'} ${indicators.momentumScore >= 7 ? '✅ STERKE MOMENTUM' : indicators.momentumScore >= 5 ? '— matig' : indicators.momentumScore != null ? '❌ ZWAKKE MOMENTUM' : ''}
 ${indicators.rsiDivergentie ? `⚡ RSI DIVERGENTIE: ${indicators.rsiDivergentie}` : ''}
 ${indicators.candlePatroon ? `🕯 CANDLE PATROON: ${indicators.candlePatroon}` : ''}
 ${indicators.relKracht != null ? `📊 RELATIEVE KRACHT vs SPY: ${indicators.relKracht}x ${indicators.relKracht > 1.5 ? '✅ OUTPERFORMER — koop de leider' : indicators.relKracht < 0.5 ? '⚠️ ACHTERBLIJVER — vermijd of wacht' : '— neutraal'}` : ''}
 TRADING PROFIEL: Day trader. Risico per trade: €75 vast. Positiegrootte = floor(75/stop_EUR), max 10. Dagdoel: €200-300 netto via 3-5 trades.
-KOOP CRITERIA (momentum-first, meerdere bevestigingen = hogere kans):
-✓ STERKSTE SETUP: koers BOVEN VWAP + RSI > 50 STIJGEND + MACD STIJGEND + volume > 1.2x + relKracht > 1.2 → KOOP NU (vertrouwen 80%+)
-✓ VWAP BREAKOUT: koers net BOVEN VWAP gekruist + RSI STIJGEND + volume > 1.5x → KOOP NU
-✓ PULLBACK NAAR VWAP: koers daalt naar VWAP, RSI > 45 STIJGEND, geen LH+LL → KOOP bij aanraking VWAP
-✓ BULLISH DIVERGENTIE: RSI divergentie signaal + koers boven vorige low + RSI STIJGEND → KOOP NU
-✓ HAMMER/BULLISH ENGULFING aan support of VWAP + RSI STIJGEND → KOOP NU
-EXIT/WACHT CRITERIA bij top-signalen:
-⚠️ BEARISH DIVERGENTIE: top in aantocht — wacht af, geen nieuwe instap
-⚠️ SHOOTING STAR/BEARISH ENGULFING aan daghoog of weerstand: mogelijke top
-⚠️ Koers ONDER VWAP + RSI DALEND: bears in control, geen koop
+KOOP CRITERIA — vertrouwen stijgt met elk extra bevestigingssignaal:
+✓ PLATINUM SETUP (vertrouwen 85%+): ORB BREAKOUT + BOVEN VWAP + momentum score ≥7 + RSI STIJGEND + sector sync groen + relKracht > 1.5
+✓ GOLD SETUP (vertrouwen 70-85%): BOVEN VWAP + RSI > 50 STIJGEND + MACD STIJGEND + momentum score ≥6 + volume > 1.2x
+✓ VWAP BREAKOUT (vertrouwen 65%+): koers net BOVEN VWAP + RSI STIJGEND + volume > 1.5x
+✓ PULLBACK NAAR VWAP: koers daalt naar VWAP als support, RSI > 45 STIJGEND, geen LH+LL → KOOP bij VWAP aanraking
+✓ BULLISH DIVERGENTIE + HAMMER/ENGULFING aan support of VWAP → KOOP NU
+✓ ORB BREAKOUT BOVEN DAGHOOG GISTEREN (${gis ? fmt(gis.high) : 'N/A'}): sterke dagtrend bevestigd
+STEUN/WEERSTAND NIVEAUS (gebruik als entry/stop/target):
+- Gisteren high: ${gis ? fmt(gis.high) : 'N/A'} (weerstand → doorbraak = bullish)
+- Gisteren close: ${gis ? fmt(gis.close) : 'N/A'} (steun/weerstand)
+- Gisteren low: ${gis ? fmt(gis.low) : 'N/A'} (steun)
+- VWAP: ${indicators.vwap ? fmt(indicators.vwap) : 'N/A'} (dynamisch steun/weerstand)
+EXIT SIGNALEN (vertel dit ook in je redenering als je het ziet):
+⚠️ BEARISH DIVERGENTIE: top in aantocht — bij open positie: verhoog stop, geen nieuwe instap
+⚠️ SHOOTING STAR/BEARISH ENGULFING aan daghoog of weerstand: overweeg snelle exit
+⚠️ momentum score daalt van hoog naar laag terwijl je in positie zit: trail stop
 WACHT CRITERIA (verplicht bij één of meer van):
-✗ Intradag < -1.5%: aandeel daalt de hele dag, geen koop
+✗ Intradag < -1.5% EN momentum score < 4: dalende dag, geen koop
 ✗ LH+LL patroon (4 candles): duidelijke downtrend, wacht op omkering
-✗ RSI DALEND (ongeacht niveau): momentum ontbreekt
-✗ MACD bearish EN dalend: geen instap
-✗ relKracht < 0.5: achterblijver, koop de leider in plaats hiervan
+✗ RSI DALEND EN MACD bearish: dubbele zwakte, geen instap
+✗ relKracht < 0.5: achterblijver, koop de sterkste sectorgeno(o)t
+✗ Koers ONDER VWAP EN momentum score < 5: bears in control
 ✗ Al 2 stops geraakt vandaag op dit symbool: dag is voorbij voor dit aandeel
 ✗ LMT zonder ≥75% vertrouwen: te weinig beweging voor rendabele trade
 ✗ VIX > 30 EN signaal < 70%: markt te onrustig voor lage-kans setup
