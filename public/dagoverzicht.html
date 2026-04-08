@@ -237,7 +237,7 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
       <label style="display:flex;align-items:center;
         gap:8px;cursor:pointer;">
         <div style="position:relative;width:44px;height:24px;">
-          <input type="checkbox" id="auto-analyse-toggle"
+          <input type="checkbox" id="auto-analyse-toggle" checked
             style="opacity:0;width:100%;height:100%;
             position:absolute;cursor:pointer;z-index:1;"
             onchange="
@@ -645,10 +645,10 @@ function updateSelectie(cb) {
     geselecteerdeAandelen.length + ' aandelen geselecteerd';
 }
 function selecteerAlle(aan) {
-  geselecteerdeAandelen = aan ? WATCHLIST.map(w => w.symbol) : [];
+  geselecteerdeAandelen = aan ? WATCHLIST.map(w => w.symbol).filter(s => !EU_SYMBOLS.includes(s)) : [];
   document.querySelectorAll('#aandeel-selectie input[type=checkbox]')
     .forEach(cb => {
-      cb.checked = aan;
+      cb.checked = aan && !EU_SYMBOLS.includes(cb.value);
       updateSelectie(cb);
     });
 }
@@ -2907,7 +2907,7 @@ async function checkOpenPosities() {
 
 const AUTO_INTERVAL_MIN = 15; // kwartier
 let autoAnalyseTimer = null;
-let autoAnalyseActief = false;
+let autoAnalyseActief = true;
 let autoAnalyseLaatsteRun = 0; // timestamp van laatste run
 
 function startAutoAnalyse() {
