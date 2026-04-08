@@ -702,7 +702,12 @@ MOMENTUM SCORE: ${indicators.momentumScore != null ? indicators.momentumScore + 
 ${indicators.rsiDivergentie ? `⚡ RSI DIVERGENTIE: ${indicators.rsiDivergentie}` : ''}
 ${indicators.candlePatroon ? `🕯 CANDLE PATROON: ${indicators.candlePatroon}` : ''}
 ${indicators.relKracht != null ? `📊 RELATIEVE KRACHT vs SPY: ${indicators.relKracht}x ${indicators.relKracht > 1.5 ? '✅ OUTPERFORMER — koop de leider' : indicators.relKracht < 0.5 ? '⚠️ ACHTERBLIJVER — vermijd of wacht' : '— neutraal'}` : ''}
-TRADING PROFIEL: Day trader. Risico per trade: €75 vast. Positiegrootte = floor(75/stop_EUR), max 10. Dagdoel: €200-300 netto via 3-5 trades.
+TRADING PROFIEL: Day trader. Weekdoel: €1000 netto. Variabel risico op setup-kwaliteit:
+  Platinum setup (vertrouwen ≥85%): €150 risico → potentieel €375 per trade
+  Gold setup (vertrouwen 70-84%): €100 risico → potentieel €250 per trade
+  Standaard (vertrouwen 55-69%): €75 risico → potentieel €187 per trade
+  Onder 55% vertrouwen: GEEN trade — beter wachten dan een slechte setup nemen.
+Geef je vertrouwen eerlijk: 85%+ alleen als het echt een Platinum-setup is met meerdere bevestigingen.
 KOOP CRITERIA — vertrouwen stijgt met elk extra bevestigingssignaal:
 ✓ PLATINUM SETUP (vertrouwen 85%+): ORB BREAKOUT + BOVEN VWAP + momentum score ≥7 + RSI STIJGEND + sector sync groen + relKracht > 1.5
 ✓ GOLD SETUP (vertrouwen 70-85%): BOVEN VWAP + RSI > 50 STIJGEND + MACD STIJGEND + momentum score ≥6 + volume > 1.2x

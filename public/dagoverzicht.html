@@ -864,18 +864,22 @@ function berekenATR(quotes, period=14) {
   const slice = trList.slice(-period);
   return slice.reduce((a,b) => a+b, 0) / slice.length;
 }
-// Positiegroottes op basis van €75 risico per trade × vertrouwen (max 10 aandelen)
-// vertrouwen: 0-100 van Claude. Bij 55% vertrouwen → 55% van maximale positie.
-// Minimum altijd 1 aandeel zodat we de trade nog wel simuleren.
+// Variabel risico op basis van setup-kwaliteit (vertrouwen van Claude):
+//   Platinum ≥85% → €150 risico  (potentieel €375 bij 2.5:1)
+//   Gold     ≥70% → €100 risico  (potentieel €250)
+//   Standaard≥55% → €75 risico   (potentieel €187)
+//   Zwak     <55% → geen trade   (SimB slaat over)
+function risicoVoorVertrouwen(vertrouwen) {
+  if (vertrouwen >= 85) return { eur: 150, label: 'Platinum' };
+  if (vertrouwen >= 70) return { eur: 100, label: 'Gold' };
+  return { eur: 75, label: 'Standaard' };
+}
 function berekenAantal(entry, stop, symbol, vertrouwen = 100) {
-  const RISICO_EUR = 75;
+  const { eur: RISICO_EUR } = risicoVoorVertrouwen(vertrouwen);
   const stopAfstand = entry - stop;
   if (stopAfstand <= 0) return 1;
   const stopEur = USD_SYMBOLS.includes(symbol) ? stopAfstand / EUR_RATE : stopAfstand;
-  const basis = Math.min(10, Math.max(1, Math.floor(RISICO_EUR / stopEur)));
-  // Schaal met vertrouwen: 100% = vol, 50% = half, minimum 1
-  const factor = Math.min(1, Math.max(0.1, (vertrouwen || 100) / 100));
-  return Math.max(1, Math.round(basis * factor));
+  return Math.min(15, Math.max(1, Math.floor(RISICO_EUR / stopEur)));
 }
 // ============================================
 // KERN ANALYSE — herbruikbaar door cyclus én nieuws-trigger
@@ -2184,7 +2188,11 @@ function renderSimulaties() {
             </td>
             <td style="padding:8px;text-align:center;font-weight:700;color:#6366f1;">
               ${s.aantal || 10}×
-              ${s.vertrouwen ? `<div style="font-size:9px;color:#94a3b8;font-weight:400;">${s.vertrouwen}% vtw</div>` : ''}
+              ${s.setupLabel ? `<div style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;margin-top:2px;display:inline-block;
+                background:${s.setupLabel==='Platinum'?'#fef3c7':s.setupLabel==='Gold'?'#e0f2fe':'#f1f5f9'};
+                color:${s.setupLabel==='Platinum'?'#92400e':s.setupLabel==='Gold'?'#0369a1':'#64748b'};">
+                ${s.setupLabel} €${s.risicoEur||75}</div>` :
+                s.vertrouwen ? `<div style="font-size:9px;color:#94a3b8;font-weight:400;">${s.vertrouwen}% vtw</div>` : ''}
             </td>
             <td style="padding:8px;text-align:center;font-size:13px;">
               ${s.entry_bereikt === null ? '⏳' :
@@ -2302,16 +2310,24 @@ async function simuleerTradesB(analyses) {
       console.log(`SimB: ${a.symbol} overgeslagen — dagtrend te negatief (${a.intradayPct}%)`);
       continue;
     }
+    // Minimaal vertrouwen 55% voor SimB — zwakke setups overslaan
+    const vertrouwenB = a.vertrouwen || 0;
+    if (vertrouwenB < 55) {
+      console.log(`SimB: ${a.symbol} overgeslagen — te laag vertrouwen (${vertrouwenB}%)`);
+      continue;
+    }
     // Nieuwe trade aanmaken (ook na verlopen setup)
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
     if (!trade) continue;
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
-    const aantB = berekenAantal(trade.entry, trade.stop, a.symbol, a.vertrouwen);
+    const setupInfo = risicoVoorVertrouwen(vertrouwenB);
+    const aantB = berekenAantal(trade.entry, trade.stop, a.symbol, vertrouwenB);
     simData[datum].push({
       symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
       tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie,
       entry: trade.entry, stop_loss: trade.stop, target: trade.target,
-      aantal: aantB, vertrouwen: a.vertrouwen || 0, redenering: a.redenering || '', rsi: a.rsi,
+      aantal: aantB, vertrouwen: vertrouwenB, setupLabel: setupInfo.label, risicoEur: setupInfo.eur,
+      redenering: a.redenering || '', rsi: a.rsi,
       resultaat: 'open',
       entry_bereikt: isKoopNu,                          // KOOP NU = direct gevuld
       entryTijdstip: isKoopNu ? a.tijdstip : null,
@@ -2578,15 +2594,41 @@ function renderSimulatiesB() {
     'verkoop_signaal':    '#dc2626',
     'open':               '#94a3b8',
   };
+  // Weekdoel berekening: som van afgeronde trades deze week
+  const WEEKDOEL = 1000;
+  const weekWinst = (() => {
+    const nu = new Date();
+    const dagVanWeek = nu.getDay() || 7; // maandag=1 ... vrijdag=5
+    let som = 0;
+    for (let i = 0; i < dagVanWeek; i++) {
+      const d = new Date(nu); d.setDate(d.getDate() - i);
+      const key = d.toLocaleDateString('nl-NL');
+      (simulaties[key] || []).forEach(s => { if (s.winst !== null) som += s.winst; });
+    }
+    return som;
+  })();
+  const weekPct = Math.min(100, Math.max(0, (weekWinst / WEEKDOEL) * 100));
+  const weekKleur = weekWinst >= WEEKDOEL ? '#16a34a' : weekWinst >= WEEKDOEL * 0.5 ? '#d97706' : weekWinst < 0 ? '#dc2626' : '#2563eb';
+
   el.innerHTML = `
+    <div style="background:#f8fafc;border-radius:8px;padding:10px 14px;margin-bottom:12px;border:1.5px solid #e2e8f0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Weekdoel €${WEEKDOEL}</span>
+        <span style="font-size:13px;font-weight:700;color:${weekKleur};">${weekWinst>=0?'+':''}€${weekWinst.toFixed(0)} / €${WEEKDOEL}</span>
+      </div>
+      <div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
+        <div style="height:100%;width:${weekPct}%;background:${weekKleur};border-radius:4px;transition:width .5s;"></div>
+      </div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:4px;">
+        ${weekWinst >= WEEKDOEL ? '🎯 Weekdoel behaald!' : `Nog €${Math.max(0, WEEKDOEL - weekWinst).toFixed(0)} te gaan`}
+        &nbsp;·&nbsp; Vandaag: <span style="color:${totaalWinst>=0?'#16a34a':'#dc2626'};font-weight:600;">${totaalWinst>=0?'+':''}€${totaalWinst.toFixed(2)}</span>
+        &nbsp;·&nbsp; Setups: ${lijst.filter(s=>s.setupLabel==='Platinum').length}× Platinum | ${lijst.filter(s=>s.setupLabel==='Gold').length}× Gold | ${lijst.filter(s=>!s.setupLabel||s.setupLabel==='Standaard').length}× Standaard
+      </div>
+    </div>
     <div style="display:flex;justify-content:space-between;
       align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
       <div style="font-size:13px;font-weight:600;">
         ${lijst.length} posities | ${gekocht} gekocht
-        | Totaal: <span style="color:${totaalWinst>=0?'#16a34a':'#dc2626'};
-          font-weight:700;">
-          ${totaalWinst>=0?'+':''}€${totaalWinst.toFixed(2)}
-        </span>
       </div>
       <button id="sluit-btn-b" onclick="sluitSimulatiesB()"
         style="padding:8px 16px;background:#7c3aed;color:#fff;
