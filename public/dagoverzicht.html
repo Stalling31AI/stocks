@@ -537,15 +537,17 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     <div style="display:flex;align-items:center;
       justify-content:space-between;margin-bottom:4px;">
       <div style="font-size:14px;font-weight:700;">
-        🎯 Simulatie B — Positiebeheer (max 10 per aandeel)
+        🎯 Simulatie B — Positiebeheer
       </div>
-      <div style="font-size:11px;color:#94a3b8;">
-        Nieuwe analyse = stop/target updaten op bestaande positie
-      </div>
+      <button onclick="resetSimBVandaag()" title="Verwijder alle SimB trades van vandaag"
+        style="font-size:10px;padding:3px 10px;border:1.5px solid #dc2626;border-radius:6px;
+        background:#fff;color:#dc2626;cursor:pointer;font-weight:600;">
+        🗑 Reset vandaag
+      </button>
     </div>
     <div style="font-size:12px;color:#64748b;margin-bottom:14px;">
-      Realistischer: je hebt maximaal 10 aandelen per ticker.
-      Bij nieuwe analyse wordt stop-loss en target bijgesteld.
+      Max 2 trades per aandeel per dag. Positiegrootte: €75–150 risico op basis van setup-kwaliteit.
+      60-min zonder fill → entry bijgewerkt (niet nieuw aangemaakt).
     </div>
     <div id="simulatie-tabel-b"></div>
   </div>
@@ -949,7 +951,11 @@ function berekenAantal(entry, stop, symbol, vertrouwen = 100) {
   const stopAfstand = entry - stop;
   if (stopAfstand <= 0) return 1;
   const stopEur = USD_SYMBOLS.includes(symbol) ? stopAfstand / EUR_RATE : stopAfstand;
-  return Math.min(15, Math.max(1, Math.floor(RISICO_EUR / stopEur)));
+  const aantalOpRisico = Math.floor(RISICO_EUR / stopEur);
+  // Max positiewaarde €12.000 (beschermt tegen te grote positie bij kleine stop)
+  const entryEur = USD_SYMBOLS.includes(symbol) ? entry / EUR_RATE : entry;
+  const maxOpWaarde = Math.max(1, Math.floor(12000 / entryEur));
+  return Math.max(1, Math.min(aantalOpRisico, maxOpWaarde));
 }
 // ============================================
 // KERN ANALYSE — herbruikbaar door cyclus én nieuws-trigger
@@ -1688,7 +1694,8 @@ function loadData() {
           symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
           tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie || '',
           entry: trade.entry, stop_loss: trade.stop, target: trade.target,
-          aantal: 10, redenering: a.redenering || '',
+          aantal: berekenAantal(trade.entry, trade.stop, a.symbol, a.vertrouwen || 100),
+          redenering: a.redenering || '',
           resultaat: 'open', entry_bereikt: false,
           entryTijdstip: null, slotkoers: null, winst: null, sluitTijdstip: null, updates: []
         });
@@ -2124,12 +2131,21 @@ function syncSimulatiesB() {
     if (isKoop && a.entry) perSymbool[a.symbol] = a;
   }
   const simBOpgeslagen = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
-  // Alleen OPEN trades tellen mee — gesloten trades blokkeren geen nieuwe kans
-  const bestaand = new Set((simBOpgeslagen[datum] || []).filter(t => t.resultaat === 'open').map(t => t.symbol));
+  // Gebruik ALLE trades (ook gesloten) om duplicaten te voorkomen
+  // Max 2 trades per symbool per dag (matching stop-limiet in simuleerTradesB)
+  const aantalPerSymbool = {};
+  for (const t of (simBOpgeslagen[datum] || [])) {
+    aantalPerSymbool[t.symbol] = (aantalPerSymbool[t.symbol] || 0) + 1;
+  }
   let gesync = false;
   for (const [sym, a] of Object.entries(perSymbool)) {
-    if (!bestaand.has(sym)) {
-      if (!isBeursOpen(sym)) continue; // Geen trade toevoegen als beurs gesloten
+    const huidigAantal = aantalPerSymbool[sym] || 0;
+    // Max 2 trades per symbool per dag; geen nieuwe als er al een open trade is
+    const heeftOpen = (simBOpgeslagen[datum] || []).some(t => t.symbol === sym && t.resultaat === 'open');
+    if (heeftOpen || huidigAantal >= 2) continue;
+    if (!isBeursOpen(sym)) continue;
+    if ((a.vertrouwen || 0) < 55) continue; // Geen lage-vertrouwen trades toevoegen
+    {
       const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
       if (!trade) continue;
       const aantSync = berekenAantal(trade.entry, trade.stop, a.symbol, a.vertrouwen);
@@ -2352,9 +2368,19 @@ async function simuleerTradesB(analyses) {
           } catch(e) { return 0; }
         })();
         if (tradeMinuten > 60) {
-          console.log(`Sim B: Trade ${a.symbol} verlopen (${tradeMinuten}min zonder fill) → frisse setup`);
-          simData[datum].splice(bestaandeTradeIndex, 1);
-          // val door naar nieuwe trade aanmaken hieronder
+          // Update de bestaande trade met nieuwe analyse (NIET verwijderen + opnieuw aanmaken)
+          const nieuweTradeData = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
+          if (nieuweTradeData) {
+            bestaandeTrade.entry     = nieuweTradeData.entry;
+            bestaandeTrade.stop_loss = nieuweTradeData.stop;
+            bestaandeTrade.target    = nieuweTradeData.target;
+            bestaandeTrade.aantal    = berekenAantal(nieuweTradeData.entry, nieuweTradeData.stop, a.symbol, a.vertrouwen);
+            bestaandeTrade.actie     = a.actie;
+            bestaandeTrade.entry_bereikt = a.actie && a.actie.toUpperCase() === 'KOOP NU';
+            bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: nieuweTradeData.entry, reden: 'setup refresh 60min' });
+            console.log(`Sim B: Trade ${a.symbol} bijgewerkt na ${tradeMinuten}min (niet verwijderd)`);
+          }
+          continue; // Nooit doorvallen naar nieuwe trade aanmaken
         } else {
           // Entry LOCKED: originele setup bewaren, niet bijwerken achter koers aan
           console.log(`Sim B: Entry ${a.symbol} gelocked op ${bestaandeTrade.entry} (${tradeMinuten}min oud)`);
@@ -2632,6 +2658,45 @@ function resetSimulaties() {
   });
   renderSimulaties();
   renderSimulatiesB();
+}
+
+function resetSimBVandaag() {
+  if (!confirm('Alle SimB trades van vandaag verwijderen?')) return;
+  const datum = new Date().toLocaleDateString('nl-NL');
+  const data = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+  data[datum] = [];
+  simulaties_b = data;
+  localStorage.setItem('simulaties_b', JSON.stringify(data));
+  renderSimulatiesB();
+  console.log('SimB reset voor vandaag');
+}
+
+function opschonenSimBDuplicaten() {
+  // Auto-cleanup: per dag max 2 trades per symbool bewaren (de meest recente)
+  const data = JSON.parse(localStorage.getItem('simulaties_b') || '{}');
+  let gewijzigd = false;
+  for (const datum of Object.keys(data)) {
+    const perSym = {};
+    for (const t of data[datum]) {
+      if (!perSym[t.symbol]) perSym[t.symbol] = [];
+      perSym[t.symbol].push(t);
+    }
+    const schoon = [];
+    for (const [sym, trades] of Object.entries(perSym)) {
+      // Bewaar max 2 trades: open als eerste, dan meest recente gesloten
+      const open    = trades.filter(t => t.resultaat === 'open');
+      const gesloten = trades.filter(t => t.resultaat !== 'open').slice(-1);
+      const bewaard = [...open.slice(0, 1), ...gesloten].slice(0, 2);
+      if (bewaard.length < trades.length) gewijzigd = true;
+      schoon.push(...bewaard);
+    }
+    data[datum] = schoon;
+  }
+  if (gewijzigd) {
+    simulaties_b = data;
+    localStorage.setItem('simulaties_b', JSON.stringify(data));
+    console.log('SimB duplicaten opgeschoond');
+  }
 }
 
 function renderSimulatiesB() {
@@ -3457,6 +3522,7 @@ async function laadWeekreview() {
 }
 
 window.addEventListener('load', () => {
+  opschonenSimBDuplicaten(); // verwijder dubbele SimB trades van vorige sessies
   updateAutoAnalyseStatus();
   Notification.requestPermission();
   setTimeout(checkOpenPosities, 3000);
