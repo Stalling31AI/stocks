@@ -761,7 +761,7 @@ TARGET REGELS:
 - Bij sterke momentum (RSI STIJGEND, MACD STIJGEND, volume >1.5x): schaal target naar 3:1
 - Bij VIX > 25 of rangy markt: hou 2.5:1 en neem winst vroeg
 VROEGE SESSIE REGEL: Vóór 16:15 NL tijd heeft de dagdata slechts 1-3 candles — volume is altijd laag, dit is normaal en GEEN verkoopsignaal. Beoordeel volume pas na 16:15. Focus vóór 16:15 uitsluitend op VWAP-positie, RSI-richting en marktregime.
-ACHTERBLIJVER BLOCKER: Als SPY >+1% intradag EN dit aandeel <0% intradag → dit is een achterblijver. instap_type="geen_trade", vertrouwen max 40%. Wacht op relative strength herstel.
+ACHTERBLIJVER BLOCKER: Als SPY >+1.5% intradag EN dit aandeel <-1% intradag → dit is een echte achterblijver. instap_type="geen_trade", vertrouwen max 40%. Kleine negatieve beweging (<1%) op een bull-dag is GEEN achterblijver — dat kan consolidatie zijn voor de volgende stijging.
 INSTAP TYPE — verplicht in je JSON response (kies één):
   "direct"   → koers zit NU op het koop-niveau (entry binnen 0.5% van huidige koers). Gebruik huidige koers als entry. Actie = "KOOP NU"
   "pullback" → wacht op DALING naar support/VWAP. Entry MOET lager zijn dan huidige koers.
@@ -889,9 +889,10 @@ Reageer ALLEEN met dit JSON:
         }
       }
 
-      // 2. Achterblijver blocker: markt >+1% maar aandeel <0% intradag
-      const spyStijgt = marktCtx && marktCtx.spyPct > 1.0;
-      const aandDaalt = intradayPct !== null && parseFloat(intradayPct) < 0;
+      // 2. Achterblijver blocker: markt >+1.5% maar aandeel <-1% intradag (echte achterblijver)
+      // Kleine negatieve beweging op een bull-dag kan consolidatie zijn vóór de volgende stijging
+      const spyStijgt = marktCtx && marktCtx.spyPct > 1.5;
+      const aandDaalt = intradayPct !== null && parseFloat(intradayPct) < -1.0;
       if (spyStijgt && aandDaalt) {
         parsed.instap_type = 'geen_trade';
         parsed.vertrouwen = Math.min(parsed.vertrouwen || 50, 40);
