@@ -2604,17 +2604,73 @@ function renderSimulatiesB() {
   const WEEKDOEL = Math.round((handelsdagenOver / 5) * 1000 / 50) * 50; // afgerond op €50
   const weekWinst = (() => {
     const nu = new Date();
-    const dagVanWeek = nu.getDay() || 7; // maandag=1 ... vrijdag=5
+    const dagVanWeek = nu.getDay() || 7;
     let som = 0;
     for (let i = 0; i < dagVanWeek; i++) {
       const d = new Date(nu); d.setDate(d.getDate() - i);
       const key = d.toLocaleDateString('nl-NL');
-      (simulaties[key] || []).forEach(s => { if (s.winst !== null) som += s.winst; });
+      // Alleen US trades tellen mee in weekdoel
+      (simulaties[key] || []).filter(s => !EU_SYMBOLS.includes(s.symbol)).forEach(s => {
+        if (s.winst !== null) som += s.winst;
+      });
     }
     return som;
   })();
   const weekPct = Math.min(100, Math.max(0, (weekWinst / WEEKDOEL) * 100));
   const weekKleur = weekWinst >= WEEKDOEL ? '#16a34a' : weekWinst >= WEEKDOEL * 0.5 ? '#d97706' : weekWinst < 0 ? '#dc2626' : '#2563eb';
+
+  // Splits US en EU trades
+  const usLijst = lijst.filter(s => !EU_SYMBOLS.includes(s.symbol));
+  const euLijst = lijst.filter(s => EU_SYMBOLS.includes(s.symbol));
+  const usTotaal = usLijst.filter(s => s.winst !== null && s.entry_bereikt !== false).reduce((sum, s) => sum + s.winst, 0);
+  const euTotaal = euLijst.filter(s => s.winst !== null && s.entry_bereikt !== false).reduce((sum, s) => sum + s.winst, 0);
+
+  function renderTradeRijen(rijen) {
+    return rijen.map(s => `
+      <tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:8px;font-weight:600;">
+          ${s.vlag} ${s.label}
+          ${USD_SYMBOLS.includes(s.symbol) && s.entry_bereikt === true ? `<span style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:4px;">● Live</span>` : ''}
+          <div style="font-size:10px;color:#94a3b8;">${s.tijdstip}</div>
+        </td>
+        <td style="padding:8px;font-weight:600;">${fmtPrijsLabel(s.symbol, s.entry)}</td>
+        <td style="padding:8px;color:#dc2626;font-weight:600;">${fmtPrijsLabel(s.symbol, s.stop_loss)}</td>
+        <td style="padding:8px;color:#16a34a;font-weight:600;">${fmtPrijsLabel(s.symbol, s.target)}</td>
+        <td data-koers-sym="${s.symbol}" style="padding:8px;text-align:right;font-weight:600;color:#1e40af;">—</td>
+        <td style="padding:8px;text-align:center;">
+          ${s.updates && s.updates.length > 0 ? `<span style="background:#eff6ff;color:#2563eb;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;" title="${s.updates.map(u => u.tijdstip+': SL→'+Number(u.stop_loss).toFixed(2)+' TP→'+Number(u.target).toFixed(2)).join(' | ')}">${s.updates.length}x bijgewerkt</span>` : '—'}
+        </td>
+        <td style="padding:8px;text-align:center;font-size:13px;">
+          ${s.entry_bereikt === null ? '⏳' : s.entry_bereikt ? '✅ Ja' : '❌ Nee'}
+        </td>
+        <td style="padding:8px;text-align:right;font-weight:700;color:${s.winst === null ? '#94a3b8' : s.winst >= 0 ? '#16a34a' : '#dc2626'};">
+          ${s.winst !== null ? (() => {
+            const eur = Number(s.winst); const sign = eur >= 0 ? '+' : '';
+            if (USD_SYMBOLS.includes(s.symbol)) {
+              return `${sign}€${eur.toFixed(2)} <span style="font-size:10px;color:#94a3b8;">($${(eur*EUR_KOERS).toFixed(0)})</span>`;
+            }
+            return `${sign}€${eur.toFixed(2)}`;
+          })() : '—'}
+        </td>
+        <td style="padding:8px;font-size:11px;font-weight:600;color:${resultaatKleur[s.resultaat]};">
+          ${resultaatLabel[s.resultaat] || s.resultaat}
+          ${s.setupLabel ? `<div style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;display:inline-block;margin-top:2px;background:${s.setupLabel==='Platinum'?'#fef3c7':s.setupLabel==='Gold'?'#e0f2fe':'#f1f5f9'};color:${s.setupLabel==='Platinum'?'#92400e':s.setupLabel==='Gold'?'#0369a1':'#64748b'};">${s.setupLabel}</div>` : ''}
+        </td>
+      </tr>`).join('');
+  }
+
+  const tabelHeaders = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="border-bottom:2px solid #e2e8f0;">
+      <th style="padding:8px;text-align:left;font-size:10px;color:#94a3b8;text-transform:uppercase;">Aandeel</th>
+      <th style="padding:8px;text-align:left;font-size:10px;color:#94a3b8;text-transform:uppercase;">Entry</th>
+      <th style="padding:8px;text-align:left;font-size:10px;color:#94a3b8;text-transform:uppercase;">Stop</th>
+      <th style="padding:8px;text-align:left;font-size:10px;color:#94a3b8;text-transform:uppercase;">Target</th>
+      <th style="padding:8px;text-align:right;font-size:10px;color:#94a3b8;text-transform:uppercase;">Koers</th>
+      <th style="padding:8px;text-align:center;font-size:10px;color:#94a3b8;text-transform:uppercase;">Updates</th>
+      <th style="padding:8px;text-align:center;font-size:10px;color:#94a3b8;text-transform:uppercase;">Gekocht</th>
+      <th style="padding:8px;text-align:right;font-size:10px;color:#94a3b8;text-transform:uppercase;">Winst/Verlies</th>
+      <th style="padding:8px;text-align:left;font-size:10px;color:#94a3b8;text-transform:uppercase;">Resultaat</th>
+    </tr></thead>`;
 
   el.innerHTML = `
     <div style="background:#f8fafc;border-radius:8px;padding:10px 14px;margin-bottom:12px;border:1.5px solid #e2e8f0;">
@@ -2627,105 +2683,29 @@ function renderSimulatiesB() {
       </div>
       <div style="font-size:10px;color:#94a3b8;margin-top:4px;">
         ${weekWinst >= WEEKDOEL ? '🎯 Weekdoel behaald!' : `Nog €${Math.max(0, WEEKDOEL - weekWinst).toFixed(0)} te gaan`}
-        &nbsp;·&nbsp; Vandaag: <span style="color:${totaalWinst>=0?'#16a34a':'#dc2626'};font-weight:600;">${totaalWinst>=0?'+':''}€${totaalWinst.toFixed(2)}</span>
-        &nbsp;·&nbsp; Setups: ${lijst.filter(s=>s.setupLabel==='Platinum').length}× Platinum | ${lijst.filter(s=>s.setupLabel==='Gold').length}× Gold | ${lijst.filter(s=>!s.setupLabel||s.setupLabel==='Standaard').length}× Standaard
+        &nbsp;·&nbsp; US vandaag: <span style="color:${usTotaal>=0?'#16a34a':'#dc2626'};font-weight:600;">${usTotaal>=0?'+':''}€${usTotaal.toFixed(2)}</span>
+        ${euLijst.length > 0 ? `&nbsp;·&nbsp; EU (vertraagd): <span style="color:${euTotaal>=0?'#16a34a':'#dc2626'};font-weight:600;">${euTotaal>=0?'+':''}€${euTotaal.toFixed(2)}</span>` : ''}
+        &nbsp;·&nbsp; Setups: ${usLijst.filter(s=>s.setupLabel==='Platinum').length}× Platinum | ${usLijst.filter(s=>s.setupLabel==='Gold').length}× Gold
       </div>
     </div>
-    <div style="display:flex;justify-content:space-between;
-      align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:13px;font-weight:600;">
-        ${lijst.length} posities | ${gekocht} gekocht
-      </div>
-      <button id="sluit-btn-b" onclick="sluitSimulatiesB()"
-        style="padding:8px 16px;background:#7c3aed;color:#fff;
-        border:none;border-radius:8px;font-weight:700;
-        font-size:12px;cursor:pointer;">
-        📊 Sluit dag af
-      </button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:13px;font-weight:600;">${usLijst.length} US posities | ${usLijst.filter(s=>s.entry_bereikt).length} gekocht</div>
+      <button id="sluit-btn-b" onclick="sluitSimulatiesB()" style="padding:8px 16px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;">📊 Sluit dag af</button>
     </div>
-    <table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead>
-        <tr style="border-bottom:2px solid #e2e8f0;">
-          <th style="padding:8px;text-align:left;font-size:10px;
-            color:#94a3b8;text-transform:uppercase;">Aandeel</th>
-          <th style="padding:8px;text-align:left;font-size:10px;
-            color:#94a3b8;text-transform:uppercase;">Entry</th>
-          <th style="padding:8px;text-align:left;font-size:10px;
-            color:#94a3b8;text-transform:uppercase;">Stop</th>
-          <th style="padding:8px;text-align:left;font-size:10px;
-            color:#94a3b8;text-transform:uppercase;">Target</th>
-          <th style="padding:8px;text-align:right;font-size:10px;
-            color:#94a3b8;text-transform:uppercase;">Koers ($/€)</th>
-          <th style="padding:8px;text-align:center;font-size:10px;
-            color:#94a3b8;text-transform:uppercase;">Updates</th>
-          <th style="padding:8px;text-align:center;font-size:10px;
-            color:#94a3b8;text-transform:uppercase;">Gekocht</th>
-          <th style="padding:8px;text-align:right;font-size:10px;
-            color:#94a3b8;text-transform:uppercase;">Winst/Verlies</th>
-          <th style="padding:8px;text-align:left;font-size:10px;
-            color:#94a3b8;text-transform:uppercase;">Resultaat</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${lijst.map(s => `
-          <tr style="border-bottom:1px solid #f1f5f9;">
-            <td style="padding:8px;font-weight:600;">
-              ${s.vlag} ${s.label}
-              ${USD_SYMBOLS.includes(s.symbol) && s.entry_bereikt === true ? `<span style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:4px;">● Live</span>` : ''}
-              <div style="font-size:10px;color:#94a3b8;">
-                ${s.tijdstip}
-              </div>
-            </td>
-            <td style="padding:8px;font-weight:600;">
-              ${fmtPrijsLabel(s.symbol, s.entry)}
-            </td>
-            <td style="padding:8px;color:#dc2626;font-weight:600;">
-              ${fmtPrijsLabel(s.symbol, s.stop_loss)}
-            </td>
-            <td style="padding:8px;color:#16a34a;font-weight:600;">
-              ${fmtPrijsLabel(s.symbol, s.target)}
-            </td>
-            <td data-koers-sym="${s.symbol}" style="padding:8px;text-align:right;font-weight:600;color:#1e40af;">
-              —
-            </td>
-            <td style="padding:8px;text-align:center;">
-              ${s.updates && s.updates.length > 0 ? `
-                <span style="background:#eff6ff;color:#2563eb;
-                  padding:2px 6px;border-radius:4px;font-size:10px;
-                  font-weight:700;" title="${s.updates.map(u =>
-                    u.tijdstip + ': ' +
-                    (u.reden?.includes('entry') ? 'Entry→' + Number(u.entry).toFixed(2) + ' ' : '') +
-                    'SL→' + Number(u.stop_loss).toFixed(2) +
-                    ' TP→' + Number(u.target).toFixed(2)
-                  ).join(' | ')}">
-                  ${s.updates.length}x bijgewerkt
-                </span>` : '—'}
-            </td>
-            <td style="padding:8px;text-align:center;font-size:13px;">
-              ${s.entry_bereikt === null ? '⏳' :
-                s.entry_bereikt ? '✅ Ja' : '❌ Nee'}
-            </td>
-            <td style="padding:8px;text-align:right;font-weight:700;
-              color:${s.winst === null ? '#94a3b8' :
-                s.winst >= 0 ? '#16a34a' : '#dc2626'};">
-              ${s.winst !== null ? (() => {
-                const eur = Number(s.winst);
-                const sign = eur >= 0 ? '+' : '';
-                if (USD_SYMBOLS.includes(s.symbol)) {
-                  const usd = +(eur * EUR_KOERS).toFixed(2);
-                  return `${sign}€${eur.toFixed(2)} ($${usd.toFixed(2)})`;
-                }
-                return `${sign}€${eur.toFixed(2)}`;
-              })() : '—'}
-            </td>
-            <td style="padding:8px;font-size:11px;font-weight:600;
-              color:${resultaatKleur[s.resultaat]};">
-              ${resultaatLabel[s.resultaat] || s.resultaat}
-            </td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
+    ${usLijst.length > 0 ? tabelHeaders + `<tbody>${renderTradeRijen(usLijst)}</tbody></table>` : '<div style="color:#94a3b8;font-size:12px;padding:8px 0;">Nog geen US posities vandaag.</div>'}
+    ${euLijst.length > 0 ? `
+      <details style="margin-top:16px;" ${euTotaal < 0 ? 'open' : ''}>
+        <summary style="cursor:pointer;font-size:12px;font-weight:700;color:#94a3b8;padding:8px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;list-style:none;display:flex;justify-content:space-between;">
+          <span>🇪🇺 EU trades (15-min vertraagde data — niet meegeteld in weekdoel)</span>
+          <span style="color:${euTotaal>=0?'#16a34a':'#dc2626'};font-weight:700;">${euTotaal>=0?'+':''}€${euTotaal.toFixed(2)}</span>
+        </summary>
+        <div style="margin-top:8px;opacity:.8;">
+          ${tabelHeaders}<tbody>${renderTradeRijen(euLijst)}</tbody></table>
+          <div style="font-size:11px;color:#94a3b8;padding:6px 8px;background:#fff7ed;border-radius:4px;margin-top:6px;">
+            ⚠️ EU trades zijn uitgevoerd met 15-min vertraagde data. Resultaten zijn indicatief, niet meegeteld in weekdoel.
+          </div>
+        </div>
+      </details>` : ''}
   `;
 }
 
