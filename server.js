@@ -26,6 +26,10 @@ const SYMBOOL_KEYWORDS = {
   'LMT':     ['lockheed','lmt','defense','military','nato','pentagon','ukraine','f-35','missile'],
   'RHM.DE':  ['rheinmetall','rhm','defense','military','nato','ukraine','bundeswehr','ammunition','tank'],
   'ADYEN.AS':['adyen','payments','fintech','european payments','regulation','bnpl'],
+  'XOM':     ['exxon','xom','oil','crude','energy','opec','brent','wti','refinery','natural gas'],
+  'RTX':     ['raytheon','rtx','defense','military','missile','radar','nato','pentagon','ukraine','patriot'],
+  'GLD':     ['gold','goud','safe haven','inflation','fed','dollar','vix','crisis','war','tariff'],
+  'AAPL':    ['apple','aapl','iphone','ipad','mac','app store','china','tariff','supply chain','tim cook'],
 };
 // Macro-keywords die altijd meegaan ongeacht symbool
 const MACRO_KEYWORDS = ['trump','tariff','fed ','federal reserve','interest rate','inflation','recession',
@@ -113,7 +117,7 @@ async function haalNieuwsOp(symbol) {
 const lastAnalysePerSymbol = {}; // { symbol: { signaal, prijs, rsi, rsiTrend, macdRichting, tijdstip, datum, label } }
 
 const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
-const TWELVE_DATA_SYMBOLS = new Set(['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML']);
+const TWELVE_DATA_SYMBOLS = new Set(['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML','XOM','RTX','GLD','AAPL']);
 const _tdCallTimes = [];
 let _tdQueue = Promise.resolve(); // Serialiseert alle TD-calls: nooit gelijktijdig
 
@@ -400,6 +404,98 @@ app.get('/api/marktcontext', async (req, res) => {
   res.json(ctx);
 });
 
+// GET /api/ochtendselect — dagelijkse top-5 symboolselectie op basis van nieuws + marktregime
+app.get('/api/ochtendselect', async (req, res) => {
+  try {
+    const ALLE_SYMBOLEN = ['NVDA','AMD','AMAT','ASML','META','NFLX','PYPL','LMT','XOM','RTX','GLD','AAPL','RHM.DE','ASML.AS','ADYEN.AS'];
+    const marktCtx = await haalMarktContext();
+    const categorieHeadlines = await haalCategorieNieuwsOp();
+
+    // Score elke symbool op relevantie vandaag
+    const scores = await Promise.all(ALLE_SYMBOLEN.map(async sym => {
+      const keywords = SYMBOOL_KEYWORDS[sym] || [];
+      // Nieuws-score: hoeveel headlines matchen dit symbool vandaag?
+      const yahooH  = await haalNieuwsOp(sym);
+      const catH    = categorieHeadlines.filter(h =>
+        keywords.some(kw => h.toLowerCase().includes(kw))
+      );
+      const nieuwsScore = Math.min(10, yahooH.length * 2 + catH.length);
+
+      // Regime-bonus: welke sectoren passen bij het huidige marktregime?
+      let regimeBonus = 0;
+      const vix = marktCtx?.vixWaarde ?? 15;
+      const spyPct = marktCtx?.spyPct ?? 0;
+      const isDefense  = ['LMT','RTX','RHM.DE'].includes(sym);
+      const isOlie     = sym === 'XOM';
+      const isGoud     = sym === 'GLD';
+      const isChips    = ['NVDA','AMD','AMAT','ASML','ASML.AS'].includes(sym);
+      const isConsumer = ['META','NFLX','PYPL','ADYEN.AS'].includes(sym);
+      const isAapl     = sym === 'AAPL';
+
+      if (vix > 25) {
+        // Crisis/angst modus: defensie, goud, olie
+        if (isDefense) regimeBonus += 4;
+        if (isGoud)    regimeBonus += 4;
+        if (isOlie)    regimeBonus += 3;
+        if (isChips)   regimeBonus -= 2; // chips zwak bij tariff-angst
+        if (isConsumer) regimeBonus -= 2;
+      } else if (spyPct > 0.5) {
+        // Risk-on: tech en chips outperformen
+        if (isChips)   regimeBonus += 3;
+        if (isAapl)    regimeBonus += 2;
+        if (isConsumer) regimeBonus += 2;
+        if (isGoud)    regimeBonus -= 1; // safe haven minder gevraagd
+      } else if (spyPct < -0.5) {
+        // Risk-off: defensief
+        if (isDefense) regimeBonus += 3;
+        if (isGoud)    regimeBonus += 3;
+        if (isOlie)    regimeBonus += 2;
+      }
+
+      const totaal = nieuwsScore + regimeBonus;
+      return { sym, nieuwsScore, regimeBonus, totaal, headlines: [...yahooH, ...catH].slice(0, 3) };
+    }));
+
+    // Sorteer op totaalscore, neem top 6
+    scores.sort((a, b) => b.totaal - a.totaal);
+    const top6 = scores.slice(0, 6);
+
+    // Laat Claude een korte dagbriefing schrijven
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const promptTekst = `Geef een ultra-korte dagselectie voor een day trader. Vandaag: ${new Date().toLocaleDateString('nl-NL')}.
+Marktregime: SPY ${marktCtx?.spy || 'N/A'} | QQQ ${marktCtx?.qqq || 'N/A'} | VIX ${marktCtx?.vix || 'N/A'} → ${marktCtx?.regime || 'onbekend'}
+Top gescoorde symbolen (nieuws + regime): ${top6.map(s => `${s.sym}(score ${s.totaal})`).join(', ')}
+Headlines per symbool:
+${top6.map(s => `${s.sym}: ${s.headlines.slice(0,2).join(' | ') || 'geen nieuws'}`).join('\n')}
+Reageer ALLEEN met dit JSON:
+{
+  "thema": "één zin: wat is het thema vandaag (bv 'tariefescalatie, defensie en olie favoriet')",
+  "top5": ["SYM1","SYM2","SYM3","SYM4","SYM5"],
+  "vermijd": ["SYM1","SYM2"],
+  "reden": { "SYM1": "één zin waarom", "SYM2": "één zin waarom", ... },
+  "max_trades": 3-6
+}`;
+
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6', max_tokens: 400,
+      messages: [{ role: 'user', content: promptTekst }]
+    });
+    const txt = msg.content.find(b => b.type === 'text')?.text || '';
+    const match = txt.match(/\{[\s\S]*\}/);
+    const parsed = match ? JSON.parse(match[0]) : null;
+
+    res.json({
+      datum: new Date().toLocaleDateString('nl-NL'),
+      marktRegime: marktCtx?.regime || 'onbekend',
+      scores: top6,
+      selectie: parsed,
+    });
+  } catch (err) {
+    console.error('ochtendselect fout:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/news/watchlist — headlines per US symbool (gebruikt cache, geen extra credits)
 app.get('/api/news/watchlist', async (req, res) => {
   const result = {};
@@ -513,6 +609,10 @@ app.post('/api/analyze', async (req, res) => {
       'PYPL': 'PayPal. Fintech. Gevoelig voor rente. Dagrange $2-4. Min vertrouwen: 60%.',
       'LMT':  'Lockheed Martin. Defensie. Stijgt bij geopolitiek nieuws. Dagrange $5-10. Min vertrouwen: 65%.',
       'ASML': 'ASML US NASDAQ listing. Chip equipment leider. Volgt ASML.AS. Dagrange $10-25. Min vertrouwen: 60%.',
+      'XOM':  'ExxonMobil. Olie/energie. Stijgt bij geopolitieke spanning, OPEC-nieuws, olieprijs stijging. Dagrange $2-5. Min vertrouwen: 55%. Correlatie: stijgt als rest markt daalt bij crisis.',
+      'RTX':  'Raytheon Technologies. Luchtverdediging, raketten. Stijgt bij oorlogsescalatie, NAVO-nieuws, Patriot-orders. Dagrange $3-7. Min vertrouwen: 60%.',
+      'GLD':  'SPDR Gold ETF. Safe haven. Stijgt bij VIX >25, recessievrees, dollar-zwakte, crisis. Dagrange $2-5. Min vertrouwen: 55%. Laag volatiel maar betrouwbaar trending.',
+      'AAPL': 'Apple. Enorm volume. Beweegt sterk op tariefnieuws (China supply chain), iPhone sales, App Store regelgeving. Dagrange $3-8. Min vertrouwen: 55%.',
     };
     const isEuropees = ['ASML.AS','ADYEN.AS','RHM.DE'].includes(symbol);
     const handelVenster = isEuropees ? '09:00-17:30' : '15:30-22:00';

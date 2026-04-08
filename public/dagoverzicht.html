@@ -189,6 +189,34 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
       <input type="checkbox" value="ASML" checked
         onchange="updateSelectie(this)"> 🇺🇸 ASML US
     </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-XOM">
+      <input type="checkbox" value="XOM" checked
+        onchange="updateSelectie(this)"> 🛢️ ExxonMobil
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-RTX">
+      <input type="checkbox" value="RTX" checked
+        onchange="updateSelectie(this)"> 🚀 Raytheon
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-GLD">
+      <input type="checkbox" value="GLD" checked
+        onchange="updateSelectie(this)"> 🥇 Goud ETF
+    </label>
+    <label style="display:flex;align-items:center;gap:5px;
+      padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      id="lbl-AAPL">
+      <input type="checkbox" value="AAPL" checked
+        onchange="updateSelectie(this)"> 🍎 Apple
+    </label>
   </div>
   <div style="background:#f8fafc;border-radius:10px;
     padding:14px;margin-bottom:14px;
@@ -273,6 +301,15 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     <div id="premarket-opening-alert" style="display:none;margin-top:12px;padding:10px 14px;background:#dcfce7;border-radius:8px;font-size:13px;color:#166534;">
       <strong>🔔 US markt opent over 15 min.</strong> Aandelen met nieuws worden automatisch geanalyseerd bij opening.
     </div>
+  </div>
+  <!-- Ochtend selectie panel -->
+  <div id="ochtendselect-panel" style="background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #f59e0b;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-size:14px;font-weight:700;color:#1e293b;">🎯 Dagselectie — beste aandelen vandaag</div>
+      <button onclick="laadOchtendSelectie()" id="ochtendselect-btn"
+        style="font-size:11px;padding:4px 10px;border:1.5px solid #f59e0b;border-radius:6px;background:#fffbeb;cursor:pointer;color:#92400e;font-weight:600;">↻ Ververs</button>
+    </div>
+    <div id="ochtendselect-inhoud" style="font-size:12px;color:#64748b;">Laden...</div>
   </div>
   <!-- Nieuws trigger alert -->
   <div id="nieuws-alert" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:12px 16px;margin-bottom:12px;font-size:13px;color:#92400e;">
@@ -546,7 +583,7 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
 </div>
 <script>
 // ── GLOBAL CONSTANTS & STATE (vóór alle functies) ──────────────
-const USD_SYMBOLS = ['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML'];
+const USD_SYMBOLS = ['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML','XOM','RTX','GLD','AAPL'];
 const EUR_KOERS   = 1.08;
 const EUR_RATE    = EUR_KOERS; // backwards-compat alias
 const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
@@ -644,6 +681,10 @@ const BEURS_OPEN = {
   'PYPL':     { open: '15:30', sluit: '22:00' },
   'LMT':      { open: '15:30', sluit: '22:00' },
   'ASML':     { open: '15:30', sluit: '22:00' },
+  'XOM':      { open: '15:30', sluit: '22:00' },
+  'RTX':      { open: '15:30', sluit: '22:00' },
+  'GLD':      { open: '15:30', sluit: '22:00' },
+  'AAPL':     { open: '15:30', sluit: '22:00' },
 };
 function verwijderVerkoopSimulaties() {
   const datum = new Date().toLocaleDateString('nl-NL');
@@ -697,6 +738,10 @@ const WATCHLIST = [
   { symbol: 'PYPL',   label: 'PayPal',            vlag: '🇺🇸' },
   { symbol: 'LMT',    label: 'Lockheed Martin',   vlag: '🇺🇸' },
   { symbol: 'ASML',   label: 'ASML US',           vlag: '🇺🇸' },
+  { symbol: 'XOM',    label: 'ExxonMobil',        vlag: '🛢️' },
+  { symbol: 'RTX',    label: 'Raytheon',          vlag: '🚀' },
+  { symbol: 'GLD',    label: 'Goud ETF',          vlag: '🥇' },
+  { symbol: 'AAPL',   label: 'Apple',             vlag: '🍎' },
 ];
 
 // Formateer prijs als "$X.XX (€Y.YY)" voor USD-aandelen, anders "€X.XX"
@@ -2882,6 +2927,51 @@ document.addEventListener('visibilitychange', () => {
     });
   }
 });
+async function laadOchtendSelectie() {
+  const inhoud = document.getElementById('ochtendselect-inhoud');
+  const btn    = document.getElementById('ochtendselect-btn');
+  if (inhoud) inhoud.textContent = 'Analyseren...';
+  if (btn) btn.disabled = true;
+  try {
+    const data = await fetch('/api/ochtendselect').then(r => r.json());
+    if (data.error) throw new Error(data.error);
+    const sel  = data.selectie;
+    const top5 = sel?.top5 || data.scores.slice(0,5).map(s => s.sym);
+    const vermijd = sel?.vermijd || [];
+    const reden   = sel?.reden || {};
+
+    // Auto-selecteer top5 checkboxes
+    document.querySelectorAll('#aandeel-selectie input[type=checkbox]').forEach(cb => {
+      cb.checked = top5.includes(cb.value);
+      const lbl = document.getElementById('lbl-' + cb.value);
+      if (lbl) {
+        lbl.style.borderColor = top5.includes(cb.value) ? '#f59e0b' : vermijd.includes(cb.value) ? '#dc2626' : '#e2e8f0';
+        lbl.style.background  = top5.includes(cb.value) ? '#fffbeb' : vermijd.includes(cb.value) ? '#fee2e2' : '';
+      }
+    });
+    geselecteerdeAandelen = top5.filter(s => WATCHLIST.some(w => w.symbol === s));
+
+    if (inhoud) inhoud.innerHTML = `
+      <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#92400e;">
+        ${sel?.thema || 'Geen thema'} &nbsp;·&nbsp; max ${sel?.max_trades || 5} trades vandaag
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+        ${top5.map(s => `
+          <span style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:6px;padding:3px 10px;font-weight:700;font-size:12px;">
+            ✅ ${s} ${reden[s] ? `<span style="font-weight:400;color:#78350f"> — ${reden[s]}</span>` : ''}
+          </span>`).join('')}
+        ${vermijd.map(s => `
+          <span style="background:#fee2e2;border:1.5px solid #dc2626;border-radius:6px;padding:3px 10px;font-weight:700;font-size:12px;color:#dc2626;">
+            ❌ ${s} ${reden[s] ? `<span style="font-weight:400"> — ${reden[s]}</span>` : ''}
+          </span>`).join('')}
+      </div>
+      <div style="font-size:10px;color:#94a3b8;">Regime: ${data.marktRegime} · ${data.datum}</div>`;
+  } catch(e) {
+    if (inhoud) inhoud.innerHTML = `<span style="color:#dc2626;">⚠️ ${e.message}</span>`;
+  }
+  if (btn) btn.disabled = false;
+}
+
 async function laadMarktContext() {
   try {
     const data = await fetch('/api/marktcontext').then(r => r.json());
@@ -3249,6 +3339,9 @@ window.addEventListener('load', () => {
   // Marktcontext laden bij start + elke 15 min verversen
   laadMarktContext();
   setInterval(laadMarktContext, 15 * 60 * 1000);
+
+  // Ochtend selectie laden bij start (eenmalig — handmatig verversen via knop)
+  laadOchtendSelectie();
 
   const nu = new Date();
   const amst = new Date(nu.toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));
