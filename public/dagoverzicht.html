@@ -2969,17 +2969,27 @@ async function laadOchtendSelectie() {
     const vermijd = sel?.vermijd || [];
     const reden   = sel?.reden || {};
 
-    // Auto-selecteer top5 checkboxes
+    // Reset selectie en vink top5 aan — roep updateSelectie aan zodat teller ook klopt
+    geselecteerdeAandelen = [];
     document.querySelectorAll('#aandeel-selectie input[type=checkbox]').forEach(cb => {
-      cb.checked = top5.includes(cb.value);
+      const inTop5   = top5.includes(cb.value);
+      const inVermijd = vermijd.includes(cb.value);
+      cb.checked = inTop5 && !EU_SYMBOLS.includes(cb.value);
+      updateSelectie(cb); // registreert in geselecteerdeAandelen + update teller
+      // Kleur-override voor vermijd (rood) en top5 (geel) — na updateSelectie zodat blauw overschreven wordt
       const lbl = document.getElementById('lbl-' + cb.value);
       if (lbl) {
-        lbl.style.borderColor = top5.includes(cb.value) ? '#f59e0b' : vermijd.includes(cb.value) ? '#dc2626' : '#e2e8f0';
-        lbl.style.background  = top5.includes(cb.value) ? '#fffbeb' : vermijd.includes(cb.value) ? '#fee2e2' : '';
+        if (inTop5 && !EU_SYMBOLS.includes(cb.value)) {
+          lbl.style.borderColor = '#f59e0b';
+          lbl.style.background  = '#fffbeb';
+          lbl.style.color       = '#92400e';
+        } else if (inVermijd) {
+          lbl.style.borderColor = '#dc2626';
+          lbl.style.background  = '#fee2e2';
+          lbl.style.color       = '#dc2626';
+        }
       }
     });
-    // Alleen US symbolen selecteren (EU heeft 15-min vertraging)
-    geselecteerdeAandelen = top5.filter(s => WATCHLIST.some(w => w.symbol === s) && !EU_SYMBOLS.includes(s));
 
     if (inhoud) inhoud.innerHTML = `
       <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#92400e;">
