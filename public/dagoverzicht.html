@@ -116,22 +116,22 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
       cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
       id="lbl-ASML.AS">
-      <input type="checkbox" value="ASML.AS" checked
-        onchange="updateSelectie(this)"> 🇳🇱 ASML
+      <input type="checkbox" value="ASML.AS"
+        onchange="updateSelectie(this)"> 🇳🇱 ASML <span style="font-size:9px;color:#94a3b8;">15m vertraging</span>
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
-      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;opacity:.6;"
       id="lbl-ADYEN.AS">
-      <input type="checkbox" value="ADYEN.AS" checked
-        onchange="updateSelectie(this)"> 🇳🇱 ADYEN
+      <input type="checkbox" value="ADYEN.AS"
+        onchange="updateSelectie(this)"> 🇳🇱 ADYEN <span style="font-size:9px;color:#94a3b8;">15m vertraging</span>
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
-      cursor:pointer;font-size:12px;font-weight:600;user-select:none;"
+      cursor:pointer;font-size:12px;font-weight:600;user-select:none;opacity:.6;"
       id="lbl-RHM.DE">
-      <input type="checkbox" value="RHM.DE" checked
-        onchange="updateSelectie(this)"> 🇩🇪 Rheinmetall
+      <input type="checkbox" value="RHM.DE"
+        onchange="updateSelectie(this)"> 🇩🇪 Rheinmetall <span style="font-size:9px;color:#94a3b8;">15m vertraging</span>
     </label>
     <label style="display:flex;align-items:center;gap:5px;
       padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;
@@ -623,7 +623,10 @@ const BEURSTIJDEN = {
   'LMT':      { naam: 'NYSE',               open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
   'ASML':     { naam: 'NASDAQ',             open: '15:30', sluit: '22:00', zone: 'Europe/Amsterdam', vlag: '🇺🇸' },
 };
-let geselecteerdeAandelen = ['ASML.AS','ADYEN.AS','RHM.DE','NVDA','META','NFLX','AMD','AMAT','PYPL','LMT','ASML'];
+// Auto-analyse draait standaard alleen op US symbolen (realtime data via Twelve Data)
+// EU symbolen (ASML.AS, ADYEN.AS, RHM.DE) hebben 15-min vertraging — onbruikbaar voor day trading
+const EU_SYMBOLS = ['ASML.AS','ADYEN.AS','RHM.DE'];
+let geselecteerdeAandelen = [...USD_SYMBOLS]; // start met alleen US
 function updateSelectie(cb) {
   const lbl = document.getElementById('lbl-' + cb.value);
   if (cb.checked) {
@@ -2594,8 +2597,11 @@ function renderSimulatiesB() {
     'verkoop_signaal':    '#dc2626',
     'open':               '#94a3b8',
   };
-  // Weekdoel berekening: som van afgeronde trades deze week
-  const WEEKDOEL = 1000;
+  // Weekdoel: €1000 voor een volle week (ma-vr), proportioneel als week later start
+  const nu2 = new Date();
+  const dagVanWeek2 = nu2.getDay() || 7; // ma=1 ... vr=5, za/zo=7/6→7
+  const handelsdagenOver = Math.max(1, Math.min(5, 6 - dagVanWeek2)); // resterende handelsdagen incl. vandaag
+  const WEEKDOEL = Math.round((handelsdagenOver / 5) * 1000 / 50) * 50; // afgerond op €50
   const weekWinst = (() => {
     const nu = new Date();
     const dagVanWeek = nu.getDay() || 7; // maandag=1 ... vrijdag=5
@@ -2991,7 +2997,8 @@ async function laadOchtendSelectie() {
         lbl.style.background  = top5.includes(cb.value) ? '#fffbeb' : vermijd.includes(cb.value) ? '#fee2e2' : '';
       }
     });
-    geselecteerdeAandelen = top5.filter(s => WATCHLIST.some(w => w.symbol === s));
+    // Alleen US symbolen selecteren (EU heeft 15-min vertraging)
+    geselecteerdeAandelen = top5.filter(s => WATCHLIST.some(w => w.symbol === s) && !EU_SYMBOLS.includes(s));
 
     if (inhoud) inhoud.innerHTML = `
       <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:#92400e;">
@@ -3060,6 +3067,8 @@ async function voerAutoAnalyseUit() {
 
   const openAandelen = WATCHLIST.filter(w => {
     if (!isBeursOpen(w.symbol)) return false;
+    // EU symbolen: 15-min vertraging, niet bruikbaar voor day trading — automatisch overslaan
+    if (EU_SYMBOLS.includes(w.symbol)) return false;
     // Sla US aandelen over tijdens lunchperiode, tenzij er al een open positie is
     if (lunchNu && USD_SYMBOLS.includes(w.symbol)) {
       const heeftOpenPos = geselecteerdeSimB && geselecteerdeSimB.some &&
