@@ -3079,13 +3079,18 @@ async function voerAutoAnalyseUit() {
   const el = document.getElementById('auto-analyse-status');
   if (el) el.textContent = '🔄 Bezig om ' + tijdstip + '...';
   try {
-    geselecteerdeAandelen = openAandelen.map(w => w.symbol);
+    // Gebruik de huidige checkbox-selectie (gezet door ochtendselect of gebruiker)
+    // Filter alleen op: open beurs + geen EU. Overschrijf de keuze NIET.
+    const huidigeSel = geselecteerdeAandelen.filter(s =>
+      !EU_SYMBOLS.includes(s) && openAandelen.some(w => w.symbol === s)
+    );
+    // Fallback: als selectie leeg is (bijv. eerste keer), gebruik alle open US stocks
+    geselecteerdeAandelen = huidigeSel.length > 0 ? huidigeSel : openAandelen.map(w => w.symbol);
 
-    document.querySelectorAll(
-      '#aandeel-selectie input[type=checkbox]'
-    ).forEach(cb => {
+    document.querySelectorAll('#aandeel-selectie input[type=checkbox]').forEach(cb => {
       cb.checked = geselecteerdeAandelen.includes(cb.value);
     });
+    console.log('Auto-analyse symbolen:', geselecteerdeAandelen.join(', '));
     await analyseAlleAandelen();
 
     console.log('Auto-analyse klaar om', tijdstip);
