@@ -28,6 +28,15 @@ body { font-family: 'Inter', sans-serif; background: #f0f2f5; color: #1a1d23; }
 .signaal-pill.WACHT { background:#fef9c3;color:#854d0e; }
 .signaal-pill.LADEN { background:#e0f2fe;color:#0369a1; }
 .signaal-pill.FOUT { background:#f1f5f9;color:#64748b; }
+.signaal-pill.DIRECT { background:#dcfce7;color:#15803d;border:2px solid #16a34a; }
+.signaal-pill.PULLBACK { background:#dbeafe;color:#1d4ed8; }
+.signaal-pill.BREAKOUT { background:#ffedd5;color:#c2410c; }
+.signaal-pill.GEEN { background:#f1f5f9;color:#94a3b8; }
+.aandeel-kaart.geen-setup { opacity:.55;border-left-color:#cbd5e1 !important; }
+.aandeel-kaart.koop-nu { border-left-color:#16a34a;border-left-width:5px;box-shadow:0 2px 8px rgba(22,163,74,.15); }
+.aandeel-kaart.breakout-setup { border-left-color:#ea580c; }
+.conf-bar { height:4px;border-radius:2px;margin:4px 0 8px;background:#e2e8f0; }
+.conf-bar-fill { height:100%;border-radius:2px;transition:width .3s; }
 table { width:100%;border-collapse:collapse;font-size:12px; }
 th { text-align:left;padding:8px 10px;font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #e2e8f0; }
 td { padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top; }
@@ -89,16 +98,16 @@ tr:hover td { background:#f8fafc; }
   </div>
   <div id="samenvatting" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
     <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;">
-      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Koop signalen</div>
+      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;" id="lbl-koop">Koop setups</div>
       <div style="font-size:28px;font-weight:700;color:#16a34a;" id="tel-koop">—</div>
     </div>
     <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;">
-      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Verkoop signalen</div>
-      <div style="font-size:28px;font-weight:700;color:#dc2626;" id="tel-verkoop">—</div>
+      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;" id="lbl-verkoop">Direct instap</div>
+      <div style="font-size:28px;font-weight:700;color:#15803d;" id="tel-verkoop">—</div>
     </div>
     <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;">
-      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Wacht signalen</div>
-      <div style="font-size:28px;font-weight:700;color:#d97706;" id="tel-wacht">—</div>
+      <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;" id="lbl-wacht">Geen setup</div>
+      <div style="font-size:28px;font-weight:700;color:#94a3b8;" id="tel-wacht">—</div>
     </div>
     <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;">
       <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Geanalyseerd om</div>
@@ -784,30 +793,78 @@ function updateKaart(i, r) {
   const kaart = document.getElementById('kaart-' + i);
   if (!kaart) return;
   const fmt = v => v != null ? Number(v).toFixed(2) : '—';
-  const cls = r.signaal==='KOOP'?'koop':r.signaal==='VERKOOP'?'verkoop':'wacht';
-  kaart.className = 'aandeel-kaart ' + cls;
+  const itype = r.instap_type || (r.signaal === 'KOOP' ? 'pullback' : 'geen_trade');
+  const geenSetup = itype === 'geen_trade' || r.vertrouwen < 55;
+
+  // Kaart klasse op basis van instap_type
+  let kaartCls = 'aandeel-kaart ';
+  if (geenSetup) kaartCls += 'wacht geen-setup';
+  else if (itype === 'direct') kaartCls += 'koop koop-nu';
+  else if (itype === 'breakout') kaartCls += 'koop breakout-setup';
+  else kaartCls += 'koop';
+  kaart.className = kaartCls;
+
   const beurs = getBeursstatus(r.symbol);
   const statusDot = beurs?.isOpen
     ? '<span style="width:7px;height:7px;border-radius:50%;background:#16a34a;display:inline-block;margin-left:4px;" title="Beurs open"></span>'
     : '<span style="width:7px;height:7px;border-radius:50%;background:#dc2626;display:inline-block;margin-left:4px;" title="Beurs gesloten"></span>';
+
+  // Pill kleur + label per type
+  let pillCls, pillLabel;
+  if (geenSetup) {
+    pillCls = 'GEEN'; pillLabel = 'GEEN SETUP';
+  } else if (itype === 'direct') {
+    pillCls = 'DIRECT'; pillLabel = '🟢 KOOP NU';
+  } else if (itype === 'breakout') {
+    pillCls = 'BREAKOUT'; pillLabel = r.actie || 'KOOP BIJ UITBRAAK';
+  } else {
+    pillCls = 'PULLBACK'; pillLabel = r.actie || 'KOOP BIJ DALING';
+  }
+
+  // Confidence balk kleur
+  const v = r.vertrouwen || 0;
+  const confColor = v >= 85 ? '#7c3aed' : v >= 70 ? '#16a34a' : v >= 55 ? '#2563eb' : '#94a3b8';
+
+  // Setup badge
+  const setupBadge = r.setupLabel
+    ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;
+        background:${r.setupLabel==='Platinum'?'#ede9fe':r.setupLabel==='Gold'?'#fef9c3':'#dbeafe'};
+        color:${r.setupLabel==='Platinum'?'#7c3aed':r.setupLabel==='Gold'?'#854d0e':'#1d4ed8'};">${r.setupLabel}</span>`
+    : '';
+
+  if (geenSetup) {
+    // Compacte grijze weergave voor geen-setup
+    kaart.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+        <div style="font-size:13px;font-weight:700;color:#94a3b8;">${r.vlag} ${r.label}${statusDot}</div>
+        <div style="font-size:11px;color:#cbd5e1;">${r.tijdstip||''}</div>
+      </div>
+      <div style="font-size:18px;font-weight:700;color:#94a3b8;margin-bottom:4px;">${r.prijs ? '€'+fmt(r.prijs) : '—'}</div>
+      <span class="signaal-pill GEEN">GEEN SETUP</span>
+      <div style="font-size:10px;color:#94a3b8;line-height:1.5;">${r.redenering ? r.redenering.substring(0,100)+'…' : 'Vertrouwen '+v+'% — onder drempel van 55%'}</div>
+      <a href="/?symbol=${r.symbol}" style="display:block;text-align:center;margin-top:8px;font-size:11px;color:#94a3b8;text-decoration:none;padding:5px;border:1px solid #e2e8f0;border-radius:6px;">→ Open in dashboard</a>
+    `;
+    return;
+  }
+
+  // Volledige kaart voor actieve setups
   kaart.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
       <div style="font-size:13px;font-weight:700;color:#64748b;">${r.vlag} ${r.label}${statusDot}</div>
       <div style="font-size:11px;color:#94a3b8;">${r.tijdstip||''}</div>
     </div>
-    <div style="font-size:20px;font-weight:700;margin-bottom:6px;">${r.prijs ? '€'+fmt(r.prijs) : '—'}</div>
-    <span class="signaal-pill ${r.signaal}">${r.actie||r.signaal}</span>
-    ${(() => { const beursInfo = BEURS_OPEN[r.symbol]; const open = isBeursOpen(r.symbol); if (!open && beursInfo) { return '<div style="font-size:10px;color:#94a3b8;margin-top:4px;">Opens ' + beursInfo.open + '</div>'; } return ''; })()}
+    <div style="font-size:20px;font-weight:700;margin-bottom:2px;">${r.prijs ? '€'+fmt(r.prijs) : '—'}</div>
+    <span class="signaal-pill ${pillCls}">${pillLabel}</span>${setupBadge}
+    <div class="conf-bar"><div class="conf-bar-fill" style="width:${v}%;background:${confColor};"></div></div>
     <div style="font-size:11px;color:#64748b;margin-bottom:6px;">
-      Vertrouwen: <strong>${r.vertrouwen||0}%</strong>
-      ${r.rsi ? '| RSI: <strong>' + r.rsi + '</strong>' : ''}
-      ${r.macd ? '| MACD: <strong>' + r.macd + '</strong>' : ''}
+      Vertrouwen: <strong style="color:${confColor};">${v}%</strong>
+      ${r.rsi ? ' | RSI: <strong>' + r.rsi + '</strong>' : ''}
+      ${r.macd ? ' | MACD: <strong>' + r.macd + '</strong>' : ''}
     </div>
-    ${r.entry ? `
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:8px 0;">
-      <div style="background:#f8fafc;border-radius:6px;padding:6px;">
+      <div style="background:${itype==='direct'?'#f0fdf4':'#f8fafc'};border-radius:6px;padding:6px;${itype==='direct'?'border:1px solid #bbf7d0;':''}">
         <div style="font-size:9px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Entry</div>
-        <div style="font-size:13px;font-weight:700;color:#16a34a;">${Number(r.entry).toFixed(2)}</div>
+        <div style="font-size:13px;font-weight:700;color:${itype==='direct'?'#15803d':'#16a34a'};">${r.entry ? Number(r.entry).toFixed(2) : '—'}${itype==='direct'?'<span style="font-size:9px;margin-left:2px;">NU</span>':''}</div>
       </div>
       <div style="background:#f8fafc;border-radius:6px;padding:6px;">
         <div style="font-size:9px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Stop</div>
@@ -817,22 +874,31 @@ function updateKaart(i, r) {
         <div style="font-size:9px;font-weight:600;color:#94a3b8;text-transform:uppercase;">Target</div>
         <div style="font-size:13px;font-weight:700;color:#16a34a;">${r.target ? Number(r.target).toFixed(2) : '—'}</div>
       </div>
-    </div>` : `<div style="font-size:11px;color:#94a3b8;margin:8px 0;">
-  Wacht signaal — geen concrete entry op dit moment.
-</div>`}
+    </div>
     <div style="font-size:11px;color:#64748b;line-height:1.6;margin-bottom:6px;">${r.redenering||''}</div>
-    ${r.instap_tijd ? `<div style="font-size:11px;font-weight:600;color:#2563eb;">⏰ ${r.instap_tijd}</div>` : ''}
+    ${r.instap_conditie ? `<div style="font-size:10px;color:#2563eb;background:#eff6ff;padding:4px 8px;border-radius:5px;margin-bottom:6px;">⏰ ${r.instap_conditie}</div>` : ''}
     <a href="/?symbol=${r.symbol}"
-      style="display:block;text-align:center;margin-top:10px;font-size:11px;color:#2563eb;
+      style="display:block;text-align:center;margin-top:6px;font-size:11px;color:#2563eb;
       text-decoration:none;padding:6px;border:1px solid #e2e8f0;border-radius:6px;">
       → Open in dashboard
     </a>
   `;
 }
 function updateSamenvatting() {
-  document.getElementById('tel-koop').textContent = huidigeAnalyses.filter(a=>a.signaal==='KOOP').length;
-  document.getElementById('tel-verkoop').textContent = huidigeAnalyses.filter(a=>a.signaal==='VERKOOP').length;
-  document.getElementById('tel-wacht').textContent = huidigeAnalyses.filter(a=>a.signaal==='WACHT').length;
+  const direct   = huidigeAnalyses.filter(a => a.instap_type === 'direct').length;
+  const pullback = huidigeAnalyses.filter(a => a.instap_type === 'pullback').length;
+  const breakout = huidigeAnalyses.filter(a => a.instap_type === 'breakout').length;
+  const geenKoop = huidigeAnalyses.filter(a => !a.instap_type || a.instap_type === 'geen_trade' || a.vertrouwen < 55).length;
+  document.getElementById('tel-koop').textContent = direct + pullback + breakout;
+  document.getElementById('tel-verkoop').textContent = direct; // directe kansen appart
+  document.getElementById('tel-wacht').textContent = geenKoop;
+  // Update labels als ze bestaan
+  const lblKoop = document.getElementById('lbl-koop');
+  const lblVerkoop = document.getElementById('lbl-verkoop');
+  const lblWacht = document.getElementById('lbl-wacht');
+  if (lblKoop) lblKoop.textContent = 'Koop setups';
+  if (lblVerkoop) lblVerkoop.textContent = 'Direct instap';
+  if (lblWacht) lblWacht.textContent = 'Geen setup';
   document.getElementById('analyse-tijd').textContent =
     new Date().toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'});
 }
@@ -1055,8 +1121,10 @@ async function haalAnalyseOp(item) {
     tijdstip: new Date().toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit' }),
     datum: new Date().toLocaleDateString('nl-NL'),
     signaal: ai.signaal || 'WACHT', actie: ai.actie || ai.signaal || 'WACHT',
+    instap_type: ai.instap_type || null,
     vertrouwen: ai.vertrouwen || 0,
     entry: ai.entry, stop_loss: ai.stop_loss, target: ai.target, rr_ratio: ai.rr_ratio,
+    instap_conditie: ai.instap_conditie || '',
     redenering: ai.redenering || '', instap_tijd: ai.instap_tijd || '',
     dagtrend: ai.dagtrend || '', nieuws_sentiment: ai.nieuws_sentiment || '',
     rsi: rsi.toFixed(1), macd: macdData.macd.toFixed(2), atr: +atr.toFixed(4),

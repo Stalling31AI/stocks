@@ -760,6 +760,18 @@ TARGET REGELS:
 - Voorbeeld: entry $78, stop $77.04 (risico $0.96) → target minimaal $80.40
 - Bij sterke momentum (RSI STIJGEND, MACD STIJGEND, volume >1.5x): schaal target naar 3:1
 - Bij VIX > 25 of rangy markt: hou 2.5:1 en neem winst vroeg
+VROEGE SESSIE REGEL: Vóór 16:15 NL tijd heeft de dagdata slechts 1-3 candles — volume is altijd laag, dit is normaal en GEEN verkoopsignaal. Beoordeel volume pas na 16:15. Focus vóór 16:15 uitsluitend op VWAP-positie, RSI-richting en marktregime.
+ACHTERBLIJVER BLOCKER: Als SPY >+1% intradag EN dit aandeel <0% intradag → dit is een achterblijver. instap_type="geen_trade", vertrouwen max 40%. Wacht op relative strength herstel.
+INSTAP TYPE — verplicht in je JSON response (kies één):
+  "direct"   → koers zit NU op het koop-niveau (entry binnen 0.5% van huidige koers). Gebruik huidige koers als entry. Actie = "KOOP NU"
+  "pullback" → wacht op DALING naar support/VWAP. Entry MOET lager zijn dan huidige koers.
+  "breakout" → wacht op STIJGING door weerstand/ORB. Entry MOET hoger zijn dan huidige koers.
+  "geen_trade" → vertrouwen <55%, ongunstige condities, achterblijver, of geen setup vandaag.
+KRITISCHE FOUT — nooit zo doen:
+  ❌ koers=601, entry=603, actie="KOOP BIJ DALING NAAR 603"  ← koers is al ONDER 603, er is geen daling!
+  ✅ koers=601, entry=601, instap_type="direct", actie="KOOP NU"
+  ✅ koers=601, entry=603, instap_type="breakout", actie="KOOP BIJ STIJGING NAAR 603"
+  ✅ koers=601, entry=597, instap_type="pullback", actie="KOOP BIJ DALING NAAR 597"
 WACHT alleen als er werkelijk geen koopmoment is vandaag.
 Als WACHT: geef CONCREET aan bij welke prijs/conditie je WEL zou kopen.
 Geen vage antwoorden - altijd een concreet level noemen.
@@ -779,20 +791,20 @@ ${symHistory.filter(t => t.resultaat === 'gemist').slice(0,5).map(t =>
 Leer hiervan: bij welke RSI/MACD combinatie had je WEL moeten kopen?` : ''}
 Reageer ALLEEN met dit JSON:
 {
-  "signaal": "KOOP" als je nu of bij een specifieke prijs zou kopen. "WACHT" alleen als er geen enkel koopmoment is vandaag.
-  "actie": "KOOP NU" of "KOOP BIJ DALING NAAR [prijs]",
-  BELANGRIJK: Als je "KOOP BIJ DALING NAAR [prijs]" geeft, gebruik dan signaal="KOOP" en vul entry in met die prijs. Nooit signaal="WACHT" combineren met een KOOP actie.
+  "signaal": "KOOP" of "WACHT",
+  "instap_type": "direct" of "pullback" of "breakout" of "geen_trade",
+  "actie": "KOOP NU" of "KOOP BIJ DALING NAAR [prijs]" of "KOOP BIJ STIJGING NAAR [prijs]" of "GEEN SETUP",
   "vertrouwen": 0-100,
-  "redenering": "max 2 zinnen met exacte prijzen",
-  "entry": getal of null,
+  "redenering": "max 2 zinnen met exacte prijzen en reden van instap_type keuze",
+  "entry": getal (huidige koers bij direct, lager bij pullback, hoger bij breakout) of null,
   "stop_loss": getal of null,
   "target": getal of null,
   "rr_ratio": getal of null,
   "instap_conditie": "exacte conditie voor instap",
   "weerstand": getal,
   "steun": getal,
-  "nieuws_samenvatting": "Analyse puur technisch",
-  "nieuws_sentiment": "NEUTRAAL"
+  "nieuws_samenvatting": "max 1 zin",
+  "nieuws_sentiment": "BULLISH" of "BEARISH" of "NEUTRAAL"
 }`;
 
     const message = await client.messages.create({
@@ -859,6 +871,86 @@ Reageer ALLEEN met dit JSON:
           }
         }
       }
+
+      // ── V2.0: instap_type validatie & entry correctie ──────────────────────
+      const huidigePrijs = last.close;
+
+      // 1. Detecteer instap_type als AI het niet gegeven heeft
+      if (!parsed.instap_type) {
+        if (parsed.vertrouwen < 55 || parsed.signaal === 'WACHT') {
+          parsed.instap_type = 'geen_trade';
+        } else if (parsed.entry) {
+          const gap = (parseFloat(parsed.entry) - huidigePrijs) / huidigePrijs;
+          if (Math.abs(gap) <= 0.005) parsed.instap_type = 'direct';
+          else if (gap < -0.005) parsed.instap_type = 'pullback';
+          else parsed.instap_type = 'breakout';
+        } else {
+          parsed.instap_type = 'geen_trade';
+        }
+      }
+
+      // 2. Achterblijver blocker: markt >+1% maar aandeel <0% intradag
+      const spyStijgt = marktCtx && marktCtx.spyPct > 1.0;
+      const aandDaalt = intradayPct !== null && parseFloat(intradayPct) < 0;
+      if (spyStijgt && aandDaalt) {
+        parsed.instap_type = 'geen_trade';
+        parsed.vertrouwen = Math.min(parsed.vertrouwen || 50, 40);
+        parsed.signaal = 'WACHT';
+        parsed.actie = 'GEEN SETUP';
+        parsed.redenering = `Achterblijver: markt +${marktCtx.spyPct.toFixed(1)}% maar ${symbol} ${intradayPct}% intradag. Wacht op relative strength herstel.`;
+      }
+
+      // 3. Confidence enforcement: <55% → geen_trade
+      if (parsed.vertrouwen < 55) {
+        parsed.instap_type = 'geen_trade';
+        parsed.signaal = 'WACHT';
+        if (!parsed.actie || parsed.actie === 'KOOP NU') parsed.actie = 'GEEN SETUP';
+      }
+
+      // 4. Entry correctie: entry boven huidige koers maar GEEN breakout → dit is een fout
+      if (parsed.instap_type !== 'geen_trade' && parsed.entry && parsed.signaal === 'KOOP') {
+        const entryVal = parseFloat(parsed.entry);
+        const gap = (entryVal - huidigePrijs) / huidigePrijs;
+        if (gap > 0.005 && parsed.instap_type !== 'breakout') {
+          // Entry is >0.5% boven huidige koers maar GEEN breakout-label → correct naar direct of breakout
+          if (gap <= 0.015) {
+            // Klein verschil: behandel als direct entry op huidige koers
+            parsed.instap_type = 'direct';
+          } else {
+            // Groot verschil: dit is eigenlijk een breakout setup
+            parsed.instap_type = 'breakout';
+          }
+        }
+      }
+
+      // 5. Direct entry: zet entry op huidige koers, herbereken stop/target
+      if (parsed.instap_type === 'direct' && parsed.entry) {
+        const oldEntry = parseFloat(parsed.entry);
+        const oldStop = parseFloat(parsed.stop_loss) || (oldEntry * 0.992);
+        const risico = Math.abs(oldEntry - oldStop);
+        parsed.entry = huidigePrijs;
+        parsed.actie = 'KOOP NU';
+        parsed.signaal = 'KOOP';
+        if (risico > 0) {
+          parsed.stop_loss = +(huidigePrijs - risico).toFixed(2);
+          const minTarget = +(huidigePrijs + risico * 2.5).toFixed(2);
+          if (!parsed.target || parseFloat(parsed.target) < minTarget) {
+            parsed.target = minTarget;
+          }
+          parsed.rr_ratio = +((parseFloat(parsed.target) - huidigePrijs) / risico).toFixed(2);
+        }
+      }
+
+      // 6. Actie-label consistent met instap_type
+      if (parsed.instap_type === 'pullback' && parsed.entry) {
+        parsed.actie = `KOOP BIJ DALING NAAR ${Number(parsed.entry).toFixed(2)}`;
+      } else if (parsed.instap_type === 'breakout' && parsed.entry) {
+        parsed.actie = `KOOP BIJ STIJGING NAAR ${Number(parsed.entry).toFixed(2)}`;
+      } else if (parsed.instap_type === 'geen_trade') {
+        parsed.actie = parsed.actie || 'GEEN SETUP';
+        parsed.signaal = 'WACHT';
+      }
+      // ── einde V2.0 ─────────────────────────────────────────────────────────
       // Gemiste kans detectie: was vorige analyse WACHT en bewoog koers >0.8%?
       const vorige = lastAnalysePerSymbol[symbol];
       if (vorige && vorige.signaal === 'WACHT' && vorige.prijs) {
