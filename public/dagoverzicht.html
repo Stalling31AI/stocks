@@ -2144,7 +2144,13 @@ function syncSimulatiesB() {
     const heeftOpen = (simBOpgeslagen[datum] || []).some(t => t.symbol === sym && t.resultaat === 'open');
     if (heeftOpen || huidigAantal >= 2) continue;
     if (!isBeursOpen(sym)) continue;
-    if ((a.vertrouwen || 0) < 55) continue; // Geen lage-vertrouwen trades toevoegen
+    if ((a.vertrouwen || 0) < 55) continue;
+    if (a.instap_type === 'geen_trade') continue; // geen_trade niet in SimB
+    // Opening filter: geen nieuwe SimB entries in eerste 45 min
+    const _nuNL = new Date().toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/Amsterdam' });
+    const [_h, _m] = _nuNL.split(':').map(Number);
+    const _min = _h * 60 + _m;
+    if (USD_SYMBOLS.includes(sym) && _min >= 15*60+30 && _min < 16*60+15) continue;
     {
       const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
       if (!trade) continue;
@@ -2403,6 +2409,17 @@ async function simuleerTradesB(analyses) {
       console.log(`SimB: ${a.symbol} overgeslagen — dagstoplimiet bereikt (${stopsVandaagB} stops)`);
       continue;
     }
+    // Opening filter: geen trades in eerste 45 min na US open (15:30-16:15 NL)
+    // Te weinig candles, volume onduidelijk, meeste valse signalen
+    const nuNL = new Date().toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/Amsterdam' });
+    const [nuH, nuM] = nuNL.split(':').map(Number);
+    const nuTotMin = nuH * 60 + nuM;
+    const usOpenMin = 15 * 60 + 30; // 15:30
+    const openingEinde = 16 * 60 + 15; // 16:15
+    if (USD_SYMBOLS.includes(a.symbol) && nuTotMin >= usOpenMin && nuTotMin < openingEinde) {
+      console.log(`SimB: ${a.symbol} overgeslagen — opening filter (${nuNL}, wacht tot 16:15)`);
+      continue;
+    }
     // Dagtrend filter
     if (a.intradayPct !== null && a.intradayPct < -1.5) {
       console.log(`SimB: ${a.symbol} overgeslagen — dagtrend te negatief (${a.intradayPct}%)`);
@@ -2412,6 +2429,11 @@ async function simuleerTradesB(analyses) {
     const vertrouwenB = a.vertrouwen || 0;
     if (vertrouwenB < 55) {
       console.log(`SimB: ${a.symbol} overgeslagen — te laag vertrouwen (${vertrouwenB}%)`);
+      continue;
+    }
+    // geen_trade instap_type overslaan
+    if (a.instap_type === 'geen_trade') {
+      console.log(`SimB: ${a.symbol} overgeslagen — instap_type=geen_trade`);
       continue;
     }
     // Nieuwe trade aanmaken (ook na verlopen setup)
