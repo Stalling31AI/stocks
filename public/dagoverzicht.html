@@ -1681,7 +1681,13 @@ function loadData() {
     const perSymbool = {};
     for (const a of alleAnalyses) {
       const isKoop = a.signaal === 'KOOP' || (a.actie && a.actie.toUpperCase().includes('KOOP'));
-      if (isKoop && a.entry) perSymbool[a.symbol] = a;
+      if (!isKoop || !a.entry) continue;
+      // Sla opening-analyses over (15:30-16:15) — analyse-timestamp checken
+      if (USD_SYMBOLS.includes(a.symbol) && a.tijdstip) {
+        const [lh, lm] = a.tijdstip.split(':').map(Number);
+        if (lh * 60 + lm >= 15*60+30 && lh * 60 + lm < 16*60+15) continue;
+      }
+      if ((a.vertrouwen || 0) >= 55 && a.instap_type !== 'geen_trade') perSymbool[a.symbol] = a;
     }
     const bestaand = new Set((simulaties_b[datum] || []).map(t => t.symbol));
     let gesync = false;
@@ -2145,12 +2151,12 @@ function syncSimulatiesB() {
     if (heeftOpen || huidigAantal >= 2) continue;
     if (!isBeursOpen(sym)) continue;
     if ((a.vertrouwen || 0) < 55) continue;
-    if (a.instap_type === 'geen_trade') continue; // geen_trade niet in SimB
-    // Opening filter: geen nieuwe SimB entries in eerste 45 min
-    const _nuNL = new Date().toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/Amsterdam' });
-    const [_h, _m] = _nuNL.split(':').map(Number);
-    const _min = _h * 60 + _m;
-    if (USD_SYMBOLS.includes(sym) && _min >= 15*60+30 && _min < 16*60+15) continue;
+    if (a.instap_type === 'geen_trade') continue;
+    // Opening filter op analyse-timestamp (niet huidige tijd)
+    if (USD_SYMBOLS.includes(sym) && a.tijdstip) {
+      const [_h, _m] = a.tijdstip.split(':').map(Number);
+      if (_h * 60 + _m >= 15*60+30 && _h * 60 + _m < 16*60+15) continue;
+    }
     {
       const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
       if (!trade) continue;
@@ -2409,16 +2415,15 @@ async function simuleerTradesB(analyses) {
       console.log(`SimB: ${a.symbol} overgeslagen — dagstoplimiet bereikt (${stopsVandaagB} stops)`);
       continue;
     }
-    // Opening filter: geen trades in eerste 45 min na US open (15:30-16:15 NL)
-    // Te weinig candles, volume onduidelijk, meeste valse signalen
-    const nuNL = new Date().toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/Amsterdam' });
-    const [nuH, nuM] = nuNL.split(':').map(Number);
-    const nuTotMin = nuH * 60 + nuM;
-    const usOpenMin = 15 * 60 + 30; // 15:30
-    const openingEinde = 16 * 60 + 15; // 16:15
-    if (USD_SYMBOLS.includes(a.symbol) && nuTotMin >= usOpenMin && nuTotMin < openingEinde) {
-      console.log(`SimB: ${a.symbol} overgeslagen — opening filter (${nuNL}, wacht tot 16:15)`);
-      continue;
+    // Opening filter: geen trades gebaseerd op analyses uit eerste 45 min na US open (15:30-16:15 NL)
+    // Controleert de ANALYSE-timestamp (a.tijdstip), niet de huidige tijd
+    if (USD_SYMBOLS.includes(a.symbol) && a.tijdstip) {
+      const [aH, aM] = a.tijdstip.split(':').map(Number);
+      const aTotMin = aH * 60 + aM;
+      if (aTotMin >= 15*60+30 && aTotMin < 16*60+15) {
+        console.log(`SimB: ${a.symbol} overgeslagen — analyse uit opening (${a.tijdstip})`);
+        continue;
+      }
     }
     // Dagtrend filter
     if (a.intradayPct !== null && a.intradayPct < -1.5) {
