@@ -2401,11 +2401,22 @@ async function simuleerTradesB(analyses) {
           continue;
         }
       } else {
-        // Reeds gekocht: entry nooit aanpassen, alleen exit bijwerken
-        bestaandeTrade.stop_loss = a.stop_loss;
-        bestaandeTrade.target    = a.target;
-        bestaandeTrade.updates   = bestaandeTrade.updates || [];
-        bestaandeTrade.updates.push({ tijdstip: a.tijdstip, entry: bestaandeTrade.entry, stop_loss: a.stop_loss, target: a.target, gekocht: true });
+        // Reeds gekocht: entry NOOIT aanpassen, stop alleen omhoog (trailing), target alleen hoger
+        // Valideer nieuwe stop: minimum 0.5% van entry, en nooit LAGER dan huidige stop (geen verwijding)
+        const minStop = +(bestaandeTrade.entry * 0.995).toFixed(2); // max 0.5% risico
+        const nieuweStop = parseFloat(a.stop_loss);
+        if (!isNaN(nieuweStop) &&
+            nieuweStop > bestaandeTrade.stop_loss && // alleen omhoog (trailing)
+            nieuweStop <= minStop) {                  // niet hoger dan 0.5% onder entry
+          bestaandeTrade.stop_loss = +nieuweStop.toFixed(2);
+        }
+        // Target alleen hoger (meer ambitieus)
+        const nieuweTarget = parseFloat(a.target);
+        if (!isNaN(nieuweTarget) && nieuweTarget > bestaandeTrade.target) {
+          bestaandeTrade.target = +nieuweTarget.toFixed(2);
+        }
+        bestaandeTrade.updates = bestaandeTrade.updates || [];
+        bestaandeTrade.updates.push({ tijdstip: a.tijdstip, stop_loss: a.stop_loss, target: a.target, gekocht: true });
         continue;
       }
     }
