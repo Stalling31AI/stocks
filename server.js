@@ -404,6 +404,60 @@ app.get('/api/marktcontext', async (req, res) => {
   res.json(ctx);
 });
 
+// ── PRE-MARKET DATA CACHE (Yahoo Finance v7, gratis, geen API key) ─────────
+let _preMarketCache = null;
+let _preMarketTs = 0;
+const PREMARKET_CACHE_MS = 5 * 60 * 1000; // 5 minuten
+
+const PREMARKET_SYMBOLS = ['AAPL','META','NVDA','AMD','AMAT','ASML','NFLX','PYPL','LMT','XOM','RTX','GLD'];
+
+async function haalPreMarketData() {
+  if (_preMarketCache && Date.now() - _preMarketTs < PREMARKET_CACHE_MS) {
+    return _preMarketCache;
+  }
+  try {
+    const syms = PREMARKET_SYMBOLS.join(',');
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=preMarketPrice,preMarketChangePercent,preMarketVolume,regularMarketVolume,averageDailyVolume3Month,regularMarketPreviousClose`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) throw new Error(`Yahoo v7 returned ${resp.status}`);
+    const json = await resp.json();
+    const quotes = json?.quoteResponse?.result || [];
+    const result = {};
+    for (const q of quotes) {
+      const sym = q.symbol;
+      const pmPct = q.preMarketChangePercent;
+      const pmPrijs = q.preMarketPrice;
+      const pmVol = q.preMarketVolume;
+      const dagVol = q.averageDailyVolume3Month || q.regularMarketVolume;
+      // Pre-market volume als % van gemiddeld dagvolume
+      const pmVolPct = (pmVol && dagVol) ? +(pmVol / dagVol * 100).toFixed(1) : null;
+      result[sym] = {
+        preMarketPrijs: pmPrijs ? +pmPrijs.toFixed(2) : null,
+        preMarketPct: pmPct ? +pmPct.toFixed(2) : null,
+        preMarketVolume: pmVol || null,
+        preMarketVolPct: pmVolPct, // bijv. 12.3 = 12.3% van gem. dagvolume
+        vorigeSlot: q.regularMarketPreviousClose ? +q.regularMarketPreviousClose.toFixed(2) : null,
+      };
+    }
+    _preMarketCache = result;
+    _preMarketTs = Date.now();
+    console.log(`[PreMarket] Geladen: ${Object.keys(result).join(', ')}`);
+    return result;
+  } catch (err) {
+    console.warn('[PreMarket] Fout:', err.message);
+    return _preMarketCache || {}; // geef stale cache terug bij fout
+  }
+}
+
+// GET /api/premarket — pre-market koers, gap, volume voor alle US symbolen
+app.get('/api/premarket', async (req, res) => {
+  const data = await haalPreMarketData();
+  res.json(data);
+});
+
 // GET /api/ochtendselect — dagelijkse top-5 symboolselectie op basis van nieuws + marktregime
 app.get('/api/ochtendselect', async (req, res) => {
   try {
@@ -537,12 +591,14 @@ app.post('/api/analyze', async (req, res) => {
   try {
     const { symbol, interval, quotes, indicators } = req.body;
 
-    // Haal nieuws, trade history en marktcontext parallel op
-    const [headlines, symHistory, marktCtx] = await Promise.all([
+    // Haal nieuws, trade history, marktcontext en pre-market parallel op
+    const [headlines, symHistory, marktCtx, preMarktAll] = await Promise.all([
       haalNieuwsOp(symbol),
       Promise.resolve(tradeHistory.filter(t => t.symbol === symbol).slice(0, 10)),
       haalMarktContext(),
+      haalPreMarketData(),
     ]);
+    const preMarkt = preMarktAll[symbol] || null;
 
     // Sector sync: welke symbolen in dezelfde sector hebben ook een signaal?
     const CHIP_SYMBOLS = ['NVDA','AMD','AMAT','ASML','ASML.AS'];
@@ -695,6 +751,11 @@ KERNSTRATEGIE: Handel MET de trend. Koop momentum, geen dips in dalende aandelen
 KRITISCHE LEERREGEL: Sla een cyclus over als er geen duidelijk momentum is. Een gemiste kans is beter dan een verliesgevende trade.
 Sector focus: Halfgeleiders (ASML/AMD/NVDA/AMAT) bewegen vaak synchroon. Relatieve kracht = goud.
 ${symbol === 'LMT' ? '⚠️ LMT WAARSCHUWING: Dit aandeel heeft weinig intraday beweging. Alleen handelen bij vertrouwen ≥75% EN duidelijk technisch signaal.' : ''}
+${preMarkt && preMarkt.preMarketPct !== null ? `PRE-MARKET (voor 15:30 NL):
+Gap: ${preMarkt.preMarketPct > 0 ? '+' : ''}${preMarkt.preMarketPct}% | Koers: $${preMarkt.preMarketPrijs || 'N/A'}${preMarkt.preMarketVolPct !== null ? ` | Volume: ${preMarkt.preMarketVolPct}% van gem. dagvolume` : ''}
+${Math.abs(preMarkt.preMarketPct) > 2 ? `⚠️ GROTE PRE-MARKET GAP (${preMarkt.preMarketPct > 0 ? '+' : ''}${preMarkt.preMarketPct}%): verwacht hoge openingsvolatiliteit, wacht op prijsstabilisatie na open` : ''}
+${preMarkt.preMarketVolPct !== null && preMarkt.preMarketVolPct > 15 ? `✅ HOOG PRE-MARKET VOLUME (${preMarkt.preMarketVolPct}%): sterke institutionele interesse vóór open` : ''}
+${preMarkt.preMarketPct > 1 ? '✅ BULLISH PRE-MARKET: kans op gap-and-go bij hoge volume, maar wacht op consolidatie na open' : preMarkt.preMarketPct < -1 ? '❌ BEARISH PRE-MARKET: gap-down verwacht, wacht op bodem-vorming voor koop' : '— Neutraal pre-market'}` : ''}
 KOERS & DAG:
 Prijs: €${fmt(last.close)} | Gap: ${openingGap || 0}% | Intraday: ${intradayPct !== null ? intradayPct + '%' : 'N/A'} t.o.v. open
 Dag range: €${dagLaag} - €${dagHoog} (€${dagRange.toFixed(0)}, ${rangePct}%)
@@ -719,10 +780,10 @@ MOMENTUM SCORE: ${indicators.momentumScore != null ? indicators.momentumScore + 
 ${indicators.rsiDivergentie ? `⚡ RSI DIVERGENTIE: ${indicators.rsiDivergentie}` : ''}
 ${indicators.candlePatroon ? `🕯 CANDLE PATROON: ${indicators.candlePatroon}` : ''}
 ${indicators.relKracht != null ? `📊 RELATIEVE KRACHT vs SPY: ${indicators.relKracht}x ${indicators.relKracht > 1.5 ? '✅ OUTPERFORMER — koop de leider' : indicators.relKracht < 0.5 ? '⚠️ ACHTERBLIJVER — vermijd of wacht' : '— neutraal'}` : ''}
-TRADING PROFIEL: Day trader. Weekdoel: €1000 netto. Variabel risico op setup-kwaliteit:
-  Platinum setup (vertrouwen ≥85%): €150 risico → potentieel €375 per trade
-  Gold setup (vertrouwen 70-84%): €100 risico → potentieel €250 per trade
-  Standaard (vertrouwen 55-69%): €75 risico → potentieel €187 per trade
+TRADING PROFIEL: Agressieve day trader. Budget €10.000. Weekdoel: €1000 netto. Variabel risico op setup-kwaliteit:
+  Platinum setup (vertrouwen ≥85%): €200 risico → potentieel €500 per trade (2.5:1 R:R)
+  Gold setup (vertrouwen 70-84%): €150 risico → potentieel €375 per trade (2.5:1 R:R)
+  Standaard (vertrouwen 55-69%): €100 risico → potentieel €250 per trade (2.5:1 R:R)
   Onder 55% vertrouwen: GEEN trade — beter wachten dan een slechte setup nemen.
 Geef je vertrouwen eerlijk: 85%+ alleen als het echt een Platinum-setup is met meerdere bevestigingen.
 KOOP CRITERIA — vertrouwen stijgt met elk extra bevestigingssignaal:

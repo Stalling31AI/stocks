@@ -778,9 +778,16 @@ function renderLadenKaarten() {
     const div = document.createElement('div');
     div.className = 'aandeel-kaart laden';
     div.id = 'kaart-' + i;
+    const pmNu = (window.preMarktData || {})[item.symbol];
+    const pmBadgeHtml = pmNu && pmNu.preMarketPct !== null
+      ? `<span id="pm-badge-${i}" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;margin-left:6px;
+          background:${pmNu.preMarketPct > 0 ? '#dcfce7' : pmNu.preMarketPct < 0 ? '#fee2e2' : '#f1f5f9'};
+          color:${pmNu.preMarketPct > 0 ? '#166534' : pmNu.preMarketPct < 0 ? '#991b1b' : '#64748b'};">
+          ${pmNu.preMarketPct > 0 ? '+' : ''}${pmNu.preMarketPct}% PM</span>`
+      : `<span id="pm-badge-${i}" style="display:none;font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;margin-left:6px;"></span>`;
     div.innerHTML = `
       <div style="font-size:13px;font-weight:700;color:#64748b;margin-bottom:4px;">
-        ${item.vlag} ${item.label}
+        ${item.vlag} ${item.label}${pmBadgeHtml}
       </div>
       <div style="font-size:20px;font-weight:700;margin-bottom:8px;">—</div>
       <span class="signaal-pill LADEN">⏳ Laden...</span>
@@ -796,6 +803,14 @@ function updateKaart(i, r) {
   if (!kaart) return;
   const fmt = v => v != null ? Number(v).toFixed(2) : '—';
   const itype = r.instap_type || (r.signaal === 'KOOP' ? 'pullback' : 'geen_trade');
+  // Pre-market badge
+  const pmD = (window.preMarktData || {})[r.symbol];
+  const pmBadge = pmD && pmD.preMarketPct !== null
+    ? `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;margin-left:6px;
+        background:${pmD.preMarketPct > 0 ? '#dcfce7' : pmD.preMarketPct < 0 ? '#fee2e2' : '#f1f5f9'};
+        color:${pmD.preMarketPct > 0 ? '#166534' : pmD.preMarketPct < 0 ? '#991b1b' : '#64748b'};"
+        title="Pre-market: ${pmD.preMarketPct > 0 ? '+' : ''}${pmD.preMarketPct}%${pmD.preMarketVolPct ? ' | Vol: '+pmD.preMarketVolPct+'% van dagvol' : ''}">${pmD.preMarketPct > 0 ? '+' : ''}${pmD.preMarketPct}% PM</span>`
+    : '';
   const geenSetup = itype === 'geen_trade' || r.vertrouwen < 55;
 
   // Kaart klasse op basis van instap_type
@@ -838,7 +853,7 @@ function updateKaart(i, r) {
     // Compacte grijze weergave voor geen-setup
     kaart.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
-        <div style="font-size:13px;font-weight:700;color:#94a3b8;">${r.vlag} ${r.label}${statusDot}</div>
+        <div style="font-size:13px;font-weight:700;color:#94a3b8;">${r.vlag} ${r.label}${statusDot}${pmBadge}</div>
         <div style="font-size:11px;color:#cbd5e1;">${r.tijdstip||''}</div>
       </div>
       <div style="font-size:18px;font-weight:700;color:#94a3b8;margin-bottom:4px;">${r.prijs ? '€'+fmt(r.prijs) : '—'}</div>
@@ -852,7 +867,7 @@ function updateKaart(i, r) {
   // Volledige kaart voor actieve setups
   kaart.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-      <div style="font-size:13px;font-weight:700;color:#64748b;">${r.vlag} ${r.label}${statusDot}</div>
+      <div style="font-size:13px;font-weight:700;color:#64748b;">${r.vlag} ${r.label}${statusDot}${pmBadge}</div>
       <div style="font-size:11px;color:#94a3b8;">${r.tijdstip||''}</div>
     </div>
     <div style="font-size:20px;font-weight:700;margin-bottom:2px;">${r.prijs ? '€'+fmt(r.prijs) : '—'}</div>
@@ -937,14 +952,14 @@ function berekenATR(quotes, period=14) {
   return slice.reduce((a,b) => a+b, 0) / slice.length;
 }
 // Variabel risico op basis van setup-kwaliteit (vertrouwen van Claude):
-//   Platinum ≥85% → €150 risico  (potentieel €375 bij 2.5:1)
-//   Gold     ≥70% → €100 risico  (potentieel €250)
-//   Standaard≥55% → €75 risico   (potentieel €187)
+//   Platinum ≥85% → €200 risico  (potentieel €500 bij 2.5:1)
+//   Gold     ≥70% → €150 risico  (potentieel €375)
+//   Standaard≥55% → €100 risico  (potentieel €250)
 //   Zwak     <55% → geen trade   (SimB slaat over)
 function risicoVoorVertrouwen(vertrouwen) {
-  if (vertrouwen >= 85) return { eur: 150, label: 'Platinum' };
-  if (vertrouwen >= 70) return { eur: 100, label: 'Gold' };
-  return { eur: 75, label: 'Standaard' };
+  if (vertrouwen >= 85) return { eur: 200, label: 'Platinum' };
+  if (vertrouwen >= 70) return { eur: 150, label: 'Gold' };
+  return { eur: 100, label: 'Standaard' };
 }
 function berekenAantal(entry, stop, symbol, vertrouwen = 100) {
   const { eur: RISICO_EUR } = risicoVoorVertrouwen(vertrouwen);
@@ -952,9 +967,9 @@ function berekenAantal(entry, stop, symbol, vertrouwen = 100) {
   if (stopAfstand <= 0) return 1;
   const stopEur = USD_SYMBOLS.includes(symbol) ? stopAfstand / EUR_RATE : stopAfstand;
   const aantalOpRisico = Math.floor(RISICO_EUR / stopEur);
-  // Max positiewaarde €12.000 (beschermt tegen te grote positie bij kleine stop)
+  // Max positiewaarde €10.000 (budget €10k per positie)
   const entryEur = USD_SYMBOLS.includes(symbol) ? entry / EUR_RATE : entry;
-  const maxOpWaarde = Math.max(1, Math.floor(12000 / entryEur));
+  const maxOpWaarde = Math.max(1, Math.floor(10000 / entryEur));
   return Math.max(1, Math.min(aantalOpRisico, maxOpWaarde));
 }
 // ============================================
@@ -3389,6 +3404,34 @@ async function updateKoersen() {
 const preMarketNieuwsSymbolen = new Set(); // symbolen met relevant nieuws vandaag
 let openingTriggerGedaan = false;
 
+// ── PRE-MARKET KOERSEN (Yahoo Finance via server) ─────────────────────────
+window.preMarktData = {}; // { AAPL: { preMarketPct, preMarketPrijs, preMarketVolPct, ... } }
+
+async function laadPreMarktKoersen() {
+  try {
+    const r = await fetch('/api/premarket');
+    if (!r.ok) return;
+    const data = await r.json();
+    window.preMarktData = data;
+    console.log('[PreMarkt] geladen:', Object.keys(data).length, 'symbolen');
+    // Toon pre-market badges op kaarten die al gerenderd zijn
+    WATCHLIST.forEach((item, i) => {
+      const pm = data[item.symbol];
+      if (!pm || pm.preMarketPct === null) return;
+      const badge = document.getElementById(`pm-badge-${i}`);
+      if (badge) {
+        const pct = pm.preMarketPct;
+        badge.textContent = `${pct > 0 ? '+' : ''}${pct}% PM`;
+        badge.style.background = pct > 0 ? '#dcfce7' : pct < 0 ? '#fee2e2' : '#f1f5f9';
+        badge.style.color = pct > 0 ? '#166534' : pct < 0 ? '#991b1b' : '#64748b';
+        badge.style.display = 'inline-block';
+      }
+    });
+  } catch(e) {
+    console.warn('[PreMarkt] fout:', e.message);
+  }
+}
+
 async function laadPreMarketBriefing() {
   const panel = document.getElementById('premarket-panel');
   const inhoud = document.getElementById('premarket-inhoud');
@@ -3633,6 +3676,10 @@ window.addEventListener('load', () => {
 
   // Ochtend selectie laden bij start
   laadOchtendSelectie();
+
+  // Pre-market koersen altijd laden (ook tijdens handelsdag), elke 5 min verversen
+  setTimeout(laadPreMarktKoersen, 2000);
+  setInterval(laadPreMarktKoersen, 5 * 60 * 1000);
 
   if (totMin >= euOpen && totMin < usSluit) {
     // Pre-market briefing: laden + elke 15 min verversen
