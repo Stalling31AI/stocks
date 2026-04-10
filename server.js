@@ -783,16 +783,18 @@ ${indicators.relKracht != null ? `📊 RELATIEVE KRACHT vs SPY: ${indicators.rel
 TRADING PROFIEL: Agressieve day trader. Budget €10.000. Weekdoel: €1000 netto. Variabel risico op setup-kwaliteit:
   Platinum setup (vertrouwen ≥85%): €200 risico → potentieel €500 per trade (2.5:1 R:R)
   Gold setup (vertrouwen 70-84%): €150 risico → potentieel €375 per trade (2.5:1 R:R)
-  Standaard (vertrouwen 55-69%): €100 risico → potentieel €250 per trade (2.5:1 R:R)
-  Onder 55% vertrouwen: GEEN trade — beter wachten dan een slechte setup nemen.
-Geef je vertrouwen eerlijk: 85%+ alleen als het echt een Platinum-setup is met meerdere bevestigingen.
+  Standaard (vertrouwen 50-69%): €100 risico → potentieel €250 per trade (2.5:1 R:R)
+  Onder 50% vertrouwen: GEEN trade.
+Geef je vertrouwen eerlijk maar NIET te conservatief: bij een duidelijke setup mag je 60-70% geven ook als niet alle criteria groen zijn.
+${marktCtx && marktCtx.spyPct > 0.5 ? `🟢 BULL DAG (SPY +${marktCtx.spyPct}%): In een stijgende markt ZOEK je actief naar instap-momenten. Trend-following werkt. Geef momentum-setups minimaal 55% vertrouwen als richting klopt. Wacht NIET op perfecte setup — een goede setup is genoeg.` : marktCtx && marktCtx.spyPct < -0.5 ? `🔴 BEAR DAG (SPY ${marktCtx.spyPct}%): Alleen handelen bij uitzonderlijk sterke relatieve kracht. Drempel hogere vertrouwen.` : ''}
 KOOP CRITERIA — vertrouwen stijgt met elk extra bevestigingssignaal:
 ✓ PLATINUM SETUP (vertrouwen 85%+): ORB BREAKOUT + BOVEN VWAP + momentum score ≥7 + RSI STIJGEND + sector sync groen + relKracht > 1.5
 ✓ GOLD SETUP (vertrouwen 70-85%): BOVEN VWAP + RSI > 50 STIJGEND + MACD STIJGEND + momentum score ≥6 + volume > 1.2x
-✓ VWAP BREAKOUT (vertrouwen 65%+): koers net BOVEN VWAP + RSI STIJGEND + volume > 1.5x
-✓ PULLBACK NAAR VWAP: koers daalt naar VWAP als support, RSI > 45 STIJGEND, geen LH+LL → KOOP bij VWAP aanraking
+✓ STANDAARD SETUP (vertrouwen 55-70%): RSI STIJGEND + MACD positief + koers boven VWAP OF aan VWAP-support + momentum ≥4
+✓ VWAP BREAKOUT (vertrouwen 55%+): koers net BOVEN VWAP + RSI STIJGEND + volume > 1.2x
+✓ PULLBACK NAAR VWAP: koers daalt naar VWAP als support, RSI > 40 STIJGEND, geen LH+LL → KOOP bij VWAP aanraking
 ✓ BULLISH DIVERGENTIE + HAMMER/ENGULFING aan support of VWAP → KOOP NU
-✓ ORB BREAKOUT BOVEN DAGHOOG GISTEREN (${gis ? fmt(gis.high) : 'N/A'}): sterke dagtrend bevestigd
+✓ BREAKOUT boven gisteren high (${gis ? fmt(gis.high) : 'N/A'}) met volume > 1.2x → sterke dagtrend
 STEUN/WEERSTAND NIVEAUS (gebruik als entry/stop/target):
 - Gisteren high: ${gis ? fmt(gis.high) : 'N/A'} (weerstand → doorbraak = bullish)
 - Gisteren close: ${gis ? fmt(gis.close) : 'N/A'} (steun/weerstand)
@@ -802,11 +804,12 @@ EXIT SIGNALEN (vertel dit ook in je redenering als je het ziet):
 ⚠️ BEARISH DIVERGENTIE: top in aantocht — bij open positie: verhoog stop, geen nieuwe instap
 ⚠️ SHOOTING STAR/BEARISH ENGULFING aan daghoog of weerstand: overweeg snelle exit
 ⚠️ momentum score daalt van hoog naar laag terwijl je in positie zit: trail stop
-WACHT CRITERIA (verplicht bij één of meer van):
-✗ Intradag < -1.5% EN momentum score < 4: dalende dag, geen koop
-✗ LH+LL patroon (4 candles): duidelijke downtrend, wacht op omkering
-✗ RSI DALEND EN MACD bearish: dubbele zwakte, geen instap
-✗ relKracht < 0.5: achterblijver, koop de sterkste sectorgeno(o)t
+WACHT CRITERIA (alleen bij combinatie van negatieve signalen — niet bij één enkel signaal):
+✗ Intradag < -2% EN momentum score < 3: duidelijk dalende dag, geen koop
+✗ LH+LL patroon (4 candles) EN RSI DALEND: duidelijke downtrend
+✗ RSI DALEND EN MACD DALEND EN koers ONDER VWAP: driedubbele zwakte
+✗ relKracht < 0.3: echte achterblijver op een bull-dag
+✗ RSI > 80 EN koers boven upper Bollinger: extreem overbought, geen nieuwe instap
 ✗ Koers ONDER VWAP EN momentum score < 5: bears in control
 ✗ Al 2 stops geraakt vandaag op dit symbool: dag is voorbij voor dit aandeel
 ✗ LMT zonder ≥75% vertrouwen: te weinig beweging voor rendabele trade
@@ -821,7 +824,7 @@ TARGET REGELS:
 - Voorbeeld: entry $78, stop $77.04 (risico $0.96) → target minimaal $80.40
 - Bij sterke momentum (RSI STIJGEND, MACD STIJGEND, volume >1.5x): schaal target naar 3:1
 - Bij VIX > 25 of rangy markt: hou 2.5:1 en neem winst vroeg
-VROEGE SESSIE REGEL: Vóór 16:15 NL tijd heeft de dagdata slechts 1-3 candles — volume is altijd laag, dit is normaal en GEEN verkoopsignaal. Beoordeel volume pas na 16:15. Focus vóór 16:15 uitsluitend op VWAP-positie, RSI-richting en marktregime.
+VROEGE SESSIE REGEL: Vóór 15:45 NL tijd heeft de dagdata slechts 1-3 candles — volume is altijd laag, dit is normaal en GEEN verkoopsignaal. Beoordeel volume pas na 15:45. Focus vóór 15:45 uitsluitend op VWAP-positie, RSI-richting en marktregime. Na 15:45: normaal analyseren.
 ACHTERBLIJVER BLOCKER: Als SPY >+1.5% intradag EN dit aandeel <-1% intradag → dit is een echte achterblijver. instap_type="geen_trade", vertrouwen max 40%. Kleine negatieve beweging (<1%) op een bull-dag is GEEN achterblijver — dat kan consolidatie zijn voor de volgende stijging.
 INSTAP TYPE — verplicht in je JSON response (kies één):
   "direct"   → koers zit NU op het koop-niveau (entry binnen 0.5% van huidige koers). Gebruik huidige koers als entry. Actie = "KOOP NU"

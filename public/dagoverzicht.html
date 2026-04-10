@@ -1707,12 +1707,12 @@ function loadData() {
     for (const a of alleAnalyses) {
       const isKoop = a.signaal === 'KOOP' || (a.actie && a.actie.toUpperCase().includes('KOOP'));
       if (!isKoop || !a.entry) continue;
-      // Sla opening-analyses over (15:30-16:15) — analyse-timestamp checken
+      // Sla opening-analyses over (15:30-15:45) — eerste 15 min na US open
       if (USD_SYMBOLS.includes(a.symbol) && a.tijdstip) {
         const [lh, lm] = a.tijdstip.split(':').map(Number);
-        if (lh * 60 + lm >= 15*60+30 && lh * 60 + lm < 16*60+15) continue;
+        if (lh * 60 + lm >= 15*60+30 && lh * 60 + lm < 15*60+45) continue;
       }
-      if ((a.vertrouwen || 0) >= 55 && a.instap_type !== 'geen_trade') perSymbool[a.symbol] = a;
+      if ((a.vertrouwen || 0) >= 50 && a.instap_type !== 'geen_trade') perSymbool[a.symbol] = a;
     }
     const bestaand = new Set((simulaties_b[datum] || []).map(t => t.symbol));
     let gesync = false;
@@ -2189,12 +2189,12 @@ function syncSimulatiesB() {
     const heeftOpen = (simBOpgeslagen[datum] || []).some(t => t.symbol === sym && t.resultaat === 'open');
     if (heeftOpen || huidigAantal >= 2) continue;
     if (!isBeursOpen(sym)) continue;
-    if ((a.vertrouwen || 0) < 55) continue;
+    if ((a.vertrouwen || 0) < 50) continue;
     if (a.instap_type === 'geen_trade') continue;
-    // Opening filter op analyse-timestamp (niet huidige tijd)
+    // Opening filter op analyse-timestamp: eerste 15 min na US open (15:30-15:45)
     if (USD_SYMBOLS.includes(sym) && a.tijdstip) {
       const [_h, _m] = a.tijdstip.split(':').map(Number);
-      if (_h * 60 + _m >= 15*60+30 && _h * 60 + _m < 16*60+15) continue;
+      if (_h * 60 + _m >= 15*60+30 && _h * 60 + _m < 15*60+45) continue;
     }
     // Sector-concentratie: max 1 per sector + max 3 totaal per dag
     const sectorTelling = simBSectorTelling(simBOpgeslagen[datum] || []);
@@ -2476,13 +2476,12 @@ async function simuleerTradesB(analyses) {
       console.log(`SimB: ${a.symbol} overgeslagen — dagstoplimiet bereikt (${stopsVandaagB} stops)`);
       continue;
     }
-    // Opening filter: geen trades gebaseerd op analyses uit eerste 45 min na US open (15:30-16:15 NL)
-    // Controleert de ANALYSE-timestamp (a.tijdstip), niet de huidige tijd
+    // Opening filter: eerste 15 min na US open overslaan (15:30-15:45 NL)
     if (USD_SYMBOLS.includes(a.symbol) && a.tijdstip) {
       const [aH, aM] = a.tijdstip.split(':').map(Number);
       const aTotMin = aH * 60 + aM;
-      if (aTotMin >= 15*60+30 && aTotMin < 16*60+15) {
-        console.log(`SimB: ${a.symbol} overgeslagen — analyse uit opening (${a.tijdstip})`);
+      if (aTotMin >= 15*60+30 && aTotMin < 15*60+45) {
+        console.log(`SimB: ${a.symbol} overgeslagen — analyse uit eerste 15 min opening (${a.tijdstip})`);
         continue;
       }
     }
@@ -2491,9 +2490,9 @@ async function simuleerTradesB(analyses) {
       console.log(`SimB: ${a.symbol} overgeslagen — dagtrend te negatief (${a.intradayPct}%)`);
       continue;
     }
-    // Minimaal vertrouwen 55% voor SimB — zwakke setups overslaan
+    // Minimaal vertrouwen 50% voor SimB
     const vertrouwenB = a.vertrouwen || 0;
-    if (vertrouwenB < 55) {
+    if (vertrouwenB < 50) {
       console.log(`SimB: ${a.symbol} overgeslagen — te laag vertrouwen (${vertrouwenB}%)`);
       continue;
     }
@@ -2631,13 +2630,13 @@ async function herbereken() {
     let totaalTrades = 0;
     for (const [sym, pos] of gesorteerd) {
       if (totaalTrades >= SIM_MAX_TRADES_DAG) break;
-      // Opening filter: geen setups uit eerste 45 min na US open
+      // Opening filter: eerste 15 min na US open (15:30-15:45)
       if (USD_SYMBOLS.includes(sym) && pos.analyse.tijdstip) {
         const [fH, fM] = pos.analyse.tijdstip.split(':').map(Number);
         const fMin = fH * 60 + fM;
-        if (fMin >= 15*60+30 && fMin < 16*60+15) continue;
+        if (fMin >= 15*60+30 && fMin < 15*60+45) continue;
       }
-      if ((pos.analyse.vertrouwen || 0) < 55) continue;
+      if ((pos.analyse.vertrouwen || 0) < 50) continue;
       if (pos.analyse.instap_type === 'geen_trade') continue;
       const sector = SIM_SECTOREN[sym] || sym;
       if (sectorPakket[sector]) continue; // sector al vertegenwoordigd
