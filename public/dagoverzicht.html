@@ -598,6 +598,16 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
 const USD_SYMBOLS = ['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML','XOM','RTX','GLD','AAPL'];
 const EUR_KOERS   = 1.08;
 const EUR_RATE    = EUR_KOERS; // backwards-compat alias
+
+// SimB sector-concentratie: max 1 trade per sector per dag, max 3 trades totaal
+const SIM_SECTOREN = {
+  'NVDA':'chips','AMD':'chips','AMAT':'chips','ASML':'chips','ASML.AS':'chips',
+  'PYPL':'fintech','ADYEN.AS':'fintech',
+  'LMT':'defense','RTX':'defense','RHM.DE':'defense',
+  'META':'meta','AAPL':'aapl','NFLX':'nflx',
+  'XOM':'energy','GLD':'gold',
+};
+const SIM_MAX_TRADES_DAG = 3;   // maximaal 3 trades per dag in SimB
 const TWELVE_DATA_KEY = '818a833a78d8440ea0f60d83707420fb';
 
 window.liveKoersen = {}; // Globale live prijzen via Twelve Data
@@ -2136,6 +2146,20 @@ async function sluitSimulatiesB() {
   await sluitSimulaties();
 }
 
+// Geeft sector-bezetting terug voor SimB op basis van bestaande trades vandaag
+// { sectorNaam: aantal, '__totaal__': N }
+function simBSectorTelling(dagTrades) {
+  const telling = { '__totaal__': 0 };
+  for (const t of (dagTrades || [])) {
+    // Tel alleen actieve trades (open of entry_bereikt, niet stop_geraakt/entry_niet_bereikt)
+    if (t.resultaat === 'entry_niet_bereikt') continue;
+    const sector = SIM_SECTOREN[t.symbol] || t.symbol;
+    telling[sector] = (telling[sector] || 0) + 1;
+    telling['__totaal__']++;
+  }
+  return telling;
+}
+
 // Synchroniseer ontbrekende KOOP-analyses vanuit daganalyses naar simulaties_b.
 // Wordt aangeroepen vóór elke render zodat Sim B altijd up-to-date is.
 function syncSimulatiesB() {
@@ -2172,6 +2196,17 @@ function syncSimulatiesB() {
       const [_h, _m] = a.tijdstip.split(':').map(Number);
       if (_h * 60 + _m >= 15*60+30 && _h * 60 + _m < 16*60+15) continue;
     }
+    // Sector-concentratie: max 1 per sector + max 3 totaal per dag
+    const sectorTelling = simBSectorTelling(simBOpgeslagen[datum] || []);
+    if (sectorTelling['__totaal__'] >= SIM_MAX_TRADES_DAG) {
+      console.log(`syncSimulatiesB: ${sym} overgeslagen — dagmax ${SIM_MAX_TRADES_DAG} trades bereikt`);
+      continue;
+    }
+    const sector = SIM_SECTOREN[sym] || sym;
+    if ((sectorTelling[sector] || 0) >= 1) {
+      console.log(`syncSimulatiesB: ${sym} overgeslagen — sector '${sector}' al vertegenwoordigd`);
+      continue;
+    }
     {
       const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
       if (!trade) continue;
@@ -2181,14 +2216,14 @@ function syncSimulatiesB() {
         symbol: a.symbol, label: a.label || a.symbol, vlag: a.vlag || '',
         tijdstip: a.tijdstip, signaal: 'KOOP', actie: a.actie || '',
         entry: trade.entry, stop_loss: trade.stop, target: trade.target,
-        aantal: aantSync, redenering: a.redenering || '',
+        aantal: aantSync, vertrouwen: a.vertrouwen, redenering: a.redenering || '',
         resultaat: 'open',
         entry_bereikt: a.actie && a.actie.toUpperCase() === 'KOOP NU',
         entryTijdstip: a.actie && a.actie.toUpperCase() === 'KOOP NU' ? a.tijdstip : null,
         slotkoers: null, winst: null, sluitTijdstip: null, updates: []
       });
       gesync = true;
-      console.log('syncSimulatiesB: toegevoegd', sym);
+      console.log(`syncSimulatiesB: toegevoegd ${sym} (sector: ${sector}, totaal: ${sectorTelling['__totaal__']+1})`);
     }
   }
   if (gesync) {
@@ -2467,6 +2502,19 @@ async function simuleerTradesB(analyses) {
       console.log(`SimB: ${a.symbol} overgeslagen — instap_type=geen_trade`);
       continue;
     }
+    // Sector-concentratie: max 1 per sector + max 3 trades totaal per dag
+    {
+      const sectorTellingB = simBSectorTelling(simData[datum] || []);
+      if (sectorTellingB['__totaal__'] >= SIM_MAX_TRADES_DAG) {
+        console.log(`SimB: ${a.symbol} overgeslagen — dagmax ${SIM_MAX_TRADES_DAG} trades bereikt`);
+        continue;
+      }
+      const sectorB = SIM_SECTOREN[a.symbol] || a.symbol;
+      if ((sectorTellingB[sectorB] || 0) >= 1) {
+        console.log(`SimB: ${a.symbol} overgeslagen — sector '${sectorB}' al vertegenwoordigd`);
+        continue;
+      }
+    }
     // Nieuwe trade aanmaken (ook na verlopen setup)
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
     if (!trade) continue;
@@ -2573,7 +2621,34 @@ async function herbereken() {
       pending[a.symbol] = { entry: trade.entry, stop: trade.stop, target: trade.target, analyse: a, updates: [] };
     }
   }
-  for (const [symbol, pos] of Object.entries(pending)) {
+  // Sector-selectie: kies beste setup per sector, max SIM_MAX_TRADES_DAG totaal
+  // Sorteer kandidaten op vertrouwen (hoogst eerst) zodat beste setup de sector-slot pakt
+  const pendingGefilterd = {};
+  {
+    const gesorteerd = Object.entries(pending)
+      .sort((a, b) => (b[1].analyse.vertrouwen || 0) - (a[1].analyse.vertrouwen || 0));
+    const sectorPakket = {};
+    let totaalTrades = 0;
+    for (const [sym, pos] of gesorteerd) {
+      if (totaalTrades >= SIM_MAX_TRADES_DAG) break;
+      // Opening filter: geen setups uit eerste 45 min na US open
+      if (USD_SYMBOLS.includes(sym) && pos.analyse.tijdstip) {
+        const [fH, fM] = pos.analyse.tijdstip.split(':').map(Number);
+        const fMin = fH * 60 + fM;
+        if (fMin >= 15*60+30 && fMin < 16*60+15) continue;
+      }
+      if ((pos.analyse.vertrouwen || 0) < 55) continue;
+      if (pos.analyse.instap_type === 'geen_trade') continue;
+      const sector = SIM_SECTOREN[sym] || sym;
+      if (sectorPakket[sector]) continue; // sector al vertegenwoordigd
+      sectorPakket[sector] = true;
+      pendingGefilterd[sym] = pos;
+      totaalTrades++;
+      console.log(`Herbereken SimB: ${sym} geselecteerd (sector: ${sector}, vertrouwen: ${pos.analyse.vertrouwen}%, totaal: ${totaalTrades})`);
+    }
+  }
+
+  for (const [symbol, pos] of Object.entries(pendingGefilterd)) {
     const quotes = koersData[symbol] || [];
     const isKoopNu = pos.analyse.actie &&
       pos.analyse.actie.toUpperCase() === 'KOOP NU';
