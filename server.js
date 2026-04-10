@@ -746,8 +746,11 @@ ${intradayWaarschuwing}
 ${lhll ? `❌ PATROON: ${lhll} — GEEN KOOP tegen de trend in` : ''}
 KERNSTRATEGIE: Handel MET de trend. Koop momentum, geen dips in dalende aandelen.
 ✅ Trend-volgende koop: RSI STIJGEND + MACD STIJGEND + volume > 1.2x + koers boven vorige candle-high
-✅ Pullback in uptrend: intraday > +0.5%, korte terugval naar support, RSI > 45 en stijgend
-❌ Koop NOOIT: dalend aandeel (LH+LL), RSI < 45 EN dalend, MACD bearish, intraday < -1.5%
+✅ Pullback in uptrend: intraday > +0.5%, korte terugval naar support, RSI > 40 en stijgend → BESTE SETUP VAN DE DAG
+✅ Eerste pullback na opening: aandeel gap-up open, eerste terugval naar VWAP of -1% van dagopen → KOOP bij VWAP aanraking
+❌ Koop NOOIT: dalend aandeel (LH+LL), RSI < 45 EN dalend, MACD bearish, intradag < -1.5%
+ANTI-CHASE REGEL: Als intradag al > +2.5% EN RSI > 75 → gebruik instap_type="pullback", NOOIT breakout. Het aandeel heeft al bewogen — wacht op de eerste dip terug naar VWAP of dagopen +1%.
+Als intradag al > +3% → vertrouwen max 60%, want de meeste winst is al gemaakt.
 KRITISCHE LEERREGEL: Sla een cyclus over als er geen duidelijk momentum is. Een gemiste kans is beter dan een verliesgevende trade.
 Sector focus: Halfgeleiders (ASML/AMD/NVDA/AMAT) bewegen vaak synchroon. Relatieve kracht = goud.
 ${symbol === 'LMT' ? '⚠️ LMT WAARSCHUWING: Dit aandeel heeft weinig intraday beweging. Alleen handelen bij vertrouwen ≥75% EN duidelijk technisch signaal.' : ''}
@@ -965,8 +968,26 @@ Reageer ALLEEN met dit JSON:
         parsed.redenering = `Achterblijver: markt +${marktCtx.spyPct.toFixed(1)}% maar ${symbol} ${intradayPct}% intradag. Wacht op relative strength herstel.`;
       }
 
-      // 3. Confidence enforcement: <55% → geen_trade
-      if (parsed.vertrouwen < 55) {
+      // 2b. Anti-chase: als intradag al >2.5% EN het is een breakout setup → forceer pullback
+      // Aandeel heeft al flink bewogen, niet verder chassen met hogere entry
+      if (intradayPct !== null && parseFloat(intradayPct) > 2.5 &&
+          parsed.instap_type === 'breakout') {
+        parsed.instap_type = 'pullback';
+        // Entry moet lager dan huidige koers (pullback naar VWAP of -1%)
+        const vwapVal = indicators.vwap ? parseFloat(indicators.vwap) : null;
+        const pullbackTarget = vwapVal ? vwapVal : +(huidigePrijs * 0.99).toFixed(2);
+        parsed.entry = pullbackTarget;
+        parsed.actie = `KOOP BIJ DALING NAAR ${pullbackTarget.toFixed(2)}`;
+        parsed.redenering = `Anti-chase: aandeel al +${intradayPct}% intradag. Wacht op pullback naar VWAP (${pullbackTarget.toFixed(2)}) i.p.v. hogere breakout kopen.`;
+        console.log(`[Anti-chase] ${symbol} +${intradayPct}% intradag, breakout→pullback bij ${pullbackTarget}`);
+      }
+      // Cap vertrouwen als aandeel al >3% bewogen (meeste winst al gemaakt)
+      if (intradayPct !== null && parseFloat(intradayPct) > 3.0 && (parsed.vertrouwen || 0) > 60) {
+        parsed.vertrouwen = Math.min(parsed.vertrouwen, 60);
+      }
+
+      // 3. Confidence enforcement: <50% → geen_trade
+      if (parsed.vertrouwen < 50) {
         parsed.instap_type = 'geen_trade';
         parsed.signaal = 'WACHT';
         if (!parsed.actie || parsed.actie === 'KOOP NU') parsed.actie = 'GEEN SETUP';

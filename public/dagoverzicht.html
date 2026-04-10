@@ -2210,6 +2210,16 @@ function syncSimulatiesB() {
     {
       const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
       if (!trade) continue;
+      // Dedup op entry+stop waarden — voorkomt 5x zelfde ASML trade bij identieke analyses
+      const duplicaat = (simBOpgeslagen[datum] || []).some(t =>
+        t.symbol === sym &&
+        Math.abs(t.entry - trade.entry) < 0.01 &&
+        Math.abs(t.stop_loss - trade.stop) < 0.01
+      );
+      if (duplicaat) {
+        console.log(`syncSimulatiesB: ${sym} overgeslagen — identieke entry/stop al aanwezig`);
+        continue;
+      }
       const aantSync = berekenAantal(trade.entry, trade.stop, a.symbol, a.vertrouwen);
       if (!simBOpgeslagen[datum]) simBOpgeslagen[datum] = [];
       simBOpgeslagen[datum].push({
@@ -2485,6 +2495,14 @@ async function simuleerTradesB(analyses) {
         continue;
       }
     }
+    // End-of-day filter: geen nieuwe posities na 20:30 NL (90 min voor sluiting)
+    if (a.tijdstip) {
+      const [eH, eM] = a.tijdstip.split(':').map(Number);
+      if (eH * 60 + eM >= 20 * 60 + 30) {
+        console.log(`SimB: ${a.symbol} overgeslagen — te laat in dag (${a.tijdstip}), max 20:30`);
+        continue;
+      }
+    }
     // Dagtrend filter
     if (a.intradayPct !== null && a.intradayPct < -1.5) {
       console.log(`SimB: ${a.symbol} overgeslagen — dagtrend te negatief (${a.intradayPct}%)`);
@@ -2517,6 +2535,16 @@ async function simuleerTradesB(analyses) {
     // Nieuwe trade aanmaken (ook na verlopen setup)
     const trade = valideerTrade(a.entry, a.stop_loss, a.target, a.symbol, a.atr || null);
     if (!trade) continue;
+    // Dedup op entry+stop — voorkomt identieke trades bij meerdere analyse-runs
+    const duplicaatB = simData[datum].some(t =>
+      t.symbol === a.symbol &&
+      Math.abs(t.entry - trade.entry) < 0.01 &&
+      Math.abs(t.stop_loss - trade.stop) < 0.01
+    );
+    if (duplicaatB) {
+      console.log(`SimB: ${a.symbol} overgeslagen — identieke entry/stop al aanwezig`);
+      continue;
+    }
     const isKoopNu = a.actie && a.actie.toUpperCase() === 'KOOP NU';
     const setupInfo = risicoVoorVertrouwen(vertrouwenB);
     const aantB = berekenAantal(trade.entry, trade.stop, a.symbol, vertrouwenB);
