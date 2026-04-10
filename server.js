@@ -827,13 +827,29 @@ TARGET REGELS:
 - Voorbeeld: entry $78, stop $77.04 (risico $0.96) → target minimaal $80.40
 - Bij sterke momentum (RSI STIJGEND, MACD STIJGEND, volume >1.5x): schaal target naar 3:1
 - Bij VIX > 25 of rangy markt: hou 2.5:1 en neem winst vroeg
-VROEGE SESSIE REGEL: Vóór 15:45 NL tijd heeft de dagdata slechts 1-3 candles — volume is altijd laag, dit is normaal en GEEN verkoopsignaal. Beoordeel volume pas na 15:45. Focus vóór 15:45 uitsluitend op VWAP-positie, RSI-richting en marktregime. Na 15:45: normaal analyseren.
-ACHTERBLIJVER BLOCKER: Als SPY >+1.5% intradag EN dit aandeel <-1% intradag → dit is een echte achterblijver. instap_type="geen_trade", vertrouwen max 40%. Kleine negatieve beweging (<1%) op een bull-dag is GEEN achterblijver — dat kan consolidatie zijn voor de volgende stijging.
+PROFESSIONELE DAYTRADING STRATEGIEËN (van SMB Capital / Warrior Trading):
+1. GAP-AND-GO (hoogste winst-kans):
+   Als pre-market gap > +1.5% MET volume > 10% dagvol → koop direct bij open of eerste terugval.
+   Entry = huidige koers (direct). Stop = pre-market laag of 1 ATR onder VWAP. Target = gap-grootte.
+   Signaal: instap_type="direct", vertrouwen automatisch +10% bij gap > +1.5%.
+2. EERSTE PULLBACK na opening (tweede beste setup):
+   Na opening gap omhoog, eerste dip terug naar VWAP of -0.5% van dagopen = KOOP.
+   Dit is de meest betrouwbare intraday setup. RSI mag tijdelijk dalen naar 40-50 tijdens pullback.
+   Gebruik instap_type="pullback" met entry = VWAP niveau.
+3. VWAP BOUNCE (gedurende de dag):
+   Prijs raakt VWAP van boven, stuitert omhoog + RSI draait van 45 naar boven = KOOP NU.
+   instap_type="direct". Stop = VWAP - 1 ATR. Sterkste signaal als 2e of 3e VWAP-aanraking.
+4. ORB BREAKOUT (Opening Range Breakout):
+   Eerste 15-min candle high = ORB-niveau. Breakout erboven met volume > 1.5x = koop.
+   instap_type="breakout" met entry = ORB high. Stop = ORB low.
+ANTI-CHASE REGEL: Als aandeel al > +2.5% intradag → NOOIT breakout. Gebruik pullback of direct (bij VWAP).
+VROEGE SESSIE REGEL: Vóór 15:45 NL (eerste 15 min) = weinig candles. Gebruik alleen GAP-AND-GO of EERSTE PULLBACK. Geen breakouts op basis van onvoldoende data.
+ACHTERBLIJVER BLOCKER: Als SPY >+1.5% intradag EN dit aandeel <-1% intradag → instap_type="geen_trade", vertrouwen max 40%.
 INSTAP TYPE — verplicht in je JSON response (kies één):
-  "direct"   → koers zit NU op het koop-niveau (entry binnen 0.5% van huidige koers). Gebruik huidige koers als entry. Actie = "KOOP NU"
+  "direct"   → koers zit NU op het koop-niveau of VWAP-aanraking. Gebruik huidige koers als entry. Actie = "KOOP NU"
   "pullback" → wacht op DALING naar support/VWAP. Entry MOET lager zijn dan huidige koers.
-  "breakout" → wacht op STIJGING door weerstand/ORB. Entry MOET hoger zijn dan huidige koers.
-  "geen_trade" → vertrouwen <55%, ongunstige condities, achterblijver, of geen setup vandaag.
+  "breakout" → wacht op STIJGING door weerstand/ORB. Entry MOET hoger zijn dan huidige koers. ALLEEN bij intradag < +2.5%.
+  "geen_trade" → vertrouwen <50%, ongunstige condities, achterblijver, of geen setup vandaag.
 KRITISCHE FOUT — nooit zo doen:
   ❌ koers=601, entry=603, actie="KOOP BIJ DALING NAAR 603"  ← koers is al ONDER 603, er is geen daling!
   ✅ koers=601, entry=601, instap_type="direct", actie="KOOP NU"
@@ -942,9 +958,22 @@ Reageer ALLEEN met dit JSON:
       // ── V2.0: instap_type validatie & entry correctie ──────────────────────
       const huidigePrijs = last.close;
 
+      // 1a. Gap-and-go boost: pre-market gap > 1.5% met volume → vertrouwen +10%, forceer direct als RSI niet overbought
+      const pmData = preMarktAll[symbol];
+      if (pmData && pmData.preMarketPct > 1.5 && parsed.signaal === 'KOOP') {
+        if (indicators.rsi < 80) { // niet overbought
+          parsed.vertrouwen = Math.min(100, (parsed.vertrouwen || 50) + 10);
+          if (parsed.instap_type === 'breakout') {
+            // Op een gap-up dag: direct kopen i.p.v. nog hogere breakout wachten
+            parsed.instap_type = 'direct';
+            console.log(`[Gap-and-go] ${symbol} gap +${pmData.preMarketPct}% → breakout→direct, vertrouwen +10%`);
+          }
+        }
+      }
+
       // 1. Detecteer instap_type als AI het niet gegeven heeft
       if (!parsed.instap_type) {
-        if (parsed.vertrouwen < 55 || parsed.signaal === 'WACHT') {
+        if (parsed.vertrouwen < 50 || parsed.signaal === 'WACHT') {
           parsed.instap_type = 'geen_trade';
         } else if (parsed.entry) {
           const gap = (parseFloat(parsed.entry) - huidigePrijs) / huidigePrijs;

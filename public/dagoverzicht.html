@@ -1146,6 +1146,8 @@ async function haalAnalyseOp(item) {
   });
   clearTimeout(timeoutId);
   const ai = await analyseRes.json();
+  // Pre-market data meesturen voor gap-detectie in SimB
+  const pm = (window.preMarktData || {})[item.symbol] || {};
   return {
     symbol: item.symbol, label: item.label, vlag: item.vlag || '',
     prijs: last.close,
@@ -1161,6 +1163,8 @@ async function haalAnalyseOp(item) {
     rsi: rsi.toFixed(1), macd: macdData.macd.toFixed(2), atr: +atr.toFixed(4),
     intradayPct, lhll, vwap, vwapPositie, rsiDivergentie, candlePatroon, relKracht,
     momentumScore, openingRange, gisterenNiveaus,
+    preMarktPct: pm.preMarketPct || null,   // voor gap-and-go detectie in SimB
+    preMarktVol: pm.preMarketVolPct || null, // volume als % van dagvol
     resultaat: 'onbekend',
   };
 }
@@ -2191,10 +2195,13 @@ function syncSimulatiesB() {
     if (!isBeursOpen(sym)) continue;
     if ((a.vertrouwen || 0) < 50) continue;
     if (a.instap_type === 'geen_trade') continue;
-    // Opening filter op analyse-timestamp: eerste 15 min na US open (15:30-15:45)
+    // Opening filter: eerste 15 min na US open (15:30-15:45)
+    // UITZONDERING: gap-and-go setup (pre-market gap > 1.5% + direct entry) mag wél
     if (USD_SYMBOLS.includes(sym) && a.tijdstip) {
       const [_h, _m] = a.tijdstip.split(':').map(Number);
-      if (_h * 60 + _m >= 15*60+30 && _h * 60 + _m < 15*60+45) continue;
+      const inOpeningWindow = _h * 60 + _m >= 15*60+30 && _h * 60 + _m < 15*60+45;
+      const isGapAndGo = (a.preMarktPct || 0) >= 1.5 && a.instap_type === 'direct';
+      if (inOpeningWindow && !isGapAndGo) continue;
     }
     // Sector-concentratie: max 1 per sector + max 3 totaal per dag
     const sectorTelling = simBSectorTelling(simBOpgeslagen[datum] || []);
@@ -2486,12 +2493,15 @@ async function simuleerTradesB(analyses) {
       console.log(`SimB: ${a.symbol} overgeslagen — dagstoplimiet bereikt (${stopsVandaagB} stops)`);
       continue;
     }
-    // Opening filter: eerste 15 min na US open overslaan (15:30-15:45 NL)
+    // Opening filter: eerste 15 min na US open (15:30-15:45)
+    // UITZONDERING: gap-and-go (pre-market gap > 1.5% + direct entry) mag wél
     if (USD_SYMBOLS.includes(a.symbol) && a.tijdstip) {
       const [aH, aM] = a.tijdstip.split(':').map(Number);
       const aTotMin = aH * 60 + aM;
-      if (aTotMin >= 15*60+30 && aTotMin < 15*60+45) {
-        console.log(`SimB: ${a.symbol} overgeslagen — analyse uit eerste 15 min opening (${a.tijdstip})`);
+      const inOpeningWindow = aTotMin >= 15*60+30 && aTotMin < 15*60+45;
+      const isGapAndGo = (a.preMarktPct || 0) >= 1.5 && a.instap_type === 'direct';
+      if (inOpeningWindow && !isGapAndGo) {
+        console.log(`SimB: ${a.symbol} overgeslagen — opening window, geen gap-and-go (preMarkt: ${a.preMarktPct}%)`);
         continue;
       }
     }
