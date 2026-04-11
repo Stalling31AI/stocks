@@ -1395,13 +1395,28 @@ function btRunStrategies(quotes, symbol) {
   const mfiArr = btCalcMFI(quotes, 14);
   const vwapArr = btCalcVWAP(quotes);
 
-  // ORB: find daily opening range high/low (first 4 candles = 1 hour)
-  const orbMap = {}; // date -> { high, low }
+  // Pre-compute per-day maps ONCE (fixes O(n²) bug in the hot loop)
+  const dayFirstIdx = {}; // dateKey -> index of first candle
+  const dayLastClose = {}; // dateKey -> close price of last candle
+  const dayOrder = [];
   quotes.forEach((q, i) => {
+    const dk = new Date(q.timestamp * 1000).toISOString().slice(0, 10);
+    if (dayFirstIdx[dk] === undefined) { dayFirstIdx[dk] = i; dayOrder.push(dk); }
+    dayLastClose[dk] = q.close; // overwrites each candle, leaves last close
+  });
+  // prevDayClose[dateKey] = close of last candle of the trading day before dateKey
+  const prevDayClose = {};
+  for (let d = 1; d < dayOrder.length; d++) {
+    prevDayClose[dayOrder[d]] = dayLastClose[dayOrder[d - 1]];
+  }
+
+  // ORB: find daily opening range high/low (first 4 candles = 1 hour after 13:30 UTC)
+  const orbMap = {}; // date -> { high, low }
+  quotes.forEach((q) => {
     const d = new Date(q.timestamp * 1000);
     const dateKey = d.toISOString().slice(0, 10);
-    const minFromOpen = (d.getUTCHours() - 13) * 60 + d.getUTCMinutes(); // ~US market open
-    if (minFromOpen >= 0 && minFromOpen < 60) {
+    const minFromOpen = (d.getUTCHours() - 13) * 60 + d.getUTCMinutes();
+    if (minFromOpen >= 30 && minFromOpen < 90) { // 13:30–14:30 UTC (9:30–10:30 EST)
       if (!orbMap[dateKey]) orbMap[dateKey] = { high: q.high, low: q.low };
       else { orbMap[dateKey].high = Math.max(orbMap[dateKey].high, q.high); orbMap[dateKey].low = Math.min(orbMap[dateKey].low, q.low); }
     }
@@ -1428,10 +1443,11 @@ function btRunStrategies(quotes, symbol) {
 
   // Risk per trade: €100, target 2:1 or 3:1 R:R
   const RISK = 100;
+  // Cooldown: max 1 trade per strategy per symbol per day
+  const dayCooldown = {}; // `${stratKey}_${dateKey}` -> true
 
   for (let i = 28; i < quotes.length - 1; i++) {
     const q = quotes[i];
-    const next = quotes[i + 1];
     const rsi = rsiArr[i];
     const adx = adxArr[i];
     const mfi = mfiArr[i];
@@ -1444,34 +1460,39 @@ function btRunStrategies(quotes, symbol) {
     const d = new Date(q.timestamp * 1000);
     const dateKey = d.toISOString().slice(0, 10);
     const hourUTC = d.getUTCHours();
-    // US market hours: 13:30-20:00 UTC (9:30-16:00 EST)
-    if (hourUTC < 13 || hourUTC >= 20) continue;
+    const minUTC = d.getUTCMinutes();
+    const totMinUTC = hourUTC * 60 + minUTC;
+    // US regular session: 13:30–19:45 UTC (9:30–15:45 EST)
+    if (totMinUTC < 13 * 60 + 30 || totMinUTC >= 19 * 60 + 45) continue;
 
     const rsiPrev = rsiArr[i - 1];
     const rsiTrendUp = rsi > (rsiPrev || 0);
     const vwapDiff = vwap ? (q.close - vwap) / vwap : 0;
     const orb = orbMap[dateKey];
-    const intradayOpen = quotes.find(qx => new Date(qx.timestamp * 1000).toISOString().slice(0, 10) === dateKey);
-    const intradayPct = intradayOpen ? (q.close - intradayOpen.open) / intradayOpen.open * 100 : 0;
-    const prevDayCloseQ = quotes.slice(0, i).reverse().find(qx => new Date(qx.timestamp * 1000).toISOString().slice(0, 10) < dateKey);
-    const gapPct = prevDayCloseQ ? (intradayOpen?.open - prevDayCloseQ.close) / prevDayCloseQ.close * 100 : 0;
+    const dayFirstOpen = quotes[dayFirstIdx[dateKey] || i]?.open || q.open;
+    const intradayPct = (q.close - dayFirstOpen) / dayFirstOpen * 100;
+    const prevClose = prevDayClose[dateKey]; // O(1) lookup
+    const gapPct = prevClose ? (dayFirstOpen - prevClose) / prevClose * 100 : 0;
     const curDateVol = dailyVol[dateKey] || 0;
     const volRatio = avgDailyVol > 0 ? curDateVol / avgDailyVol : 1;
 
     const macdBull = macdHist !== null && prevMacdHist !== null && macdHist > prevMacdHist;
 
-    // Helper: simulate trade outcome using next candle and subsequent candles
+    // Helper: simulate trade outcome; max 1 entry per strategy per day (cooldown)
     function simTrade(stopDist, targetMult, stratKey) {
+      const cdKey = `${stratKey}_${dateKey}`;
+      if (dayCooldown[cdKey]) return; // already traded this strategy today
+      dayCooldown[cdKey] = true;
+
       const stop = q.close - stopDist;
       const target = q.close + stopDist * targetMult;
       const units = Math.floor(RISK / stopDist) || 1;
       // Check next 8 candles (2 hours)
       for (let k = i + 1; k < Math.min(i + 9, quotes.length); k++) {
         if (quotes[k].low <= stop) {
-          const pnl = -RISK;
           STRATEGIES[stratKey].losses++;
-          STRATEGIES[stratKey].totalPnL += pnl;
-          STRATEGIES[stratKey].trades.push({ date: dateKey, pnl, result: 'stop' });
+          STRATEGIES[stratKey].totalPnL += -RISK;
+          STRATEGIES[stratKey].trades.push({ date: dateKey, pnl: -RISK, result: 'stop' });
           return;
         }
         if (quotes[k].high >= target) {
@@ -1482,7 +1503,7 @@ function btRunStrategies(quotes, symbol) {
           return;
         }
       }
-      // Time exit: close at last checked candle
+      // Time exit
       const exitIdx = Math.min(i + 8, quotes.length - 1);
       const exitPnl = (quotes[exitIdx].close - q.close) * units;
       if (exitPnl >= 0) STRATEGIES[stratKey].wins++; else STRATEGIES[stratKey].losses++;
@@ -1490,40 +1511,39 @@ function btRunStrategies(quotes, symbol) {
       STRATEGIES[stratKey].trades.push({ date: dateKey, pnl: exitPnl, result: 'timeout' });
     }
 
-    // 1. Gap-and-Go: gap >1.5%, first hour, RSI not overbought
-    if (gapPct > 1.5 && rsi < 78 && (adx === null || adx > 15) && hourUTC === 13) {
+    // 1. Gap-and-Go: gap >0.8%, first 45 min of session, RSI not overbought
+    if (gapPct > 0.8 && rsi < 75 && totMinUTC < 14 * 60 + 15) {
       simTrade(atr * 1.5, 3.0, 'gap_and_go');
     }
 
-    // 2. VWAP Bounce: price near VWAP ±0.3%, RSI 42-65 rising, MACD bullish
-    if (Math.abs(vwapDiff) < 0.003 && rsi > 42 && rsi < 65 && rsiTrendUp && macdBull) {
+    // 2. VWAP Bounce: price within 0.4% of VWAP, RSI 40-65, rising, MACD bullish
+    if (Math.abs(vwapDiff) < 0.004 && rsi > 40 && rsi < 65 && rsiTrendUp && macdBull) {
       simTrade(atr * 1.2, 2.5, 'vwap_bounce');
     }
 
-    // 3. ORB Breakout: close above ORB high, ADX >22, volume spike
-    if (orb && q.close > orb.high && (adx === null || adx > 22) && volRatio > 1.3) {
+    // 3. ORB Breakout: close above ORB high after 14:30 UTC, ADX >20, volume spike
+    if (orb && q.close > orb.high && totMinUTC >= 14 * 60 + 30 && (adx === null || adx > 20) && volRatio > 1.2) {
       simTrade(atr * 1.5, 2.5, 'orb_breakout');
     }
 
-    // 4. Pullback in uptrend: intraday 0.5-2.5%, above VWAP, RSI 42-62 rising
-    if (intradayPct > 0.5 && intradayPct < 2.5 && vwapDiff > 0 && rsi > 42 && rsi < 62 && rsiTrendUp) {
+    // 4. Pullback in uptrend: intraday 0.3-2.5%, above VWAP, RSI 40-60 rising, MACD bullish
+    if (intradayPct > 0.3 && intradayPct < 2.5 && vwapDiff > 0.001 && rsi > 40 && rsi < 60 && rsiTrendUp && macdBull) {
       simTrade(atr * 1.2, 2.5, 'pullback_trend');
     }
 
-    // 5. MFI Oversold Bounce: MFI <32, RSI <42, RSI turning up
-    if (mfi !== null && mfi < 32 && rsi < 42 && rsiTrendUp) {
+    // 5. MFI Oversold Bounce: MFI <35, RSI <45, RSI turning up
+    if (mfi !== null && mfi < 35 && rsi < 45 && rsiTrendUp) {
       simTrade(atr * 1.0, 2.5, 'mfi_oversold');
     }
 
-    // 6. Combined Premium: 4+ signals aligning
-    {
-      let score = 0;
+    // 6. Combined Premium: 4+ signals aligning (require MACD + volume as baseline)
+    if (macdBull && volRatio > 1.1) {
+      let score = 1; // macdBull already counted
       if (rsi > 45 && rsi < 68) score++;
-      if (macdBull) score++;
-      if (adx !== null && adx > 25) score++;
-      if (mfi !== null && mfi > 45 && mfi < 70) score++;
-      if (vwapDiff > 0 && vwapDiff < 0.005) score++;
-      if (volRatio > 1.2) score++;
+      if (adx !== null && adx > 22) score++;
+      if (mfi !== null && mfi > 45 && mfi < 72) score++;
+      if (vwapDiff > 0 && vwapDiff < 0.006) score++;
+      if (intradayPct > 0.2 && intradayPct < 3.0) score++;
       if (score >= 4) {
         simTrade(atr * 1.5, 3.0, 'combined');
       }
