@@ -333,6 +333,36 @@ app.get('/api/news/briefing', async (req, res) => {
   res.json(briefing);
 });
 
+// ── FEAR & GREED INDEX CACHE (CNN, gratis) ────────────────────────────────
+let _fearGreedCache = null;
+let _fearGreedTs = 0;
+const FEAR_GREED_CACHE_MS = 30 * 60 * 1000; // 30 min
+
+async function haalFearGreed() {
+  if (_fearGreedCache && Date.now() - _fearGreedTs < FEAR_GREED_CACHE_MS) return _fearGreedCache;
+  try {
+    const url = 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata';
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json',
+                 'Referer': 'https://www.cnn.com/markets/fear-and-greed' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) throw new Error(`F&G returned ${r.status}`);
+    const json = await r.json();
+    const score = json?.fear_and_greed?.score;
+    const rating = json?.fear_and_greed?.rating;
+    if (score == null) throw new Error('Geen score in response');
+    const result = { score: +score.toFixed(0), rating: rating || 'onbekend' };
+    _fearGreedCache = result;
+    _fearGreedTs = Date.now();
+    console.log(`[F&G] score: ${result.score} (${result.rating})`);
+    return result;
+  } catch (err) {
+    console.warn('[F&G] fout:', err.message);
+    return _fearGreedCache || null;
+  }
+}
+
 // ── MARKTCONTEXT CACHE (SPY/QQQ/VIX) ─────────────────────────────────────
 let _marktContextCache = null;
 let _marktContextTs = 0;
@@ -397,11 +427,11 @@ async function haalMarktContext() {
   }
 }
 
-// GET /api/marktcontext — SPY/QQQ/VIX marktregime
+// GET /api/marktcontext — SPY/QQQ/VIX marktregime + Fear&Greed
 app.get('/api/marktcontext', async (req, res) => {
-  const ctx = await haalMarktContext();
+  const [ctx, fg] = await Promise.all([haalMarktContext(), haalFearGreed()]);
   if (!ctx) return res.status(503).json({ error: 'Marktcontext niet beschikbaar' });
-  res.json(ctx);
+  res.json({ ...ctx, fearGreed: fg });
 });
 
 // ── PRE-MARKET DATA CACHE (Yahoo Finance v7, gratis, geen API key) ─────────
@@ -591,12 +621,13 @@ app.post('/api/analyze', async (req, res) => {
   try {
     const { symbol, interval, quotes, indicators } = req.body;
 
-    // Haal nieuws, trade history, marktcontext en pre-market parallel op
-    const [headlines, symHistory, marktCtx, preMarktAll] = await Promise.all([
+    // Haal nieuws, trade history, marktcontext, pre-market en Fear&Greed parallel op
+    const [headlines, symHistory, marktCtx, preMarktAll, fearGreed] = await Promise.all([
       haalNieuwsOp(symbol),
       Promise.resolve(tradeHistory.filter(t => t.symbol === symbol).slice(0, 10)),
       haalMarktContext(),
       haalPreMarketData(),
+      haalFearGreed(),
     ]);
     const preMarkt = preMarktAll[symbol] || null;
 
@@ -780,6 +811,10 @@ VWAP: ${indicators.vwap ? fmt(indicators.vwap) : 'N/A'} | Koers ${indicators.vwa
 ${orbRegel}
 ${gisterenRegel}
 MOMENTUM SCORE: ${indicators.momentumScore != null ? indicators.momentumScore + '/10' : 'N/A'} ${indicators.momentumScore >= 7 ? '✅ STERKE MOMENTUM' : indicators.momentumScore >= 5 ? '— matig' : indicators.momentumScore != null ? '❌ ZWAKKE MOMENTUM' : ''}
+${indicators.adx != null ? `ADX (trendsterkte): ${indicators.adx} ${indicators.adx > 30 ? '✅ STERKE TREND — koop breakouts en momentum' : indicators.adx > 20 ? '— matige trend' : '❌ ZIJWAARTS (<20) — vermijd breakouts, handel alleen VWAP-bounces'}` : ''}
+${indicators.mfi != null ? `MFI (volume-momentum): ${indicators.mfi} ${indicators.mfi > 70 ? '⚠️ OVERBOUGHT — mogelijk distributie' : indicators.mfi < 30 ? '✅ OVERSOLD met volume — accumulatie kans' : indicators.mfi > 55 ? '✅ Bullish geldstroom' : '— neutraal'}` : ''}
+${indicators.stochRSI != null ? `Stochastic RSI: ${indicators.stochRSI} ${indicators.stochRSI > 80 ? '⚠️ OVERBOUGHT' : indicators.stochRSI < 20 ? '✅ OVERSOLD — koop bij draai omhoog' : indicators.stochRSI > 50 ? '— bullish' : '— bearish'}` : ''}
+${fearGreed ? `FEAR & GREED INDEX: ${fearGreed.score}/100 (${fearGreed.rating}) ${fearGreed.score < 25 ? '💀 EXTREME ANGST — contra-trend kansen, maar wacht op technische bevestiging' : fearGreed.score < 45 ? '😨 ANGST — markt onderschat kansen, bullish bias' : fearGreed.score > 75 ? '🤑 EXTREME HEBZUCHT — markt overbought, wees voorzichtiger met targets' : fearGreed.score > 55 ? '😏 HEBZUCHT — momentum werkt, blijf trend volgen' : '😐 NEUTRAAL'}` : ''}
 ${indicators.rsiDivergentie ? `⚡ RSI DIVERGENTIE: ${indicators.rsiDivergentie}` : ''}
 ${indicators.candlePatroon ? `🕯 CANDLE PATROON: ${indicators.candlePatroon}` : ''}
 ${indicators.relKracht != null ? `📊 RELATIEVE KRACHT vs SPY: ${indicators.relKracht}x ${indicators.relKracht > 1.5 ? '✅ OUTPERFORMER — koop de leider' : indicators.relKracht < 0.5 ? '⚠️ ACHTERBLIJVER — vermijd of wacht' : '— neutraal'}` : ''}

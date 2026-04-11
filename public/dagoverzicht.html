@@ -961,6 +961,68 @@ function berekenATR(quotes, period=14) {
   const slice = trList.slice(-period);
   return slice.reduce((a,b) => a+b, 0) / slice.length;
 }
+
+// ADX (Average Directional Index) — trendsterkte (>25 = sterke trend, <20 = zijwaarts)
+function berekenADX(quotes, period=14) {
+  if (quotes.length < period + 2) return null;
+  const q = quotes.slice(-(period * 2 + 2));
+  let plusDM = [], minusDM = [], tr = [];
+  for (let i = 1; i < q.length; i++) {
+    const upMove   = q[i].high  - q[i-1].high;
+    const downMove = q[i-1].low - q[i].low;
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    const h = q[i].high, l = q[i].low, pc = q[i-1].close;
+    tr.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  const smooth = (arr) => {
+    let s = arr.slice(0, period).reduce((a,b) => a+b, 0);
+    const out = [s];
+    for (let i = period; i < arr.length; i++) { s = s - s/period + arr[i]; out.push(s); }
+    return out;
+  };
+  const sTR = smooth(tr), sPDM = smooth(plusDM), sMDM = smooth(minusDM);
+  const dx = sTR.map((t, i) => {
+    const pdi = t > 0 ? 100 * sPDM[i] / t : 0;
+    const mdi = t > 0 ? 100 * sMDM[i] / t : 0;
+    return (pdi + mdi) > 0 ? 100 * Math.abs(pdi - mdi) / (pdi + mdi) : 0;
+  });
+  const adx = dx.slice(-period).reduce((a,b) => a+b, 0) / period;
+  return +adx.toFixed(1);
+}
+
+// MFI (Money Flow Index) — volume-gewogen RSI, toont accumulatie/distributie
+function berekenMFI(quotes, period=14) {
+  if (quotes.length < period + 1) return 50;
+  const q = quotes.slice(-(period + 1));
+  let posFlow = 0, negFlow = 0;
+  for (let i = 1; i < q.length; i++) {
+    const tp  = (q[i].high + q[i].low + q[i].close) / 3;
+    const tpP = (q[i-1].high + q[i-1].low + q[i-1].close) / 3;
+    const mf  = tp * (q[i].volume || 1);
+    if (tp > tpP) posFlow += mf;
+    else           negFlow += mf;
+  }
+  if (negFlow === 0) return 100;
+  return +(100 - 100 / (1 + posFlow / negFlow)).toFixed(1);
+}
+
+// Stochastic RSI — snellere versie van RSI, sensitiever voor 15-min candles
+function berekenStochRSI(closes, rsiPeriod=14, stochPeriod=14) {
+  if (closes.length < rsiPeriod + stochPeriod + 1) return null;
+  // Bereken RSI reeks
+  const rsiReeks = [];
+  for (let i = rsiPeriod; i <= closes.length; i++) {
+    rsiReeks.push(berekenRSI(closes.slice(0, i), rsiPeriod));
+  }
+  if (rsiReeks.length < stochPeriod) return null;
+  const recent = rsiReeks.slice(-stochPeriod);
+  const minRSI = Math.min(...recent), maxRSI = Math.max(...recent);
+  if (maxRSI === minRSI) return 50;
+  const k = ((rsiReeks[rsiReeks.length-1] - minRSI) / (maxRSI - minRSI)) * 100;
+  return +k.toFixed(1);
+}
+
 // Variabel risico op basis van setup-kwaliteit (vertrouwen van Claude):
 //   Platinum ≥85% → €200 risico  (potentieel €500 bij 2.5:1)
 //   Gold     ≥70% → €150 risico  (potentieel €375)
@@ -1023,7 +1085,10 @@ async function haalAnalyseOp(item) {
     if (dalendHigh && dalendLow) return 'DUIDELIJKE DOWNTREND (LH+LL)';
     return null;
   })();
-  const atr = berekenATR(quotes);
+  const atr      = berekenATR(quotes);
+  const adx      = berekenADX(quotes);
+  const mfi      = berekenMFI(quotes);
+  const stochRSI = berekenStochRSI(closes);
 
   // ── VWAP (Volume Weighted Average Price) ───────────────────────
   const vwap = (() => {
@@ -1141,8 +1206,8 @@ async function haalAnalyseOp(item) {
     signal: controller.signal,
     body: JSON.stringify({ symbol: item.symbol, interval: '15m', quotes: quotes.slice(-30),
       indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio,
-        atr, intradayPct, lhll, vwap, vwapPositie, rsiDivergentie, candlePatroon, relKracht,
-        momentumScore, openingRange, gisterenNiveaus } })
+        atr, adx, mfi, stochRSI, intradayPct, lhll, vwap, vwapPositie, rsiDivergentie, candlePatroon,
+        relKracht, momentumScore, openingRange, gisterenNiveaus } })
   });
   clearTimeout(timeoutId);
   const ai = await analyseRes.json();
