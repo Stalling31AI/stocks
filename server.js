@@ -1,6 +1,7 @@
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -619,7 +620,8 @@ app.post('/api/trades/save', (req, res) => {
 // POST /api/analyze  — body: { symbol, interval, quotes, indicators }
 app.post('/api/analyze', async (req, res) => {
   try {
-    const { symbol, interval, quotes, indicators } = req.body;
+    const { symbol, interval, quotes, indicators, backtestTop } = req.body;
+    // backtestTop: { naam: 'VWAP Bounce', winRate: 63, pnl: 450, trades: 22 } for this symbol
 
     // Haal nieuws, trade history, marktcontext, pre-market en Fear&Greed parallel op
     const [headlines, symHistory, marktCtx, preMarktAll, fearGreed] = await Promise.all([
@@ -818,6 +820,7 @@ ${fearGreed ? `FEAR & GREED INDEX: ${fearGreed.score}/100 (${fearGreed.rating}) 
 ${indicators.rsiDivergentie ? `⚡ RSI DIVERGENTIE: ${indicators.rsiDivergentie}` : ''}
 ${indicators.candlePatroon ? `🕯 CANDLE PATROON: ${indicators.candlePatroon}` : ''}
 ${indicators.relKracht != null ? `📊 RELATIEVE KRACHT vs SPY: ${indicators.relKracht}x ${indicators.relKracht > 1.5 ? '✅ OUTPERFORMER — koop de leider' : indicators.relKracht < 0.5 ? '⚠️ ACHTERBLIJVER — vermijd of wacht' : '— neutraal'}` : ''}
+${backtestTop ? `📈 BACKTEST (60 dagen historisch, dit symbool): Beste strategie = "${backtestTop.naam}" met ${backtestTop.winRate}% winrate (${backtestTop.trades} trades, €${backtestTop.pnl > 0 ? '+' : ''}${backtestTop.pnl} netto). INSTRUCTIE: Zoek actief naar een "${backtestTop.naam}" setup. Als de huidige situatie past bij deze strategie, verhoog vertrouwen met 5-10%. Als de situatie TEGEN deze strategie ingaat, noteer dat expliciet.` : ''}
 TRADING PROFIEL: Agressieve day trader. Budget €10.000. Weekdoel: €1000 netto. Variabel risico op setup-kwaliteit:
   Platinum setup (vertrouwen ≥85%): €200 risico → potentieel €500 per trade (2.5:1 R:R)
   Gold setup (vertrouwen 70-84%): €150 risico → potentieel €375 per trade (2.5:1 R:R)
@@ -1201,6 +1204,37 @@ Reageer met dit JSON:
     console.error('Weekevaluatie fout:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── BACKTEST PERSISTENCE ────────────────────────────────────────────────────
+const BT_FILE = path.join(__dirname, 'backtest-cache.json');
+let _btServerCache = null; // in-memory voor snelle toegang
+
+// Laad bij serverstart als het bestand bestaat
+try {
+  if (fs.existsSync(BT_FILE)) {
+    _btServerCache = JSON.parse(fs.readFileSync(BT_FILE, 'utf8'));
+    console.log('Backtest cache geladen:', _btServerCache.ts ? new Date(_btServerCache.ts).toLocaleDateString('nl-NL') : '?');
+  }
+} catch(e) { console.warn('Backtest cache load fout:', e.message); }
+
+// POST /api/backtest/sla-op  — frontend stuurt resultaat op
+app.post('/api/backtest/sla-op', express.json({ limit: '2mb' }), (req, res) => {
+  try {
+    const payload = { ts: Date.now(), data: req.body };
+    _btServerCache = payload;
+    fs.writeFileSync(BT_FILE, JSON.stringify(payload), 'utf8');
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/backtest/laad — frontend haalt opgeslagen resultaat op
+app.get('/api/backtest/laad', (req, res) => {
+  if (!_btServerCache) return res.json({ leeg: true });
+  const dagenOud = (Date.now() - _btServerCache.ts) / (1000 * 60 * 60 * 24);
+  res.json({ ...(_btServerCache.data), _ts: _btServerCache.ts, _dagenOud: +dagenOud.toFixed(1) });
 });
 
 // ── BACKTEST SYSTEM (zero AI credits, pure computation) ────────────────────

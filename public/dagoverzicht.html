@@ -555,8 +555,11 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
   <div id="backtest-sectie" style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
       <div>
-        <div style="font-size:14px;font-weight:700;">🔬 Backtest (60 dagen, pure berekening)</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Geen AI credits — sliding-window indicators op 15-min Yahoo Finance data</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="font-size:14px;font-weight:700;">🔬 Backtest (60 dagen, pure berekening)</div>
+          <span id="backtest-leeftijd-badge" style="display:none;font-size:10px;font-weight:700;background:#f0fdf4;border:1px solid #bbf7d0;padding:2px 8px;border-radius:10px;"></span>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Geen AI credits — sliding-window indicators op 15-min Yahoo Finance data · 1x per week runnen · resultaten worden opgeslagen</div>
       </div>
       <button onclick="startBacktest()" id="backtest-btn"
         style="font-size:12px;font-weight:600;padding:7px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;cursor:pointer;">
@@ -1268,6 +1271,7 @@ async function haalAnalyseOp(item) {
     headers: { 'Content-Type': 'application/json' },
     signal: controller.signal,
     body: JSON.stringify({ symbol: item.symbol, interval: '15m', quotes: quotes.slice(-30),
+      backtestTop: window.backtestTopStrategies?.[item.symbol] || null,
       indicators: { rsi, rsiTrend, macd: macdData, macdRichting, bb, trend, openingGap, volumeRatio,
         atr, adx, mfi, stochRSI, intradayPct, lhll, vwap, vwapPositie, rsiDivergentie, candlePatroon,
         relKracht, momentumScore, openingRange, gisterenNiveaus } })
@@ -3967,16 +3971,96 @@ window.addEventListener('load', () => {
 // ── BACKTEST UI ────────────────────────────────────────────────────────────
 let backtestData = null;
 const BT_SYMBOLEN = ['NVDA','AMD','META','AAPL','AMAT','ASML','NFLX','LMT','XOM','RTX'];
+const BT_CACHE_KEY = 'backtestResultaten_v2';
+const BT_EXPIRY_DAYS = 7;
+
+// Expose best strategy per symbol globally so /api/analyze can use it
+window.backtestTopStrategies = {}; // { NVDA: { naam: 'VWAP Bounce', winRate: 63, pnl: 450 }, ... }
+
+function btSlaOp(data) {
+  // 1. localStorage (zelfde machine/browser)
+  try {
+    localStorage.setItem(BT_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+  } catch(e) { console.warn('LocalStorage opslaan mislukt:', e.message); }
+  // 2. Server-side bestand (overleeft browser wissen, andere apparaten)
+  fetch('/api/backtest/sla-op', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data) }).catch(e => console.warn('Server opslaan mislukt:', e.message));
+}
+
+function btLaadOpgeslagen() {
+  try {
+    const raw = localStorage.getItem(BT_CACHE_KEY);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    const dagenOud = (Date.now() - ts) / (1000 * 60 * 60 * 24);
+    if (dagenOud > BT_EXPIRY_DAYS) return null;
+    return { data, dagenOud: Math.round(dagenOud * 10) / 10 };
+  } catch(e) { return null; }
+}
+
+async function btLaadVanServer() {
+  try {
+    const resp = await fetch('/api/backtest/laad');
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    if (json.leeg) return null;
+    const dagenOud = json._dagenOud || 0;
+    if (dagenOud > BT_EXPIRY_DAYS) return null;
+    const { _ts, _dagenOud, ...data } = json;
+    return { data, dagenOud };
+  } catch(e) { return null; }
+}
+
+function btExtractTopStrategies(data) {
+  const tops = {};
+  for (const [sym, symData] of Object.entries(data.symbolen || {})) {
+    let best = null;
+    for (const s of Object.values(symData)) {
+      if (s.trades >= 5 && (!best || s.totalPnL > best.totalPnL)) best = s;
+    }
+    if (best) tops[sym] = { naam: best.naam, winRate: best.winRate, pnl: best.totalPnL, trades: best.trades };
+  }
+  window.backtestTopStrategies = tops;
+}
+
+function btToonLeeftijdBadge(dagenOud) {
+  const badge = document.getElementById('backtest-leeftijd-badge');
+  if (!badge) return;
+  const kleur = dagenOud < 3 ? '#16a34a' : dagenOud < 6 ? '#d97706' : '#dc2626';
+  badge.style.display = 'inline-block';
+  badge.style.color = kleur;
+  badge.textContent = dagenOud < 1 ? 'vandaag geladen' : `${dagenOud}d geleden`;
+}
 
 (function initBacktestSymbolen() {
   const container = document.getElementById('backtest-symbolen');
   BT_SYMBOLEN.forEach(sym => {
     const chip = document.createElement('span');
     chip.textContent = sym;
-    chip.dataset.sym = sym;
     chip.style.cssText = 'font-size:11px;padding:3px 10px;border-radius:20px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;font-weight:600;';
     container.appendChild(chip);
   });
+
+  // Auto-load: eerst localStorage, dan server-side bestand
+  async function btAutoLoad() {
+    let cached = btLaadOpgeslagen();
+    if (!cached) cached = await btLaadVanServer();
+    if (!cached) return;
+    backtestData = cached.data;
+    btExtractTopStrategies(backtestData);
+    renderBacktestResultaten();
+    const statusEl = document.getElementById('backtest-status');
+    const statusTekst = document.getElementById('backtest-status-tekst');
+    statusEl.style.display = 'block';
+    const bron = cached.dagenOud < 0.1 ? 'net opgeslagen' : `${cached.dagenOud}d geleden`;
+    statusTekst.textContent = `Opgeslagen resultaten geladen (${backtestData.aantalSymbolen} symbolen · ${bron}).`;
+    btToonLeeftijdBadge(cached.dagenOud);
+    if (cached.dagenOud >= 6) {
+      statusTekst.textContent += ' ⚠️ Bijna verlopen — run opnieuw.';
+      statusTekst.style.color = '#d97706';
+    }
+  }
+  btAutoLoad();
 })();
 
 async function startBacktest() {
@@ -3995,8 +4079,11 @@ async function startBacktest() {
     const resp = await fetch(`/api/backtest?symbols=${BT_SYMBOLEN.join(',')}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     backtestData = await resp.json();
+    btSlaOp(backtestData);
+    btExtractTopStrategies(backtestData);
     renderBacktestResultaten();
-    statusTekst.textContent = `Klaar — ${backtestData.aantalSymbolen} symbolen, ${backtestData.periodeD} dagen geanalyseerd.`;
+    btToonLeeftijdBadge(0);
+    statusTekst.textContent = `Klaar & opgeslagen — ${backtestData.aantalSymbolen} symbolen, ${backtestData.periodeD} dagen. Geldig 7 dagen.`;
   } catch (err) {
     statusTekst.textContent = `Fout: ${err.message}`;
     statusTekst.style.color = '#dc2626';
