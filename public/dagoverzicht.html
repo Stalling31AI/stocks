@@ -660,6 +660,37 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
   </div>
 </div>
 <script>
+// ── GLOBAL 401 INTERCEPTOR ──────────────────────────────────────────────────
+// Wraps fetch: bij 401 → stop alle polling, toon login-overlay (geen console-flood)
+let _sessieVerlopen = false;
+const _origFetch = window.fetch.bind(window);
+window.fetch = async function(...args) {
+  const resp = await _origFetch(...args);
+  if (resp.status === 401 && !_sessieVerlopen) {
+    _sessieVerlopen = true;
+    toonSessieVerlopenOverlay();
+  }
+  return resp;
+};
+
+function toonSessieVerlopenOverlay() {
+  // Stop alle setInterval/setTimeout polling door de pagina te "bevriezen" zonder reload
+  const overlay = document.createElement('div');
+  overlay.id = 'sessie-verlopen-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:32px 40px;max-width:380px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.3);">
+      <div style="font-size:40px;margin-bottom:12px;">🔒</div>
+      <div style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:8px;">Sessie verlopen</div>
+      <div style="font-size:13px;color:#64748b;margin-bottom:24px;">Je bent automatisch uitgelogd (server herstart of cookie verlopen).</div>
+      <button onclick="window.location.href='/login'"
+        style="font-size:14px;font-weight:700;padding:12px 28px;background:#2563eb;color:#fff;border:none;border-radius:10px;cursor:pointer;width:100%;">
+        Opnieuw inloggen
+      </button>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
 // ── GLOBAL CONSTANTS & STATE (vóór alle functies) ──────────────
 const USD_SYMBOLS = ['NVDA','AMD','META','NFLX','AMAT','PYPL','LMT','ASML','XOM','RTX','GLD','AAPL'];
 const EUR_KOERS   = 1.08;
@@ -3338,7 +3369,7 @@ async function checkOpenPosities() {
 const AUTO_INTERVAL_MIN = 15; // kwartier
 let autoAnalyseTimer = null;
 let autoAnalyseActief = true;
-let autoAnalyseLaatsteRun = 0; // timestamp van laatste run
+let autoAnalyseLaatsteRun = Date.now(); // timestamp van laatste run (Date.now() zodat tab-terugkeer geen 56-jaar-achterstand berekent)
 
 function startAutoAnalyse() {
   stopAutoAnalyse();

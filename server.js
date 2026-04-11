@@ -191,7 +191,7 @@ app.get('/login', (req, res) => {
 app.post('/login', express.json(), (req, res) => {
   const { wachtwoord } = req.body;
   if (wachtwoord === WACHTWOORD) {
-    res.setHeader('Set-Cookie', 'yappi_auth=true; Path=/; HttpOnly; Max-Age=86400');
+    res.setHeader('Set-Cookie', 'yappi_auth=true; Path=/; HttpOnly; Max-Age=604800'); // 7 dagen
     res.json({ ok: true });
   } else {
     res.status(401).json({ error: 'Fout wachtwoord' });
