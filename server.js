@@ -1203,6 +1203,374 @@ Reageer met dit JSON:
   }
 });
 
+// ── BACKTEST SYSTEM (zero AI credits, pure computation) ────────────────────
+
+function btCalcRSI(closes, period = 14) {
+  const rsi = new Array(closes.length).fill(null);
+  if (closes.length < period + 1) return rsi;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gains += d; else losses -= d;
+  }
+  let avgGain = gains / period, avgLoss = losses / period;
+  rsi[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + Math.max(d, 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
+    rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return rsi;
+}
+
+function btCalcEMA(arr, period) {
+  const ema = new Array(arr.length).fill(null);
+  const k = 2 / (period + 1);
+  let first = -1;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] === null) continue;
+    if (first === -1) { ema[i] = arr[i]; first = i; continue; }
+    ema[i] = arr[i] * k + ema[i - 1] * (1 - k);
+  }
+  return ema;
+}
+
+function btCalcMACD(closes) {
+  const ema12 = btCalcEMA(closes, 12);
+  const ema26 = btCalcEMA(closes, 26);
+  const macd = closes.map((_, i) => (ema12[i] !== null && ema26[i] !== null) ? ema12[i] - ema26[i] : null);
+  const signal = btCalcEMA(macd, 9);
+  const hist = macd.map((v, i) => (v !== null && signal[i] !== null) ? v - signal[i] : null);
+  return { macd, signal, hist };
+}
+
+function btCalcATR(quotes, period = 14) {
+  const atr = new Array(quotes.length).fill(null);
+  if (quotes.length < 2) return atr;
+  const tr = [null];
+  for (let i = 1; i < quotes.length; i++) {
+    const h = quotes[i].high, l = quotes[i].low, pc = quotes[i - 1].close;
+    tr.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  let sum = 0, count = 0;
+  for (let i = 1; i <= period && i < tr.length; i++) { sum += tr[i]; count++; }
+  if (count < period) return atr;
+  atr[period] = sum / period;
+  for (let i = period + 1; i < quotes.length; i++) {
+    atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period;
+  }
+  return atr;
+}
+
+function btCalcADX(quotes, period = 14) {
+  const adx = new Array(quotes.length).fill(null);
+  if (quotes.length < period * 2) return adx;
+  const trArr = [null];
+  const dmPArr = [null];
+  const dmMArr = [null];
+  for (let i = 1; i < quotes.length; i++) {
+    const h = quotes[i].high, l = quotes[i].low;
+    const ph = quotes[i - 1].high, pl = quotes[i - 1].low, pc = quotes[i - 1].close;
+    trArr.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+    const upMove = h - ph, downMove = pl - l;
+    dmPArr.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    dmMArr.push(downMove > upMove && downMove > 0 ? downMove : 0);
+  }
+  // Wilder smoothing
+  let smTR = 0, smP = 0, smM = 0;
+  for (let i = 1; i <= period; i++) { smTR += trArr[i]; smP += dmPArr[i]; smM += dmMArr[i]; }
+  const diP = new Array(quotes.length).fill(null);
+  const diM = new Array(quotes.length).fill(null);
+  const dx = new Array(quotes.length).fill(null);
+  diP[period] = smTR > 0 ? 100 * smP / smTR : 0;
+  diM[period] = smTR > 0 ? 100 * smM / smTR : 0;
+  dx[period] = (diP[period] + diM[period]) > 0 ? 100 * Math.abs(diP[period] - diM[period]) / (diP[period] + diM[period]) : 0;
+  for (let i = period + 1; i < quotes.length; i++) {
+    smTR = smTR - smTR / period + trArr[i];
+    smP = smP - smP / period + dmPArr[i];
+    smM = smM - smM / period + dmMArr[i];
+    diP[i] = smTR > 0 ? 100 * smP / smTR : 0;
+    diM[i] = smTR > 0 ? 100 * smM / smTR : 0;
+    dx[i] = (diP[i] + diM[i]) > 0 ? 100 * Math.abs(diP[i] - diM[i]) / (diP[i] + diM[i]) : 0;
+  }
+  let dxSum = 0;
+  for (let i = period; i < 2 * period && i < dx.length; i++) { dxSum += (dx[i] || 0); }
+  adx[2 * period - 1] = dxSum / period;
+  for (let i = 2 * period; i < quotes.length; i++) {
+    adx[i] = (adx[i - 1] * (period - 1) + (dx[i] || 0)) / period;
+  }
+  return adx;
+}
+
+function btCalcMFI(quotes, period = 14) {
+  const mfi = new Array(quotes.length).fill(null);
+  const tp = quotes.map(q => (q.high + q.low + q.close) / 3);
+  for (let i = period; i < quotes.length; i++) {
+    let posFlow = 0, negFlow = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      const flow = tp[j] * (quotes[j].volume || 0);
+      if (tp[j] > tp[j - 1]) posFlow += flow; else negFlow += flow;
+    }
+    mfi[i] = negFlow === 0 ? 100 : 100 - 100 / (1 + posFlow / negFlow);
+  }
+  return mfi;
+}
+
+function btCalcVWAP(quotes) {
+  // Rolling daily VWAP (reset each day based on timestamp)
+  const vwap = new Array(quotes.length).fill(null);
+  let cumTPV = 0, cumVol = 0;
+  let lastDay = -1;
+  for (let i = 0; i < quotes.length; i++) {
+    const d = new Date(quotes[i].timestamp * 1000);
+    const day = d.getUTCDate();
+    if (day !== lastDay) { cumTPV = 0; cumVol = 0; lastDay = day; }
+    const tp = (quotes[i].high + quotes[i].low + quotes[i].close) / 3;
+    const vol = quotes[i].volume || 0;
+    cumTPV += tp * vol;
+    cumVol += vol;
+    vwap[i] = cumVol > 0 ? cumTPV / cumVol : quotes[i].close;
+  }
+  return vwap;
+}
+
+async function btHaalYahooData(symbol, interval = '15m', range = '60d') {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&includePrePost=false`;
+  const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`Yahoo ${symbol}: ${resp.status}`);
+  const json = await resp.json();
+  const result = json.chart?.result?.[0];
+  if (!result) throw new Error(`Geen data voor ${symbol}`);
+  const ts = result.timestamp;
+  const q = result.indicators.quote[0];
+  const quotes = ts.map((t, i) => ({
+    timestamp: t,
+    open: q.open[i], high: q.high[i], low: q.low[i], close: q.close[i],
+    volume: q.volume[i],
+  })).filter(c => c.open && c.high && c.low && c.close);
+  return quotes;
+}
+
+function btRunStrategies(quotes, symbol) {
+  const closes = quotes.map(q => q.close);
+  const rsiArr = btCalcRSI(closes, 14);
+  const macdData = btCalcMACD(closes);
+  const atrArr = btCalcATR(quotes, 14);
+  const adxArr = btCalcADX(quotes, 14);
+  const mfiArr = btCalcMFI(quotes, 14);
+  const vwapArr = btCalcVWAP(quotes);
+
+  // ORB: find daily opening range high/low (first 4 candles = 1 hour)
+  const orbMap = {}; // date -> { high, low }
+  quotes.forEach((q, i) => {
+    const d = new Date(q.timestamp * 1000);
+    const dateKey = d.toISOString().slice(0, 10);
+    const minFromOpen = (d.getUTCHours() - 13) * 60 + d.getUTCMinutes(); // ~US market open
+    if (minFromOpen >= 0 && minFromOpen < 60) {
+      if (!orbMap[dateKey]) orbMap[dateKey] = { high: q.high, low: q.low };
+      else { orbMap[dateKey].high = Math.max(orbMap[dateKey].high, q.high); orbMap[dateKey].low = Math.min(orbMap[dateKey].low, q.low); }
+    }
+  });
+
+  // Average daily volume (last 20 days)
+  const dailyVol = {};
+  quotes.forEach(q => {
+    const dk = new Date(q.timestamp * 1000).toISOString().slice(0, 10);
+    if (!dailyVol[dk]) dailyVol[dk] = 0;
+    dailyVol[dk] += (q.volume || 0);
+  });
+  const dailyVolVals = Object.values(dailyVol).slice(-20);
+  const avgDailyVol = dailyVolVals.reduce((a, b) => a + b, 0) / (dailyVolVals.length || 1);
+
+  const STRATEGIES = {
+    gap_and_go:      { naam: 'Gap-and-Go',           wins: 0, losses: 0, totalPnL: 0, trades: [] },
+    vwap_bounce:     { naam: 'VWAP Bounce',           wins: 0, losses: 0, totalPnL: 0, trades: [] },
+    orb_breakout:    { naam: 'ORB Breakout',          wins: 0, losses: 0, totalPnL: 0, trades: [] },
+    pullback_trend:  { naam: 'Eerste Pullback',       wins: 0, losses: 0, totalPnL: 0, trades: [] },
+    mfi_oversold:    { naam: 'MFI Oversold Bounce',   wins: 0, losses: 0, totalPnL: 0, trades: [] },
+    combined:        { naam: 'Premium (3+ signalen)', wins: 0, losses: 0, totalPnL: 0, trades: [] },
+  };
+
+  // Risk per trade: €100, target 2:1 or 3:1 R:R
+  const RISK = 100;
+
+  for (let i = 28; i < quotes.length - 1; i++) {
+    const q = quotes[i];
+    const next = quotes[i + 1];
+    const rsi = rsiArr[i];
+    const adx = adxArr[i];
+    const mfi = mfiArr[i];
+    const vwap = vwapArr[i];
+    const atr = atrArr[i];
+    const macdHist = macdData.hist[i];
+    const prevMacdHist = macdData.hist[i - 1];
+    if (!rsi || !atr || atr === 0) continue;
+
+    const d = new Date(q.timestamp * 1000);
+    const dateKey = d.toISOString().slice(0, 10);
+    const hourUTC = d.getUTCHours();
+    // US market hours: 13:30-20:00 UTC (9:30-16:00 EST)
+    if (hourUTC < 13 || hourUTC >= 20) continue;
+
+    const rsiPrev = rsiArr[i - 1];
+    const rsiTrendUp = rsi > (rsiPrev || 0);
+    const vwapDiff = vwap ? (q.close - vwap) / vwap : 0;
+    const orb = orbMap[dateKey];
+    const intradayOpen = quotes.find(qx => new Date(qx.timestamp * 1000).toISOString().slice(0, 10) === dateKey);
+    const intradayPct = intradayOpen ? (q.close - intradayOpen.open) / intradayOpen.open * 100 : 0;
+    const prevDayCloseQ = quotes.slice(0, i).reverse().find(qx => new Date(qx.timestamp * 1000).toISOString().slice(0, 10) < dateKey);
+    const gapPct = prevDayCloseQ ? (intradayOpen?.open - prevDayCloseQ.close) / prevDayCloseQ.close * 100 : 0;
+    const curDateVol = dailyVol[dateKey] || 0;
+    const volRatio = avgDailyVol > 0 ? curDateVol / avgDailyVol : 1;
+
+    const macdBull = macdHist !== null && prevMacdHist !== null && macdHist > prevMacdHist;
+
+    // Helper: simulate trade outcome using next candle and subsequent candles
+    function simTrade(stopDist, targetMult, stratKey) {
+      const stop = q.close - stopDist;
+      const target = q.close + stopDist * targetMult;
+      const units = Math.floor(RISK / stopDist) || 1;
+      // Check next 8 candles (2 hours)
+      for (let k = i + 1; k < Math.min(i + 9, quotes.length); k++) {
+        if (quotes[k].low <= stop) {
+          const pnl = -RISK;
+          STRATEGIES[stratKey].losses++;
+          STRATEGIES[stratKey].totalPnL += pnl;
+          STRATEGIES[stratKey].trades.push({ date: dateKey, pnl, result: 'stop' });
+          return;
+        }
+        if (quotes[k].high >= target) {
+          const pnl = RISK * targetMult;
+          STRATEGIES[stratKey].wins++;
+          STRATEGIES[stratKey].totalPnL += pnl;
+          STRATEGIES[stratKey].trades.push({ date: dateKey, pnl, result: 'target' });
+          return;
+        }
+      }
+      // Time exit: close at last checked candle
+      const exitIdx = Math.min(i + 8, quotes.length - 1);
+      const exitPnl = (quotes[exitIdx].close - q.close) * units;
+      if (exitPnl >= 0) STRATEGIES[stratKey].wins++; else STRATEGIES[stratKey].losses++;
+      STRATEGIES[stratKey].totalPnL += exitPnl;
+      STRATEGIES[stratKey].trades.push({ date: dateKey, pnl: exitPnl, result: 'timeout' });
+    }
+
+    // 1. Gap-and-Go: gap >1.5%, first hour, RSI not overbought
+    if (gapPct > 1.5 && rsi < 78 && (adx === null || adx > 15) && hourUTC === 13) {
+      simTrade(atr * 1.5, 3.0, 'gap_and_go');
+    }
+
+    // 2. VWAP Bounce: price near VWAP ±0.3%, RSI 42-65 rising, MACD bullish
+    if (Math.abs(vwapDiff) < 0.003 && rsi > 42 && rsi < 65 && rsiTrendUp && macdBull) {
+      simTrade(atr * 1.2, 2.5, 'vwap_bounce');
+    }
+
+    // 3. ORB Breakout: close above ORB high, ADX >22, volume spike
+    if (orb && q.close > orb.high && (adx === null || adx > 22) && volRatio > 1.3) {
+      simTrade(atr * 1.5, 2.5, 'orb_breakout');
+    }
+
+    // 4. Pullback in uptrend: intraday 0.5-2.5%, above VWAP, RSI 42-62 rising
+    if (intradayPct > 0.5 && intradayPct < 2.5 && vwapDiff > 0 && rsi > 42 && rsi < 62 && rsiTrendUp) {
+      simTrade(atr * 1.2, 2.5, 'pullback_trend');
+    }
+
+    // 5. MFI Oversold Bounce: MFI <32, RSI <42, RSI turning up
+    if (mfi !== null && mfi < 32 && rsi < 42 && rsiTrendUp) {
+      simTrade(atr * 1.0, 2.5, 'mfi_oversold');
+    }
+
+    // 6. Combined Premium: 4+ signals aligning
+    {
+      let score = 0;
+      if (rsi > 45 && rsi < 68) score++;
+      if (macdBull) score++;
+      if (adx !== null && adx > 25) score++;
+      if (mfi !== null && mfi > 45 && mfi < 70) score++;
+      if (vwapDiff > 0 && vwapDiff < 0.005) score++;
+      if (volRatio > 1.2) score++;
+      if (score >= 4) {
+        simTrade(atr * 1.5, 3.0, 'combined');
+      }
+    }
+  }
+
+  // Build summary per strategy
+  const resultaten = {};
+  for (const [key, s] of Object.entries(STRATEGIES)) {
+    const total = s.wins + s.losses;
+    const winRate = total > 0 ? Math.round(s.wins / total * 100) : 0;
+    const avgWin = s.trades.filter(t => t.pnl > 0).reduce((a, b) => a + b.pnl, 0) / (s.wins || 1);
+    const avgLoss = s.trades.filter(t => t.pnl < 0).reduce((a, b) => a + b.pnl, 0) / (s.losses || 1);
+    const profitFactor = s.losses > 0 && avgLoss !== 0 ? Math.abs((s.wins * avgWin) / (s.losses * avgLoss)) : (s.wins > 0 ? 99 : 0);
+    resultaten[key] = {
+      naam: s.naam,
+      trades: total,
+      wins: s.wins,
+      losses: s.losses,
+      winRate,
+      totalPnL: +s.totalPnL.toFixed(2),
+      avgWin: +avgWin.toFixed(2),
+      avgLoss: +avgLoss.toFixed(2),
+      profitFactor: +profitFactor.toFixed(2),
+    };
+  }
+  return resultaten;
+}
+
+app.get('/api/backtest', async (req, res) => {
+  try {
+    const symbols = ((req.query.symbols || 'NVDA,AMD,META,AAPL,AMAT,ASML,NFLX,LMT,XOM,RTX').split(',')).slice(0, 12);
+    const results = {};
+    const errors = [];
+
+    for (const sym of symbols) {
+      try {
+        await new Promise(r => setTimeout(r, 1200)); // rate limit
+        const quotes = await btHaalYahooData(sym, '15m', '60d');
+        if (quotes.length < 50) { errors.push(`${sym}: te weinig data (${quotes.length} candles)`); continue; }
+        results[sym] = btRunStrategies(quotes, sym);
+      } catch (err) {
+        errors.push(`${sym}: ${err.message}`);
+      }
+    }
+
+    // Aggregate: best strategy overall
+    const stratTotals = {};
+    for (const symData of Object.values(results)) {
+      for (const [key, s] of Object.entries(symData)) {
+        if (!stratTotals[key]) stratTotals[key] = { naam: s.naam, trades: 0, wins: 0, losses: 0, totalPnL: 0 };
+        stratTotals[key].trades += s.trades;
+        stratTotals[key].wins += s.wins;
+        stratTotals[key].losses += s.losses;
+        stratTotals[key].totalPnL += s.totalPnL;
+      }
+    }
+    const strategieen = Object.entries(stratTotals).map(([key, s]) => {
+      const winRate = s.trades > 0 ? Math.round(s.wins / s.trades * 100) : 0;
+      return { key, naam: s.naam, trades: s.trades, winRate, totalPnL: +s.totalPnL.toFixed(2) };
+    }).sort((a, b) => b.totalPnL - a.totalPnL);
+
+    // Best symbol+strategy combo
+    let bestCombo = null;
+    for (const [sym, symData] of Object.entries(results)) {
+      for (const [key, s] of Object.entries(symData)) {
+        if (s.trades >= 5 && s.winRate >= 50) {
+          if (!bestCombo || s.totalPnL > bestCombo.pnl) {
+            bestCombo = { symbol: sym, strategie: s.naam, winRate: s.winRate, pnl: s.totalPnL, trades: s.trades };
+          }
+        }
+      }
+    }
+
+    res.json({ symbolen: results, strategieen, bestCombo, errors, periodeD: 60, aantalSymbolen: symbols.length });
+  } catch (err) {
+    console.error('Backtest fout:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
