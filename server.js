@@ -1099,10 +1099,20 @@ Reageer ALLEEN met dit JSON:
       if (parsed.instap_type === 'direct' && parsed.entry) {
         const oldEntry = parseFloat(parsed.entry);
         const oldStop = parseFloat(parsed.stop_loss) || (oldEntry * 0.992);
-        const risico = Math.abs(oldEntry - oldStop);
+        let risico = Math.abs(oldEntry - oldStop);
         parsed.entry = huidigePrijs;
         parsed.actie = 'KOOP NU';
         parsed.signaal = 'KOOP';
+
+        // Minimum stop = 1.0× ATR (voorkomt te krappe stops die normal noise raken)
+        // Fallback als ATR ontbreekt: 0.8% van koers (bijv. XOM $100 → min $0.80 stop)
+        const atrVal = indicators.atr ? parseFloat(indicators.atr) : null;
+        const minStopAfstand = atrVal ? atrVal * 1.0 : huidigePrijs * 0.008;
+        if (risico < minStopAfstand) {
+          console.log(`[MinStop] ${symbol}: stop ${risico.toFixed(2)} < 1×ATR ${minStopAfstand.toFixed(2)} → vergroot naar ATR`);
+          risico = minStopAfstand;
+        }
+
         if (risico > 0) {
           parsed.stop_loss = +(huidigePrijs - risico).toFixed(2);
           const minTarget = +(huidigePrijs + risico * 2.5).toFixed(2);
