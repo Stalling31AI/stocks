@@ -1024,7 +1024,6 @@ Reageer ALLEEN met dit JSON:
       }
 
       // 2. Achterblijver blocker: markt >+1.5% maar aandeel <-1% intradag (echte achterblijver)
-      // Kleine negatieve beweging op een bull-dag kan consolidatie zijn vóór de volgende stijging
       const spyStijgt = marktCtx && marktCtx.spyPct > 1.5;
       const aandDaalt = intradayPct !== null && parseFloat(intradayPct) < -1.0;
       if (spyStijgt && aandDaalt) {
@@ -1033,6 +1032,26 @@ Reageer ALLEEN met dit JSON:
         parsed.signaal = 'WACHT';
         parsed.actie = 'GEEN SETUP';
         parsed.redenering = `Achterblijver: markt +${marktCtx.spyPct.toFixed(1)}% maar ${symbol} ${intradayPct}% intradag. Wacht op relative strength herstel.`;
+      }
+
+      // 2c. HARDE BEAR-DAG REM — code-blokkade, niet alleen AI-hint
+      // SPY < -1.5%: markt in echte daling → alle KOOP-signalen geblokkeerd
+      // SPY -0.5% tot -1.5%: verhoogd risico → minimaal 65% vertrouwen vereist
+      const spyPct = marktCtx?.spyPct ?? null;
+      if (spyPct !== null && spyPct < -1.5 && parsed.signaal === 'KOOP') {
+        parsed.instap_type = 'geen_trade';
+        parsed.vertrouwen = Math.min(parsed.vertrouwen || 50, 35);
+        parsed.signaal = 'WACHT';
+        parsed.actie = 'GEEN SETUP';
+        parsed.redenering = `BEAR DAG GEBLOKKEERD: SPY ${spyPct.toFixed(1)}% vandaag. Geen nieuwe long-posities op een brede neergaande markt. Wacht op herstel SPY.`;
+        console.log(`[BearDag] ${symbol} KOOP geblokkeerd — SPY ${spyPct.toFixed(1)}%`);
+      } else if (spyPct !== null && spyPct < -0.5 && (parsed.vertrouwen || 0) < 65 && parsed.signaal === 'KOOP') {
+        // Verhoogd risico: eis minstens 65% vertrouwen
+        parsed.instap_type = 'geen_trade';
+        parsed.signaal = 'WACHT';
+        parsed.actie = 'GEEN SETUP';
+        parsed.redenering = `Zwakke markt (SPY ${spyPct.toFixed(1)}%): vertrouwen ${parsed.vertrouwen}% onvoldoende — minimaal 65% vereist op een neergaande dag.`;
+        console.log(`[ZwakkeMarkt] ${symbol} te laag vertrouwen (${parsed.vertrouwen}%) voor SPY ${spyPct.toFixed(1)}%`);
       }
 
       // 2b. Anti-chase: als intradag al >2.5% EN het is een breakout setup → forceer pullback

@@ -2656,6 +2656,14 @@ async function simuleerTradesB(analyses) {
       console.log(`SimB: ${a.symbol} overgeslagen — dagstoplimiet bereikt (${stopsVandaagB} stops)`);
       continue;
     }
+    // DAGVERLIES-LIMIET: stop alle nieuwe SimB trades als totaal dagverlies > €250
+    const dagVerliesB = (simData[datum] || [])
+      .filter(t => t.resultaat === 'stop_geraakt')
+      .reduce((s, t) => s + Math.abs(t.winst || 0), 0);
+    if (dagVerliesB >= 250) {
+      console.log(`SimB: ${a.symbol} overgeslagen — dagverlies €${dagVerliesB.toFixed(0)} ≥ €250, trading gestopt`);
+      continue;
+    }
     // Opening filter: eerste 15 min na US open (15:30-15:45)
     // UITZONDERING: gap-and-go (pre-market gap > 1.5% + direct entry) mag wél
     if (USD_SYMBOLS.includes(a.symbol) && a.tijdstip) {
@@ -3081,6 +3089,18 @@ function renderSimulatiesB() {
   const weekPct = Math.min(100, Math.max(0, (weekWinst / WEEKDOEL) * 100));
   const weekKleur = weekWinst >= WEEKDOEL ? '#16a34a' : weekWinst >= WEEKDOEL * 0.5 ? '#d97706' : weekWinst < 0 ? '#dc2626' : '#2563eb';
 
+  // Dagverlies-limiet banner
+  const dagVerliesGeslotenB = lijst.filter(t => t.resultaat === 'stop_geraakt').reduce((s, t) => s + Math.abs(t.winst || 0), 0);
+  const dagVerliesBanner = dagVerliesGeslotenB >= 250
+    ? `<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#dc2626;font-weight:600;">
+        🛑 Dagverlies-limiet bereikt (€${dagVerliesGeslotenB.toFixed(0)}) — geen nieuwe SimB trades vandaag
+       </div>`
+    : dagVerliesGeslotenB >= 150
+    ? `<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#d97706;font-weight:600;">
+        ⚠️ Dagverlies €${dagVerliesGeslotenB.toFixed(0)} — nog €${(250 - dagVerliesGeslotenB).toFixed(0)} tot dagstop
+       </div>`
+    : '';
+
   // Splits US en EU trades
   const usLijst = lijst.filter(s => !EU_SYMBOLS.includes(s.symbol));
   const euLijst = lijst.filter(s => EU_SYMBOLS.includes(s.symbol));
@@ -3135,6 +3155,7 @@ function renderSimulatiesB() {
     </tr></thead>`;
 
   el.innerHTML = `
+    ${dagVerliesBanner}
     <div style="background:#f8fafc;border-radius:8px;padding:10px 14px;margin-bottom:12px;border:1.5px solid #e2e8f0;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
         <span style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Weekdoel €${WEEKDOEL}</span>
