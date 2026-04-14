@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yappi Analytics — Dagvoorspellingen</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: #f0f2f5; color: #1a1d23; }
+.nav { background: #fff; padding: 12px 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); display: flex; align-items: center; gap: 8px; }
+.nav-logo { font-size: 16px; font-weight: 700; margin-right: 16px; }
+.nav-logo span { color: #2563eb; }
+.nav-tab { font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 8px; text-decoration: none; color: #64748b; border: 1.5px solid transparent; transition: all .15s; }
+.nav-tab:hover { color: #2563eb; background: #eff6ff; }
+.nav-tab.actief { color: #2563eb; border-color: #2563eb; background: #eff6ff; }
+.main { max-width: 1200px; margin: 0 auto; padding: 20px 16px; }
+.pagina-titel { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+.pagina-subtitel { font-size: 13px; color: #64748b; margin-bottom: 20px; }
+.card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
+.btn { font-size: 12px; font-weight: 600; padding: 7px 16px; border-radius: 8px; border: none; cursor: pointer; transition: all .15s; }
+.btn-primary { background: #2563eb; color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+.btn-secondary { background: #f1f5f9; color: #374151; border: 1.5px solid #e2e8f0; }
+.btn-secondary:hover { background: #e2e8f0; }
+.btn-green { background: #16a34a; color: #fff; }
+.btn-green:hover { background: #15803d; }
+.badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; display: inline-block; }
+.chip { font-size: 11px; font-weight: 600; padding: 4px 12px; border-radius: 20px; cursor: pointer; border: 1.5px solid #bfdbfe; background: #eff6ff; color: #2563eb; transition: all .15s; }
+.chip.actief { background: #2563eb; color: #fff; border-color: #2563eb; }
+.chip:hover { background: #dbeafe; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; padding: 8px 10px; color: #64748b; font-weight: 600; font-size: 10px; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; }
+td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
+.groen { background: #dcfce7; color: #16a34a; }
+.geel  { background: #fef9c3; color: #a16207; }
+.blauw { background: #dbeafe; color: #1d4ed8; }
+.rood  { background: #fee2e2; color: #dc2626; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 640px) { .main { padding: 12px 8px; } th, td { padding: 6px 6px; } }
+</style>
+</head>
+<body>
+<nav class="nav">
+  <img src="/logoYA.png" alt="Yappi Analytics" style="height:48px;width:auto;object-fit:contain;mix-blend-mode:multiply;">
+  <a href="/" class="nav-tab">📈 Dashboard</a>
+  <a href="/dagoverzicht.html" class="nav-tab">📋 Dag overzicht</a>
+  <a href="/voorspellingen.html" class="nav-tab actief">🎯 Voorspellingen</a>
+</nav>
+
+<div class="main">
+  <div class="pagina-titel">🎯 Dagvoorspellingen</div>
+  <div class="pagina-subtitel" id="pagina-datum"></div>
+
+  <!-- Symbolen selector -->
+  <div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;">Selecteer aandelen voor vandaag</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="forecast-alle-btn" onclick="forecastAlle()">▶ Forecast alle geselecteerde</button>
+        <button class="btn btn-green" id="afrekenen-btn" onclick="afrekenenEOD()">📊 Afrekenen (EOD)</button>
+      </div>
+    </div>
+    <div id="symbool-chips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+    <div id="forecast-status" style="margin-top:10px;font-size:11px;color:#64748b;display:none;"></div>
+  </div>
+
+  <!-- Forecast kaarten (vandaag) -->
+  <div id="forecast-kaarten" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:20px;"></div>
+
+  <!-- Historische nauwkeurigheid -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div style="font-size:14px;font-weight:700;">📈 Historische nauwkeurigheid</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Kleur: <span style="color:#16a34a;font-weight:600;">●groen &lt;1%</span> · <span style="color:#a16207;font-weight:600;">●geel &lt;2%</span> · <span style="color:#1d4ed8;font-weight:600;">●blauw &lt;3%</span> · <span style="color:#dc2626;font-weight:600;">●rood ≥3%</span> afwijking</div>
+      </div>
+      <button class="btn btn-secondary" onclick="wisGeschiedenis()">🗑 Wis geschiedenis</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="geschiedenis-tabel">
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Aandeel</th>
+            <th>Tijdstip</th>
+            <th>Koers op moment</th>
+            <th>Voorsp. Hoog</th>
+            <th>Werkelijk Hoog</th>
+            <th>Afw. Hoog</th>
+            <th>Voorsp. Laag</th>
+            <th>Werkelijk Laag</th>
+            <th>Afw. Laag</th>
+            <th>Katalysator</th>
+          </tr>
+        </thead>
+        <tbody id="geschiedenis-body"></tbody>
+      </table>
+    </div>
+    <div id="nauwkeurigheid-samenvatting" style="margin-top:14px;padding:12px;background:#f8fafc;border-radius:8px;font-size:12px;"></div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const ALLE_SYMBOLEN = [
+  { sym: 'NVDA',    label: 'NVDA',    vlag: '🇺🇸' },
+  { sym: 'AMD',     label: 'AMD',     vlag: '🇺🇸' },
+  { sym: 'META',    label: 'META',    vlag: '🇺🇸' },
+  { sym: 'AAPL',    label: 'AAPL',    vlag: '🇺🇸' },
+  { sym: 'AMAT',    label: 'AMAT',    vlag: '🇺🇸' },
+  { sym: 'NFLX',    label: 'NFLX',    vlag: '🇺🇸' },
+  { sym: 'LMT',     label: 'LMT',     vlag: '🇺🇸' },
+  { sym: 'RTX',     label: 'RTX',     vlag: '🇺🇸' },
+  { sym: 'XOM',     label: 'XOM',     vlag: '🇺🇸' },
+  { sym: 'PYPL',    label: 'PYPL',    vlag: '🇺🇸' },
+  { sym: 'ASML.AS', label: 'ASML',    vlag: '🇳🇱' },
+  { sym: 'ADYEN.AS',label: 'ADYEN',   vlag: '🇳🇱' },
+  { sym: 'RHM.DE',  label: 'RHM',     vlag: '🇩🇪' },
+];
+const DEFAULT_SELECTIE = ['NVDA', 'AMAT', 'META', 'ASML.AS', 'LMT'];
+const FORECAST_KEY = 'dagForecasts_v2';
+
+// ── STATE ───────────────────────────────────────────────────────────────────
+let geselecteerd = new Set(DEFAULT_SELECTIE);
+let bezig = new Set();
+
+// ── OPSLAG ──────────────────────────────────────────────────────────────────
+function getForecastData() {
+  try { return JSON.parse(localStorage.getItem(FORECAST_KEY) || '{}'); } catch(e) { return {}; }
+}
+function saveForecastData(d) {
+  localStorage.setItem(FORECAST_KEY, JSON.stringify(d));
+}
+function getDatumKey() {
+  return new Date().toLocaleDateString('nl-NL');
+}
+
+// ── KLEUR ───────────────────────────────────────────────────────────────────
+function afwijkingKleur(pct) {
+  const a = Math.abs(pct);
+  if (a < 1) return { cls: 'groen', label: `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%` };
+  if (a < 2) return { cls: 'geel',  label: `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%` };
+  if (a < 3) return { cls: 'blauw', label: `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%` };
+  return      { cls: 'rood',  label: `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%` };
+}
+
+function fmtPrijs(sym, val) {
+  if (val === null || val === undefined) return '—';
+  const isEur = sym.endsWith('.AS') || sym.endsWith('.DE');
+  return isEur ? `€${Number(val).toFixed(2)}` : `$${Number(val).toFixed(2)}`;
+}
+
+// ── INDICATOR HELPERS (lichtgewicht, alleen voor forecast context) ──────────
+function calcRSI(closes, period = 14) {
+  if (closes.length < period + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gains += d; else losses -= d;
+  }
+  let ag = gains / period, al = losses / period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    ag = (ag * (period - 1) + Math.max(d, 0)) / period;
+    al = (al * (period - 1) + Math.max(-d, 0)) / period;
+  }
+  return al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(1);
+}
+
+function calcATR(quotes, period = 14) {
+  if (quotes.length < period + 1) return null;
+  const trs = quotes.slice(1).map((q, i) => Math.max(
+    q.high - q.low,
+    Math.abs(q.high - quotes[i].close),
+    Math.abs(q.low  - quotes[i].close)
+  ));
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trs.length; i++) atr = (atr * (period - 1) + trs[i]) / period;
+  return +atr.toFixed(3);
+}
+
+function calcVWAP(quotes) {
+  let cumTPV = 0, cumVol = 0, lastDay = -1;
+  let vwap = null;
+  quotes.forEach(q => {
+    const day = new Date(q.date).getUTCDate();
+    if (day !== lastDay) { cumTPV = 0; cumVol = 0; lastDay = day; }
+    const tp = (q.high + q.low + q.close) / 3;
+    cumTPV += tp * (q.volume || 0);
+    cumVol += (q.volume || 0);
+    if (cumVol > 0) vwap = +(cumTPV / cumVol).toFixed(2);
+  });
+  return vwap;
+}
+
+function calcMACDRichting(closes) {
+  const ema = (arr, p) => {
+    const k = 2 / (p + 1); let e = arr[0];
+    for (let i = 1; i < arr.length; i++) e = arr[i] * k + e * (1 - k);
+    return e;
+  };
+  if (closes.length < 27) return 'N/A';
+  const macd = ema(closes, 12) - ema(closes, 26);
+  const macdPrev = ema(closes.slice(0, -1), 12) - ema(closes.slice(0, -1), 26);
+  return macd > macdPrev ? 'STIJGEND' : 'DALEND';
+}
+
+// ── QUOTES OPHALEN + INDICATORS BEREKENEN ───────────────────────────────────
+async function haalQuotesEnIndicators(sym) {
+  const resp = await fetch(`/api/quote/${encodeURIComponent(sym)}?interval=15m`);
+  if (!resp.ok) throw new Error(`Quote ${sym}: ${resp.status}`);
+  const data = await resp.json();
+  const quotes = data.quotes || [];
+  if (quotes.length < 15) throw new Error(`Te weinig data voor ${sym}`);
+
+  const closes = quotes.map(q => q.close);
+  const rsi = calcRSI(closes, 14);
+  const rsiPrev = calcRSI(closes.slice(0, -1), 14);
+  const atr = calcATR(quotes, 14);
+  const vwap = calcVWAP(quotes);
+  const macdRichting = calcMACDRichting(closes);
+  const huidig = closes[closes.length - 1];
+  const dagOpen = quotes.find(q => {
+    const d = new Date(q.date);
+    return d.getUTCHours() >= 7;
+  })?.open || huidig;
+  const intradayPct = dagOpen ? +((huidig - dagOpen) / dagOpen * 100).toFixed(2) : null;
+  const orbHigh = Math.max(...quotes.slice(-8).map(q => q.high));
+  const orbLow  = Math.min(...quotes.slice(-8).map(q => q.low));
+
+  return {
+    quotes: quotes.slice(-30),
+    indicators: {
+      rsi, rsiTrend: rsi > (rsiPrev || 0) ? 'STIJGEND' : 'DALEND',
+      macdRichting, atr, vwap,
+      vwapPositie: vwap ? (huidig > vwap ? 'BOVEN' : 'ONDER') : 'N/A',
+      intradayPct,
+      openingRange: { high: +orbHigh.toFixed(2), low: +orbLow.toFixed(2) },
+    },
+  };
+}
+
+// ── FORECAST AANMAKEN ────────────────────────────────────────────────────────
+async function maakForecast(sym) {
+  if (bezig.has(sym)) return;
+  bezig.add(sym);
+  renderKaarten();
+
+  try {
+    const { quotes, indicators } = await haalQuotesEnIndicators(sym);
+    const resp = await fetch('/api/forecast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: sym, indicators, quotes }),
+    });
+    if (!resp.ok) throw new Error(`Forecast API: ${resp.status}`);
+    const forecast = await resp.json();
+    if (forecast.error) throw new Error(forecast.error);
+
+    const data = getForecastData();
+    const datum = getDatumKey();
+    if (!data[datum]) data[datum] = {};
+    if (!data[datum][sym]) data[datum][sym] = [];
+
+    data[datum][sym].push({
+      id: Date.now(),
+      tijdstip: forecast.tijdstip,
+      koersOpMoment: forecast.koersOpMoment,
+      dagHoog: forecast.dagHoog,
+      dagLaag: forecast.dagLaag,
+      piekMoment: forecast.piekMoment,
+      laagMoment: forecast.laagMoment,
+      redenering: forecast.redenering,
+      katalysator: forecast.katalysator,
+      vertrouwen: forecast.vertrouwen,
+      werkelijkHoog: null,
+      werkelijkLaag: null,
+    });
+    saveForecastData(data);
+  } catch(err) {
+    console.error(`Forecast ${sym}:`, err.message);
+    toonStatus(`Fout voor ${sym}: ${err.message}`, true);
+  }
+  bezig.delete(sym);
+  renderKaarten();
+  renderGeschiedenis();
+}
+
+async function forecastAlle() {
+  const syms = [...geselecteerd];
+  toonStatus(`Forecasts aanmaken voor ${syms.length} aandelen...`);
+  for (const sym of syms) {
+    await maakForecast(sym);
+    if (syms.indexOf(sym) < syms.length - 1) await new Promise(r => setTimeout(r, 1500));
+  }
+  toonStatus(`Alle forecasts klaar (${syms.length} aandelen).`);
+}
+
+// ── EOD AFREKENING ───────────────────────────────────────────────────────────
+async function afrekenenEOD() {
+  const data = getForecastData();
+  const datum = getDatumKey();
+  const daagData = data[datum] || {};
+  const syms = Object.keys(daagData).filter(s => s !== '_eod');
+  if (!syms.length) { toonStatus('Geen forecasts vandaag om af te rekenen.', true); return; }
+
+  toonStatus(`Werkelijke dagprijzen ophalen voor ${syms.length} aandelen...`);
+  document.getElementById('afrekenen-btn').disabled = true;
+
+  try {
+    const resp = await fetch(`/api/eod-settlement?symbols=${syms.join(',')}`);
+    if (!resp.ok) throw new Error(`EOD API: ${resp.status}`);
+    const eod = await resp.json();
+
+    // Sla EOD op en update forecasts
+    data[datum]['_eod'] = eod;
+    for (const sym of syms) {
+      const werkelijk = eod[sym];
+      if (!werkelijk) continue;
+      (data[datum][sym] || []).forEach(fc => {
+        fc.werkelijkHoog = werkelijk.high;
+        fc.werkelijkLaag = werkelijk.low;
+      });
+    }
+    saveForecastData(data);
+    renderKaarten();
+    renderGeschiedenis();
+    toonStatus(`Afrekening klaar — ${syms.length} aandelen verwerkt.`);
+  } catch(err) {
+    toonStatus(`EOD fout: ${err.message}`, true);
+  }
+  document.getElementById('afrekenen-btn').disabled = false;
+}
+
+// ── RENDER KAARTEN ───────────────────────────────────────────────────────────
+function renderKaarten() {
+  const data = getForecastData();
+  const datum = getDatumKey();
+  const daagData = data[datum] || {};
+  const el = document.getElementById('forecast-kaarten');
+
+  if (!geselecteerd.size) {
+    el.innerHTML = '<div style="color:#94a3b8;font-size:13px;padding:20px;">Selecteer aandelen hierboven.</div>';
+    return;
+  }
+
+  el.innerHTML = [...geselecteerd].map(sym => {
+    const info = ALLE_SYMBOLEN.find(s => s.sym === sym) || { vlag: '🇺🇸', label: sym };
+    const forecasts = daagData[sym] || [];
+    const latest = forecasts[forecasts.length - 1];
+    const isBusy = bezig.has(sym);
+
+    let inhoud = '';
+    if (isBusy) {
+      inhoud = `<div style="display:flex;align-items:center;gap:8px;color:#64748b;padding:20px 0;">
+        <div class="spinner"></div> Forecast aanmaken...
+      </div>`;
+    } else if (!latest) {
+      inhoud = `<div style="color:#94a3b8;font-size:12px;padding:16px 0;text-align:center;">
+        Nog geen forecast vandaag<br>
+        <button class="btn btn-primary" style="margin-top:10px;" onclick="maakForecast('${sym}')">▶ Forecast aanmaken</button>
+      </div>`;
+    } else {
+      const isEur = sym.endsWith('.AS') || sym.endsWith('.DE');
+      const muntTeken = isEur ? '€' : '$';
+      const hoogAfw = latest.werkelijkHoog !== null
+        ? afwijkingKleur((latest.werkelijkHoog - latest.dagHoog) / latest.dagHoog * 100) : null;
+      const laagAfw = latest.werkelijkLaag !== null
+        ? afwijkingKleur((latest.werkelijkLaag - latest.dagLaag) / latest.dagLaag * 100) : null;
+
+      // Timeline (alle forecasts vandaag)
+      const tijdlijn = forecasts.map((fc, i) => {
+        const hAfw = fc.werkelijkHoog !== null
+          ? afwijkingKleur((fc.werkelijkHoog - fc.dagHoog) / fc.dagHoog * 100) : null;
+        return `<div style="font-size:10px;color:#64748b;padding:3px 0;border-bottom:${i < forecasts.length-1 ? '1px solid #f1f5f9' : 'none'};">
+          <span style="font-weight:600;color:#374151;">${fc.tijdstip}</span>
+          koers ${muntTeken}${fc.koersOpMoment?.toFixed(2) ?? '—'}
+          → hoog <strong>${muntTeken}${fc.dagHoog}</strong>
+          / laag <strong>${muntTeken}${fc.dagLaag}</strong>
+          ${hAfw ? `<span class="badge ${hAfw.cls}" style="margin-left:4px;">${hAfw.label}</span>` : ''}
+        </div>`;
+      }).join('');
+
+      inhoud = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+          <div style="background:#f0fdf4;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:10px;font-weight:600;color:#64748b;margin-bottom:4px;">DAG HOOG</div>
+            <div style="font-size:22px;font-weight:700;color:#16a34a;">${muntTeken}${latest.dagHoog}</div>
+            <div style="font-size:10px;color:#64748b;margin-top:2px;">📍 ${latest.piekMoment || '—'}</div>
+            ${hoogAfw ? `<div class="badge ${hoogAfw.cls}" style="margin-top:6px;">Werkelijk ${muntTeken}${latest.werkelijkHoog} · ${hoogAfw.label}</div>` : ''}
+          </div>
+          <div style="background:#fef2f2;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:10px;font-weight:600;color:#64748b;margin-bottom:4px;">DAG LAAG</div>
+            <div style="font-size:22px;font-weight:700;color:#dc2626;">${muntTeken}${latest.dagLaag}</div>
+            <div style="font-size:10px;color:#64748b;margin-top:2px;">📍 ${latest.laagMoment || '—'}</div>
+            ${laagAfw ? `<div class="badge ${laagAfw.cls}" style="margin-top:6px;">Werkelijk ${muntTeken}${latest.werkelijkLaag} · ${laagAfw.label}</div>` : ''}
+          </div>
+        </div>
+        <div style="font-size:11px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;margin-bottom:10px;">
+          <span style="font-weight:700;color:#92400e;">⚡ ${latest.katalysator || '—'}</span>
+        </div>
+        <div style="font-size:11px;color:#374151;line-height:1.5;margin-bottom:12px;">${latest.redenering || ''}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-size:10px;color:#94a3b8;">Vertrouwen: <strong>${latest.vertrouwen}%</strong> · Koers op moment: ${muntTeken}${latest.koersOpMoment?.toFixed(2) ?? '—'}</span>
+          <button class="btn btn-secondary" style="font-size:10px;padding:4px 10px;" onclick="maakForecast('${sym}')">↻ Update</button>
+        </div>
+        ${forecasts.length > 1 ? `<details style="font-size:11px;"><summary style="cursor:pointer;color:#2563eb;font-weight:600;">📅 ${forecasts.length} forecasts vandaag</summary><div style="margin-top:6px;">${tijdlijn}</div></details>` : ''}`;
+    }
+
+    return `<div class="card" style="padding:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:15px;font-weight:700;">${info.vlag} ${info.label}</div>
+        <span style="font-size:10px;color:#94a3b8;">${datum}</span>
+      </div>
+      ${inhoud}
+    </div>`;
+  }).join('');
+}
+
+// ── RENDER GESCHIEDENIS ───────────────────────────────────────────────────────
+function renderGeschiedenis() {
+  const data = getForecastData();
+  const body = document.getElementById('geschiedenis-body');
+  const rows = [];
+  let totaalHoog = 0, totaalLaag = 0, countHoog = 0, countLaag = 0;
+
+  // Alle dagen, nieuwste eerst
+  const dagen = Object.keys(data).sort().reverse();
+  for (const datum of dagen) {
+    const daagData = data[datum];
+    for (const sym of Object.keys(daagData).filter(s => s !== '_eod')) {
+      const forecasts = daagData[sym] || [];
+      for (const fc of forecasts) {
+        const isEur = sym.endsWith('.AS') || sym.endsWith('.DE');
+        const mt = isEur ? '€' : '$';
+        let hoogCell = '—', laagCell = '—';
+        if (fc.werkelijkHoog !== null) {
+          const pct = (fc.werkelijkHoog - fc.dagHoog) / fc.dagHoog * 100;
+          const k = afwijkingKleur(pct);
+          hoogCell = `<span class="badge ${k.cls}">${k.label}</span> ${mt}${fc.werkelijkHoog}`;
+          totaalHoog += Math.abs(pct); countHoog++;
+        }
+        if (fc.werkelijkLaag !== null) {
+          const pct = (fc.werkelijkLaag - fc.dagLaag) / fc.dagLaag * 100;
+          const k = afwijkingKleur(pct);
+          laagCell = `<span class="badge ${k.cls}">${k.label}</span> ${mt}${fc.werkelijkLaag}`;
+          totaalLaag += Math.abs(pct); countLaag++;
+        }
+        rows.push(`<tr>
+          <td style="color:#64748b;">${datum}</td>
+          <td style="font-weight:600;">${sym}</td>
+          <td style="color:#64748b;">${fc.tijdstip}</td>
+          <td>${mt}${fc.koersOpMoment?.toFixed(2) ?? '—'}</td>
+          <td style="font-weight:600;color:#16a34a;">${mt}${fc.dagHoog}</td>
+          <td>${fc.werkelijkHoog !== null ? `${mt}${fc.werkelijkHoog}` : '—'}</td>
+          <td>${hoogCell}</td>
+          <td style="font-weight:600;color:#dc2626;">${mt}${fc.dagLaag}</td>
+          <td>${fc.werkelijkLaag !== null ? `${mt}${fc.werkelijkLaag}` : '—'}</td>
+          <td>${laagCell}</td>
+          <td style="font-size:10px;color:#64748b;max-width:200px;">${fc.katalysator || '—'}</td>
+        </tr>`);
+      }
+    }
+  }
+
+  body.innerHTML = rows.length
+    ? rows.join('')
+    : '<tr><td colspan="11" style="text-align:center;color:#94a3b8;padding:20px;">Nog geen afgerekenende forecasts.</td></tr>';
+
+  // Samenvatting
+  const sumEl = document.getElementById('nauwkeurigheid-samenvatting');
+  if (countHoog > 0 || countLaag > 0) {
+    const gemHoog = countHoog > 0 ? (totaalHoog / countHoog).toFixed(2) : '—';
+    const gemLaag = countLaag > 0 ? (totaalLaag / countLaag).toFixed(2) : '—';
+    const kleurH = countHoog > 0 ? afwijkingKleur(totaalHoog / countHoog) : null;
+    const kleurL = countLaag > 0 ? afwijkingKleur(totaalLaag / countLaag) : null;
+    sumEl.innerHTML = `
+      <div style="display:flex;gap:24px;flex-wrap:wrap;">
+        <div><span style="color:#64748b;">Gem. afwijking HOOG:</span>
+          ${kleurH ? `<span class="badge ${kleurH.cls}" style="margin-left:4px;">${gemHoog}%</span>` : '—'}
+          <span style="color:#64748b;font-size:10px;">(${countHoog} forecasts)</span>
+        </div>
+        <div><span style="color:#64748b;">Gem. afwijking LAAG:</span>
+          ${kleurL ? `<span class="badge ${kleurL.cls}" style="margin-left:4px;">${gemLaag}%</span>` : '—'}
+          <span style="color:#64748b;font-size:10px;">(${countLaag} forecasts)</span>
+        </div>
+      </div>`;
+  } else {
+    sumEl.innerHTML = '<span style="color:#94a3b8;">Nog geen afgerekenende forecasts — druk op "Afrekenen (EOD)" na marktsluit.</span>';
+  }
+}
+
+// ── CHIPS RENDER ──────────────────────────────────────────────────────────────
+function renderChips() {
+  const el = document.getElementById('symbool-chips');
+  el.innerHTML = ALLE_SYMBOLEN.map(s => `
+    <span class="chip ${geselecteerd.has(s.sym) ? 'actief' : ''}"
+      onclick="toggleSym('${s.sym}')">${s.vlag} ${s.label}</span>
+  `).join('');
+}
+
+function toggleSym(sym) {
+  if (geselecteerd.has(sym)) geselecteerd.delete(sym);
+  else geselecteerd.add(sym);
+  renderChips();
+  renderKaarten();
+}
+
+// ── HULPFUNCTIES ─────────────────────────────────────────────────────────────
+function toonStatus(tekst, fout = false) {
+  const el = document.getElementById('forecast-status');
+  el.style.display = 'block';
+  el.style.color = fout ? '#dc2626' : '#64748b';
+  el.textContent = tekst;
+}
+
+function wisGeschiedenis() {
+  if (!confirm('Wis alle forecast-geschiedenis?')) return;
+  localStorage.removeItem(FORECAST_KEY);
+  renderKaarten();
+  renderGeschiedenis();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const nu = new Date();
+  document.getElementById('pagina-datum').textContent =
+    nu.toLocaleDateString('nl-NL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  // Herstel geselecteerde symbolen uit localStorage
+  try {
+    const opg = JSON.parse(localStorage.getItem('forecastSelectie') || 'null');
+    if (Array.isArray(opg)) geselecteerd = new Set(opg);
+  } catch(e) {}
+
+  renderChips();
+  renderKaarten();
+  renderGeschiedenis();
+});
+
+// Sla selectie op bij wijziging
+function toggleSym(sym) {
+  if (geselecteerd.has(sym)) geselecteerd.delete(sym);
+  else geselecteerd.add(sym);
+  localStorage.setItem('forecastSelectie', JSON.stringify([...geselecteerd]));
+  renderChips();
+  renderKaarten();
+}
+</script>
+</body>
+</html>

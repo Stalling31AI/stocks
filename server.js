@@ -1654,6 +1654,124 @@ app.get('/api/backtest', async (req, res) => {
   }
 });
 
+// ── DAGFORECAST SYSTEEM ────────────────────────────────────────────────────
+
+app.post('/api/forecast', async (req, res) => {
+  try {
+    const { symbol, indicators, quotes } = req.body;
+
+    const [headlines, marktCtx, preMarktAll, fearGreed] = await Promise.all([
+      haalNieuwsOp(symbol),
+      haalMarktContext(),
+      haalPreMarketData(),
+      haalFearGreed(),
+    ]);
+
+    const pmData = preMarktAll?.[symbol];
+    const huidigePrijs = quotes?.length > 0 ? quotes[quotes.length - 1].close : null;
+    const datum = new Date().toLocaleDateString('nl-NL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    const prompt = `Jij bent een professionele marktanalist. Voorspel de DAGRANGE voor ${symbol} voor vandaag (${datum}).
+Gebruik nieuws, marktsentiment en supply/demand — onderbouw de niveaus met logica, niet alleen formules.
+
+MARKTCONTEXT:
+SPY: ${marktCtx?.spy || 'N/A'} | QQQ: ${marktCtx?.qqq || 'N/A'} | VIX: ${marktCtx?.vix || 'N/A'}
+Marktregime: ${marktCtx?.regime || 'onbekend'}
+${fearGreed ? `Fear & Greed: ${fearGreed.score}/100 (${fearGreed.rating})` : ''}
+
+HUIDIGE KOERS ${symbol}: ${huidigePrijs ? huidigePrijs.toFixed(2) : 'onbekend'}
+${pmData ? `Pre-market: ${pmData.preMarktPct > 0 ? '+' : ''}${pmData.preMarktPct?.toFixed(2)}% (koers: ${pmData.preMarktPrijs?.toFixed(2)})` : ''}
+
+TECHNISCH:
+RSI: ${indicators?.rsi ?? 'N/A'} (${indicators?.rsiTrend || ''})
+MACD richting: ${indicators?.macdRichting || 'N/A'}
+VWAP: ${indicators?.vwap ?? 'N/A'} — koers ${indicators?.vwapPositie || 'N/A'} VWAP
+ADX: ${indicators?.adx ?? 'N/A'} | ATR(15m): ${indicators?.atr ?? 'N/A'}
+Intradag t.o.v. open: ${indicators?.intradayPct !== undefined ? `${indicators.intradayPct}%` : 'N/A'}
+Opening range: ${indicators?.openingRange ? `hoog ${indicators.openingRange.high}, laag ${indicators.openingRange.low}` : 'N/A'}
+
+NIEUWS VANDAAG (${symbol}):
+${(headlines || []).slice(0, 5).map(n => `- ${n.titel || n.title || ''} (${n.bron || n.source || ''})`).join('\n') || 'Geen recent nieuws'}
+
+REDENEER als analist:
+1. Wat is de primaire drijver vandaag — nieuws, earnings, macro of sector?
+2. Waar ligt technische/fundamentele weerstand? Dit wordt het dag-hoog.
+3. Waar ligt support? Dit wordt het dag-laag.
+4. Op welk dagdeel verwacht je de piek, en waarom?
+
+Reageer ALLEEN met dit JSON (geen tekst erbuiten):
+{
+  "dagHoog": getal,
+  "dagLaag": getal,
+  "piekMoment": "opening" of "ochtend" of "middag" of "slotuur",
+  "laagMoment": "opening" of "ochtend" of "middag" of "slotuur",
+  "redenering": "2-3 zinnen waarom deze range realistisch is vandaag",
+  "katalysator": "1 zin: de primaire driver vandaag",
+  "vertrouwen": 0-100
+}`;
+
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 350,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const textBlock = message.content.find(b => b.type === 'text');
+    const match = textBlock?.text.match(/\{[\s\S]*?\}/);
+    if (!match) throw new Error('AI gaf geen valide JSON');
+    const parsed = JSON.parse(match[0]);
+
+    res.json({
+      symbol,
+      tijdstip: new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }),
+      koersOpMoment: huidigePrijs,
+      dagHoog: parsed.dagHoog,
+      dagLaag: parsed.dagLaag,
+      piekMoment: parsed.piekMoment,
+      laagMoment: parsed.laagMoment,
+      redenering: parsed.redenering,
+      katalysator: parsed.katalysator,
+      vertrouwen: parsed.vertrouwen,
+    });
+  } catch (err) {
+    console.error('Forecast fout:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/eod-settlement?symbols=NVDA,AMD,ASML.AS
+// Haalt werkelijke dagHoog/dagLaag op van Yahoo Finance (voor afrekening EOD)
+app.get('/api/eod-settlement', async (req, res) => {
+  try {
+    const symbols = (req.query.symbols || '').split(',').filter(Boolean).slice(0, 15);
+    if (!symbols.length) return res.status(400).json({ error: 'Geen symbolen' });
+    const results = {};
+    for (const sym of symbols) {
+      try {
+        await new Promise(r => setTimeout(r, 600));
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=3d`;
+        const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) });
+        if (!resp.ok) continue;
+        const json = await resp.json();
+        const result = json.chart?.result?.[0];
+        if (!result) continue;
+        const q = result.indicators.quote[0];
+        const n = q.high.length - 1;
+        results[sym] = {
+          high: q.high[n] ? +q.high[n].toFixed(2) : null,
+          low:  q.low[n]  ? +q.low[n].toFixed(2)  : null,
+          open: q.open[n] ? +q.open[n].toFixed(2) : null,
+          close: q.close[n] ? +q.close[n].toFixed(2) : null,
+        };
+      } catch(e) { console.warn(`EOD ${sym}:`, e.message); }
+    }
+    res.json(results);
+  } catch(err) {
+    console.error('EOD settlement fout:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -1661,3 +1779,4 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log('Server listening on port ' + PORT);
 });
+

@@ -75,6 +75,7 @@ tr:hover td { background:#f8fafc; }
     style="height:48px;width:auto;object-fit:contain;mix-blend-mode:multiply;">
   <a href="/" class="nav-tab">📈 Dashboard</a>
   <a href="/dagoverzicht.html" class="nav-tab actief">📋 Dag overzicht</a>
+  <a href="/voorspellingen.html" class="nav-tab">🎯 Voorspellingen</a>
 </nav>
 <div class="main">
   <div class="pagina-titel">📋 Dag overzicht</div>
@@ -617,46 +618,54 @@ margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     </div>
   </div>
 
-  <!-- Geschiedenis sectie -->
+  <!-- Geschiedenis sectie (standaard ingeklapt) -->
   <div id="geschiedenis-sectie" style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:14px;font-weight:700;">📅 Analyse geschiedenis</div>
-      <button onclick="wisGeschiedenis()"
-        style="font-size:11px;color:#dc2626;background:none;border:1px solid #fecaca;border-radius:6px;padding:4px 10px;cursor:pointer;">
-        🗑 Wis alles
-      </button>
+    <div onclick="toggleGeschiedenis()" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;cursor:pointer;user-select:none;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="font-size:14px;font-weight:700;">📅 Analyse geschiedenis</div>
+        <div id="geschiedenis-summary" style="font-size:12px;color:#64748b;display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button onclick="event.stopPropagation();wisGeschiedenis()"
+          style="font-size:11px;color:#dc2626;background:none;border:1px solid #fecaca;border-radius:6px;padding:4px 10px;cursor:pointer;">
+          🗑 Wis alles
+        </button>
+        <span id="geschiedenis-toggle-icon" style="font-size:14px;color:#94a3b8;font-weight:700;">▼</span>
+      </div>
     </div>
-    <div id="dag-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
-    <div id="aandeel-filter" style="display:flex;
-      gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-      <span style="font-size:11px;font-weight:600;
-        color:#94a3b8;align-self:center;">Filter:</span>
-      <button onclick="setFilter('alle')"
-        class="filter-btn actief"
-        data-filter="alle">Alle</button>
-      <button onclick="setFilter('ASML.AS')"
-        class="filter-btn"
-        data-filter="ASML.AS">🇳🇱 ASML</button>
-      <button onclick="setFilter('ADYEN.AS')"
-        class="filter-btn"
-        data-filter="ADYEN.AS">🇳🇱 ADYEN</button>
-      <button onclick="setFilter('NVDA')"
-        class="filter-btn"
-        data-filter="NVDA">🇺🇸 NVDA</button>
-      <button onclick="setFilter('TSLA')"
-        class="filter-btn"
-        data-filter="TSLA">🇺🇸 TSLA</button>
-      <button onclick="setFilter('RHM.DE')"
-        class="filter-btn"
-        data-filter="RHM.DE">🇩🇪 Rheinmetall</button>
-      <button onclick="setFilter('BA')"
-        class="filter-btn"
-        data-filter="BA">🇺🇸 Boeing</button>
-      <button onclick="setFilter('LMT')"
-        class="filter-btn"
-        data-filter="LMT">🇺🇸 Lockheed</button>
+    <div id="geschiedenis-inhoud" style="display:none;margin-top:14px;">
+      <div id="dag-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
+      <div id="aandeel-filter" style="display:flex;
+        gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+        <span style="font-size:11px;font-weight:600;
+          color:#94a3b8;align-self:center;">Filter:</span>
+        <button onclick="setFilter('alle')"
+          class="filter-btn actief"
+          data-filter="alle">Alle</button>
+        <button onclick="setFilter('ASML.AS')"
+          class="filter-btn"
+          data-filter="ASML.AS">🇳🇱 ASML</button>
+        <button onclick="setFilter('ADYEN.AS')"
+          class="filter-btn"
+          data-filter="ADYEN.AS">🇳🇱 ADYEN</button>
+        <button onclick="setFilter('NVDA')"
+          class="filter-btn"
+          data-filter="NVDA">🇺🇸 NVDA</button>
+        <button onclick="setFilter('TSLA')"
+          class="filter-btn"
+          data-filter="TSLA">🇺🇸 TSLA</button>
+        <button onclick="setFilter('RHM.DE')"
+          class="filter-btn"
+          data-filter="RHM.DE">🇩🇪 Rheinmetall</button>
+        <button onclick="setFilter('BA')"
+          class="filter-btn"
+          data-filter="BA">🇺🇸 Boeing</button>
+        <button onclick="setFilter('LMT')"
+          class="filter-btn"
+          data-filter="LMT">🇺🇸 Lockheed</button>
+      </div>
+      <div id="geschiedenis-tabel"></div>
     </div>
-    <div id="geschiedenis-tabel"></div>
   </div>
 </div>
 <script>
@@ -1414,11 +1423,48 @@ function wisGeschiedenis() {
   document.getElementById('dag-tabs').innerHTML = '';
   document.getElementById('geschiedenis-tabel').innerHTML =
     '<div style="text-align:center;color:#94a3b8;padding:30px;">Nog geen analyses opgeslagen.</div>';
+  updateGeschiedenisSummary();
 }
+
+let _geschiedenisOpen = false;
+function toggleGeschiedenis() {
+  _geschiedenisOpen = !_geschiedenisOpen;
+  document.getElementById('geschiedenis-inhoud').style.display = _geschiedenisOpen ? 'block' : 'none';
+  document.getElementById('geschiedenis-toggle-icon').textContent = _geschiedenisOpen ? '▲' : '▼';
+}
+
+function updateGeschiedenisSummary() {
+  const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
+  const vandaag = new Date().toLocaleDateString('nl-NL');
+  // Gebruik de meest recente dag met data
+  const dagen = Object.keys(opgeslagen).reverse();
+  const recenteDag = dagen[0];
+  const dagData = recenteDag ? (opgeslagen[recenteDag] || []) : [];
+  const alle = dagData.flatMap(r => r.analyses || []);
+  const el = document.getElementById('geschiedenis-summary');
+  if (!el) return;
+  if (!alle.length) {
+    el.innerHTML = '<span style="color:#94a3b8;">Geen analyses</span>';
+    return;
+  }
+  const koop   = alle.filter(a => a.signaal === 'KOOP').length;
+  const wacht  = alle.filter(a => a.signaal === 'WACHT').length;
+  const correct   = alle.filter(a => a.resultaat === 'correct').length;
+  const incorrect = alle.filter(a => a.resultaat === 'incorrect').length;
+  const beoordeeld = correct + incorrect;
+  el.innerHTML =
+    `<span style="background:#f1f5f9;border-radius:6px;padding:2px 8px;font-size:11px;">${alle.length} analyses</span>` +
+    (recenteDag !== vandaag ? ` <span style="font-size:11px;color:#94a3b8;">(${recenteDag})</span>` : '') +
+    ` <span style="color:#16a34a;font-size:11px;">✅ ${koop} KOOP</span>` +
+    ` <span style="color:#d97706;font-size:11px;">⏸ ${wacht} WACHT</span>` +
+    (beoordeeld > 0 ? ` <span style="color:#64748b;font-size:11px;">· ${correct}/${beoordeeld} juist</span>` : '');
+}
+
 function renderDagTabs() {
   const opgeslagen = JSON.parse(localStorage.getItem('daganalyses') || '{}');
   const dagen = Object.keys(opgeslagen).reverse();
   const tabs = document.getElementById('dag-tabs');
+  updateGeschiedenisSummary();
   if (!dagen.length) {
     tabs.innerHTML = '';
     document.getElementById('geschiedenis-tabel').innerHTML =
