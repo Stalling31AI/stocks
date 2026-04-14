@@ -1691,7 +1691,7 @@ Intradag t.o.v. open: ${indicators?.intradayPct !== undefined ? `${indicators.in
 Opening range: ${indicators?.openingRange ? `hoog ${indicators.openingRange.high}, laag ${indicators.openingRange.low}` : 'N/A'}
 
 NIEUWS VANDAAG (${symbol}):
-${(headlines || []).slice(0, 5).map(n => `- ${n.titel || n.title || ''} (${n.bron || n.source || ''})`).join('\n') || 'Geen recent nieuws'}
+${(headlines || []).length > 0 ? headlines.slice(0, 5).map((h, i) => `${i+1}. ${h}`).join('\n') : 'Geen recent nieuws'}
 
 REDENEER als analist:
 1. Wat is de primaire drijver vandaag — nieuws, earnings, macro of sector?
@@ -1713,12 +1713,16 @@ Reageer ALLEEN met dit JSON (geen tekst erbuiten):
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 350,
+      max_tokens: 600,
       messages: [{ role: 'user', content: prompt }],
     });
     const textBlock = message.content.find(b => b.type === 'text');
-    const match = textBlock?.text.match(/\{[\s\S]*?\}/);
-    if (!match) throw new Error('AI gaf geen valide JSON');
+    if (!textBlock) throw new Error('AI gaf geen tekst terug');
+    const match = textBlock.text.match(/\{[\s\S]*\}/);
+    if (!match) {
+      console.error('[Forecast] AI response:', textBlock.text.substring(0, 300));
+      throw new Error('AI gaf geen valide JSON');
+    }
     const parsed = JSON.parse(match[0]);
 
     res.json({

@@ -138,6 +138,35 @@ function getDatumKey() {
   return new Date().toLocaleDateString('nl-NL');
 }
 
+// ── MARKTUREN ───────────────────────────────────────────────────────────────
+// Controleert of de markt open is voor een symbool (UTC-uren)
+function marktStatus(sym) {
+  const now = new Date();
+  const dayOfWeek = now.getUTCDay(); // 0=zondag, 6=zaterdag
+  if (dayOfWeek === 0 || dayOfWeek === 6) return { open: false, label: 'Weekend' };
+
+  const h = now.getUTCHours();
+  const m = now.getUTCMinutes();
+  const totMin = h * 60 + m;
+
+  if (sym.endsWith('.AS') || sym.endsWith('.DE')) {
+    // Euronext/Xetra: 09:00–17:30 CET = 08:00–16:30 UTC (winter) / 07:00–15:30 UTC (zomer)
+    // We gebruiken CEST (apr-okt): UTC+2 → markt 07:00–15:30 UTC
+    const open  = 7 * 60;      // 09:00 CEST = 07:00 UTC
+    const close = 15 * 60 + 30; // 17:30 CEST = 15:30 UTC
+    if (totMin >= open && totMin < close) return { open: true,  label: 'Markt open' };
+    if (totMin >= close)                  return { open: false, label: 'Markt gesloten' };
+    return { open: false, label: 'Pre-market' };
+  } else {
+    // NYSE/Nasdaq: 09:30–16:00 ET = 13:30–20:00 UTC
+    const open  = 13 * 60 + 30;
+    const close = 20 * 60;
+    if (totMin >= open && totMin < close) return { open: true,  label: 'Markt open' };
+    if (totMin < open)                    return { open: false, label: totMin >= 13*60 ? 'Pre-market' : 'Pre-market' };
+    return { open: false, label: 'Markt gesloten' };
+  }
+}
+
 // ── KLEUR ───────────────────────────────────────────────────────────────────
 function afwijkingKleur(pct) {
   const a = Math.abs(pct);
@@ -256,7 +285,10 @@ async function maakForecast(sym) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol: sym, indicators, quotes }),
     });
-    if (!resp.ok) throw new Error(`Forecast API: ${resp.status}`);
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.error || `Forecast API: ${resp.status}`);
+    }
     const forecast = await resp.json();
     if (forecast.error) throw new Error(forecast.error);
 
@@ -411,9 +443,15 @@ function renderKaarten() {
     }
 
     return `<div class="card" style="padding:16px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px;">
         <div style="font-size:15px;font-weight:700;">${info.vlag} ${info.label}</div>
-        <span style="font-size:10px;color:#94a3b8;">${datum}</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${(() => { const ms = marktStatus(sym); return ms.open
+            ? `<span style="font-size:10px;font-weight:600;color:#16a34a;background:#dcfce7;border-radius:6px;padding:2px 7px;">● ${ms.label}</span>`
+            : `<span style="font-size:10px;font-weight:600;color:#64748b;background:#f1f5f9;border-radius:6px;padding:2px 7px;">◌ ${ms.label}</span>`;
+          })()}
+          <span style="font-size:10px;color:#94a3b8;">${datum}</span>
+        </div>
       </div>
       ${inhoud}
     </div>`;
