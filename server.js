@@ -1683,21 +1683,29 @@ HUIDIGE KOERS ${symbol}: ${huidigePrijs ? huidigePrijs.toFixed(2) : 'onbekend'}
 ${pmData ? `Pre-market: ${pmData.preMarktPct > 0 ? '+' : ''}${pmData.preMarktPct?.toFixed(2)}% (koers: ${pmData.preMarktPrijs?.toFixed(2)})` : ''}
 
 TECHNISCH:
+INTRADAG KOERSVERLOOP VANDAAG (BELANGRIJK — gebruik dit als harde grens):
+Koers nu: ${huidigePrijs ? huidigePrijs.toFixed(2) : 'onbekend'}
+${indicators?.dagHoogTotNu != null ? `Dag hoog TOT NU: ${indicators.dagHoogTotNu}` : ''}
+${indicators?.dagLaagTotNu != null ? `Dag laag TOT NU: ${indicators.dagLaagTotNu}` : ''}
+${indicators?.intradayPct !== undefined ? `Intradag beweging t.o.v. open: ${indicators.intradayPct > 0 ? '+' : ''}${indicators.intradayPct}%` : ''}
+Opening range (eerste 30 min): ${indicators?.openingRange ? `hoog ${indicators.openingRange.high}, laag ${indicators.openingRange.low}` : 'N/A'}
+VWAP: ${indicators?.vwap ?? 'N/A'} — koers ${indicators?.vwapPositie || 'N/A'} VWAP
+
+TECHNISCHE INDICATOREN:
 RSI: ${indicators?.rsi ?? 'N/A'} (${indicators?.rsiTrend || ''})
 MACD richting: ${indicators?.macdRichting || 'N/A'}
-VWAP: ${indicators?.vwap ?? 'N/A'} — koers ${indicators?.vwapPositie || 'N/A'} VWAP
-ADX: ${indicators?.adx ?? 'N/A'} | ATR(15m): ${indicators?.atr ?? 'N/A'}
-Intradag t.o.v. open: ${indicators?.intradayPct !== undefined ? `${indicators.intradayPct}%` : 'N/A'}
-Opening range: ${indicators?.openingRange ? `hoog ${indicators.openingRange.high}, laag ${indicators.openingRange.low}` : 'N/A'}
+ATR(15m): ${indicators?.atr ?? 'N/A'}
+
+INSTRUCTIE: dagLaag mag NOOIT hoger zijn dan de al bereikte dag laag TOT NU. dagHoog mag NOOIT lager zijn dan de al bereikte dag hoog TOT NU. Pas je verwachting aan op wat al heeft plaatsgevonden.
 
 NIEUWS VANDAAG (${symbol}):
 ${(headlines || []).length > 0 ? headlines.slice(0, 5).map((h, i) => `${i+1}. ${h}`).join('\n') : 'Geen recent nieuws'}
 
 REDENEER als analist:
 1. Wat is de primaire drijver vandaag — nieuws, earnings, macro of sector?
-2. Waar ligt technische/fundamentele weerstand? Dit wordt het dag-hoog.
-3. Waar ligt support? Dit wordt het dag-laag.
-4. Op welk dagdeel verwacht je de piek, en waarom?
+2. Kan de koers nog verder dalen/stijgen vanuit het huidige niveau, of is een bodem/top bereikt?
+3. Waar ligt het uiteindelijke dag-hoog en dag-laag rekening houdend met wat al is gebeurd?
+4. Op welk dagdeel verwacht je de piek/bodem (als die nog niet bereikt zijn)?
 
 Reageer ALLEEN met dit JSON (geen tekst erbuiten):
 {

@@ -252,13 +252,25 @@ async function haalQuotesEnIndicators(sym) {
   const vwap = calcVWAP(quotes);
   const macdRichting = calcMACDRichting(closes);
   const huidig = closes[closes.length - 1];
-  const dagOpen = quotes.find(q => {
-    const d = new Date(q.date);
-    return d.getUTCHours() >= 7;
-  })?.open || huidig;
+
+  // Vandaag-candles: filter op datum (UTC-datum van de candle)
+  const vandaagStr = new Date().toISOString().slice(0, 10); // "2026-04-15"
+  // Europese beurzen openen om 07:00 UTC (09:00 CEST); US om 13:30 UTC
+  const vandaagCandles = quotes.filter(q => q.date && q.date.startsWith(vandaagStr));
+
+  // Opening range: eerste 2 candles van de dag (eerste 30 min)
+  const orbCandles = vandaagCandles.slice(0, 2);
+  const orbHigh = orbCandles.length >= 1 ? Math.max(...orbCandles.map(q => q.high)) : Math.max(...quotes.slice(-8).map(q => q.high));
+  const orbLow  = orbCandles.length >= 1 ? Math.min(...orbCandles.map(q => q.low))  : Math.min(...quotes.slice(-8).map(q => q.low));
+
+  // Dag open = eerste candle van vandaag
+  const dagOpenCandle = vandaagCandles[0] || quotes.find(q => new Date(q.date).getUTCHours() >= 7);
+  const dagOpen = dagOpenCandle?.open || huidig;
   const intradayPct = dagOpen ? +((huidig - dagOpen) / dagOpen * 100).toFixed(2) : null;
-  const orbHigh = Math.max(...quotes.slice(-8).map(q => q.high));
-  const orbLow  = Math.min(...quotes.slice(-8).map(q => q.low));
+
+  // Dag hoog/laag TOT NU (van alle candles vandaag)
+  const dagHoogTotNu = vandaagCandles.length ? +Math.max(...vandaagCandles.map(q => q.high)).toFixed(2) : null;
+  const dagLaagTotNu = vandaagCandles.length ? +Math.min(...vandaagCandles.map(q => q.low)).toFixed(2) : null;
 
   return {
     quotes: quotes.slice(-30),
@@ -268,6 +280,8 @@ async function haalQuotesEnIndicators(sym) {
       vwapPositie: vwap ? (huidig > vwap ? 'BOVEN' : 'ONDER') : 'N/A',
       intradayPct,
       openingRange: { high: +orbHigh.toFixed(2), low: +orbLow.toFixed(2) },
+      dagHoogTotNu,
+      dagLaagTotNu,
     },
   };
 }
