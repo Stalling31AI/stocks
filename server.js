@@ -1727,7 +1727,7 @@ Reageer ALLEEN met dit JSON (geen tekst erbuiten):
 
     res.json({
       symbol,
-      tijdstip: new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }),
+      tijdstip: new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }),
       koersOpMoment: huidigePrijs,
       dagHoog: parsed.dagHoog,
       dagLaag: parsed.dagLaag,
