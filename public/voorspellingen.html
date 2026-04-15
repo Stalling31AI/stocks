@@ -57,7 +57,14 @@ td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
   <!-- Symbolen selector -->
   <div class="card" style="margin-bottom:16px;">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-      <div style="font-size:13px;font-weight:700;">Selecteer aandelen voor vandaag</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="font-size:13px;font-weight:700;">Selecteer aandelen voor vandaag</div>
+        <button onclick="document.getElementById('timing-modal').style.display='flex'"
+          title="Beste tijden voor forecast"
+          style="width:18px;height:18px;border-radius:50%;border:1.5px solid #93c5fd;background:#eff6ff;
+                 color:#2563eb;font-size:11px;font-weight:700;cursor:pointer;
+                 display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;">i</button>
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-primary" id="forecast-alle-btn" onclick="forecastAlle()">▶ Forecast alle geselecteerde</button>
         <button class="btn btn-green" id="afrekenen-btn" onclick="afrekenenEOD()">📊 Afrekenen (EOD)</button>
@@ -65,6 +72,88 @@ td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
     </div>
     <div id="symbool-chips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
     <div id="forecast-status" style="margin-top:10px;font-size:11px;color:#64748b;display:none;"></div>
+  </div>
+
+  <!-- Timing info modal -->
+  <div id="timing-modal" onclick="if(event.target===this)this.style.display='none'"
+    style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:9999;
+           align-items:center;justify-content:center;padding:16px;">
+    <div style="background:#fff;border-radius:16px;padding:28px;max-width:600px;width:100%;
+                box-shadow:0 8px 32px rgba(0,0,0,.25);max-height:90vh;overflow-y:auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <div style="font-size:16px;font-weight:700;">⏰ Beste tijden voor forecast</div>
+        <button onclick="document.getElementById('timing-modal').style.display='none'"
+          style="background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;line-height:1;">×</button>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;color:#2563eb;text-transform:uppercase;
+                  letter-spacing:.05em;margin-bottom:10px;">🇳🇱 🇩🇪 Europese markten</div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:8px;">
+        Open: 09:00–17:30 CEST &nbsp;|&nbsp; Data: 15 min vertraagd
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <thead>
+          <tr style="border-bottom:2px solid #e2e8f0;">
+            <th style="text-align:left;padding:7px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Tijd (CEST)</th>
+            <th style="text-align:left;padding:7px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Waarom</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:8px 10px;font-weight:700;white-space:nowrap;color:#1a1d23;">09:30</td>
+            <td style="padding:8px 10px;color:#374151;">Eerste 2 candles beschikbaar. Opening range ~09:00–09:15 zichtbaar. Vroegste zinvolle forecast.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:8px 10px;font-weight:700;white-space:nowrap;color:#16a34a;">11:00 ★</td>
+            <td style="padding:8px 10px;color:#374151;">Ochtendtrend bevestigd, VWAP gesettled. <strong>Meest betrouwbare window</strong> — genoeg data, dag nog niet halverwege.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:8px 10px;font-weight:700;white-space:nowrap;color:#1a1d23;">14:00</td>
+            <td style="padding:8px 10px;color:#374151;">US pre-market actief, Europese markt reageert. Goed moment voor update met macro-context.</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 10px;font-weight:700;white-space:nowrap;color:#1a1d23;">16:00</td>
+            <td style="padding:8px 10px;color:#374151;">Laatste zinvolle update — 1,5 uur voor sluit. Daarna te weinig range over.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="font-size:12px;font-weight:700;color:#2563eb;text-transform:uppercase;
+                  letter-spacing:.05em;margin-bottom:10px;">🇺🇸 US markten</div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:8px;">
+        Open: 15:30–22:00 CEST &nbsp;|&nbsp; Data: 15 min vertraagd
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;">
+        <thead>
+          <tr style="border-bottom:2px solid #e2e8f0;">
+            <th style="text-align:left;padding:7px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Tijd (CEST)</th>
+            <th style="text-align:left;padding:7px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Waarom</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:8px 10px;font-weight:700;white-space:nowrap;color:#1a1d23;">09:00</td>
+            <td style="padding:8px 10px;color:#374151;">Vóór open — puur op pre-market, futures en nieuws. Geen intradag-data, maar AI schat al de richting in op basis van de gap.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:8px 10px;font-weight:700;white-space:nowrap;color:#1a1d23;">15:45</td>
+            <td style="padding:8px 10px;color:#374151;">Eerste 15m candle beschikbaar (open 15:30 + delay). Opening range begint te vormen.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:8px 10px;font-weight:700;white-space:nowrap;color:#16a34a;">16:15 ★</td>
+            <td style="padding:8px 10px;color:#374151;">ORB voorbij, richting bevestigd. <strong>Beste window voor betrouwbare US forecast.</strong></td>
+          </tr>
+          <tr>
+            <td style="padding:8px 10px;font-weight:700;white-space:nowrap;color:#1a1d23;">19:00</td>
+            <td style="padding:8px 10px;color:#374151;">Mid-session update — power hour nog 3 uur weg. Goede middag-herforecast.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;font-size:12px;color:#92400e;">
+        <strong>Tip:</strong> gebruik de <strong>↻ Update</strong> knop op een kaart ná een grote intradag-beweging — de forecast past dan automatisch de al-bereikte hoog/laag aan als harde ondergrens.
+      </div>
+    </div>
   </div>
 
   <!-- Forecast kaarten (vandaag) -->
