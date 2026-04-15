@@ -570,7 +570,7 @@ Reageer ALLEEN met dit JSON (geen uitleg erbuiten):
 }`;
 
     const msg = await client.messages.create({
-      model: 'claude-sonnet-4-6', max_tokens: 500,
+      model: 'claude-haiku-4-5-20251001', max_tokens: 500,
       messages: [{ role: 'user', content: promptTekst }]
     });
     const txt = msg.content.find(b => b.type === 'text')?.text || '';
