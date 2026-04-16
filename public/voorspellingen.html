@@ -221,7 +221,31 @@ function getForecastData() {
   try { return JSON.parse(localStorage.getItem(FORECAST_KEY) || '{}'); } catch(e) { return {}; }
 }
 function saveForecastData(d) {
-  localStorage.setItem(FORECAST_KEY, JSON.stringify(d));
+  // Trim: bewaar max 30 dagen, max 10 forecasts per symbool per dag
+  const MAX_DAGEN = 30;
+  const MAX_PER_SYM = 10;
+  const dagen = Object.keys(d).filter(k => k !== '_eod').sort().reverse();
+  if (dagen.length > MAX_DAGEN) {
+    dagen.slice(MAX_DAGEN).forEach(dag => delete d[dag]);
+  }
+  for (const dag of Object.keys(d)) {
+    const dagData = d[dag];
+    for (const sym of Object.keys(dagData).filter(s => s !== '_eod')) {
+      if (dagData[sym].length > MAX_PER_SYM) {
+        dagData[sym] = dagData[sym].slice(-MAX_PER_SYM);
+      }
+    }
+  }
+  try {
+    localStorage.setItem(FORECAST_KEY, JSON.stringify(d));
+  } catch(e) {
+    // Quota overschreden: wis oudste helft en probeer opnieuw
+    console.warn('[Forecast] localStorage vol, oudste data wissen...');
+    const alledag = Object.keys(d).filter(k => k !== '_eod').sort();
+    alledag.slice(0, Math.ceil(alledag.length / 2)).forEach(dag => delete d[dag]);
+    try { localStorage.setItem(FORECAST_KEY, JSON.stringify(d)); }
+    catch(e2) { console.error('[Forecast] Opslaan mislukt na opschonen:', e2.message); }
+  }
 }
 function getDatumKey() {
   return new Date().toLocaleDateString('nl-NL');
