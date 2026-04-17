@@ -159,6 +159,9 @@ td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
   <!-- Forecast kaarten (vandaag) -->
   <div id="forecast-kaarten" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:20px;"></div>
 
+  <!-- Banner: open (niet-afgerekenende) dagen -->
+  <div id="open-dagen-banner" style="display:none;margin-bottom:12px;"></div>
+
   <!-- Historische nauwkeurigheid -->
   <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
@@ -437,6 +440,9 @@ async function maakForecast(sym) {
       vertrouwen: forecast.vertrouwen,
       werkelijkHoog: null,
       werkelijkLaag: null,
+      // Intradag niveaus op moment van forecast (voor Optie A)
+      hoogOpMoment: indicators.dagHoogTotNu,
+      laagOpMoment: indicators.dagLaagTotNu,
     });
     saveForecastData(data);
   } catch(err) {
@@ -494,6 +500,47 @@ async function afrekenenEOD() {
   document.getElementById('afrekenen-btn').disabled = false;
 }
 
+// Reken een vorige dag af via offset (offset=1 = gisteren, =2 = eergisteren, etc.)
+async function afrekenenDag(datum) {
+  const data = getForecastData();
+  const daagData = data[datum] || {};
+  const syms = Object.keys(daagData).filter(s => s !== '_eod');
+  if (!syms.length) return;
+
+  // Bereken offset: hoeveel handelsdagen geleden is datum?
+  // Eenvoudig: probeer offset 1 t/m 4, kijk welke datum terugkomen van de API
+  toonStatus(`Werkelijke prijzen ophalen voor ${datum} (${syms.length} aandelen)...`);
+
+  for (let offset = 1; offset <= 4; offset++) {
+    try {
+      const resp = await fetch(`/api/eod-settlement?symbols=${syms.join(',')}&offset=${offset}`);
+      if (!resp.ok) continue;
+      const eod = await resp.json();
+
+      // Controleer of de teruggekomen datum overeenkomt
+      const eersteResult = Object.values(eod)[0];
+      if (!eersteResult?.datum) continue;
+      if (eersteResult.datum !== datum) continue;
+
+      // Match gevonden — sla op
+      data[datum]['_eod'] = eod;
+      for (const sym of syms) {
+        const werkelijk = eod[sym];
+        if (!werkelijk) continue;
+        (data[datum][sym] || []).forEach(fc => {
+          fc.werkelijkHoog = werkelijk.high;
+          fc.werkelijkLaag = werkelijk.low;
+        });
+      }
+      saveForecastData(data);
+      renderGeschiedenis();
+      toonStatus(`${datum} afgesloten — ${syms.length} aandelen verwerkt.`);
+      return;
+    } catch(e) { continue; }
+  }
+  toonStatus(`Kon ${datum} niet afsluiten — data niet beschikbaar.`, true);
+}
+
 // ── RENDER KAARTEN ───────────────────────────────────────────────────────────
 function renderKaarten() {
   const data = getForecastData();
@@ -543,19 +590,40 @@ function renderKaarten() {
         </div>`;
       }).join('');
 
+      // Optie A: is het hoog/laag al bereikt op moment van forecast?
+      const TOL = 0.001; // 0.1% tolerantie
+      const hoogAlBereikt = latest.hoogOpMoment != null &&
+        latest.dagHoog <= latest.hoogOpMoment * (1 + TOL);
+      const hoogNogTeComen = latest.hoogOpMoment != null && !hoogAlBereikt;
+      const laagAlBereikt = latest.laagOpMoment != null &&
+        latest.dagLaag >= latest.laagOpMoment * (1 - TOL);
+      const laagNogTeComen = latest.laagOpMoment != null && !laagAlBereikt;
+
       inhoud = `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
           <div style="background:#f0fdf4;border-radius:8px;padding:12px;text-align:center;">
             <div style="font-size:10px;font-weight:600;color:#64748b;margin-bottom:4px;">DAG HOOG</div>
             <div style="font-size:22px;font-weight:700;color:#16a34a;">${muntTeken}${latest.dagHoog}</div>
             <div style="font-size:10px;color:#64748b;margin-top:2px;">📍 ${latest.piekMoment || '—'}</div>
-            ${hoogAfw ? `<div class="badge ${hoogAfw.cls}" style="margin-top:6px;">Werkelijk ${muntTeken}${latest.werkelijkHoog} · ${hoogAfw.label}</div>` : ''}
+            ${latest.werkelijkHoog !== null && hoogAfw
+              ? `<div class="badge ${hoogAfw.cls}" style="margin-top:6px;">Werkelijk ${muntTeken}${latest.werkelijkHoog} · ${hoogAfw.label}</div>`
+              : hoogAlBereikt
+                ? `<div style="font-size:10px;color:#16a34a;margin-top:5px;font-weight:600;">✓ al bereikt</div>`
+                : hoogNogTeComen
+                  ? `<div style="font-size:10px;color:#2563eb;margin-top:5px;font-weight:600;">→ nog +${muntTeken}${(latest.dagHoog - latest.hoogOpMoment).toFixed(2)}</div>`
+                  : ''}
           </div>
           <div style="background:#fef2f2;border-radius:8px;padding:12px;text-align:center;">
             <div style="font-size:10px;font-weight:600;color:#64748b;margin-bottom:4px;">DAG LAAG</div>
             <div style="font-size:22px;font-weight:700;color:#dc2626;">${muntTeken}${latest.dagLaag}</div>
             <div style="font-size:10px;color:#64748b;margin-top:2px;">📍 ${latest.laagMoment || '—'}</div>
-            ${laagAfw ? `<div class="badge ${laagAfw.cls}" style="margin-top:6px;">Werkelijk ${muntTeken}${latest.werkelijkLaag} · ${laagAfw.label}</div>` : ''}
+            ${latest.werkelijkLaag !== null && laagAfw
+              ? `<div class="badge ${laagAfw.cls}" style="margin-top:6px;">Werkelijk ${muntTeken}${latest.werkelijkLaag} · ${laagAfw.label}</div>`
+              : laagAlBereikt
+                ? `<div style="font-size:10px;color:#dc2626;margin-top:5px;font-weight:600;">✓ al bereikt</div>`
+                : laagNogTeComen
+                  ? `<div style="font-size:10px;color:#d97706;margin-top:5px;font-weight:600;">→ nog -${muntTeken}${(latest.laagOpMoment - latest.dagLaag).toFixed(2)}</div>`
+                  : ''}
           </div>
         </div>
         <div style="font-size:11px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;margin-bottom:10px;">
@@ -592,10 +660,20 @@ function renderGeschiedenis() {
   const rows = [];
   let totaalHoog = 0, totaalLaag = 0, countHoog = 0, countLaag = 0;
 
+  // Detecteer dagen met open (niet-afgerekenende) forecasts
+  const vandaag = getDatumKey();
+  const openDagen = [];
+
   // Alle dagen, nieuwste eerst
-  const dagen = Object.keys(data).sort().reverse();
+  const dagen = Object.keys(data).filter(k => k !== '_eod').sort().reverse();
   for (const datum of dagen) {
     const daagData = data[datum];
+    // Check of deze dag nog open forecasts heeft (geen werkelijkHoog ingevuld)
+    const heeftOpen = datum !== vandaag && Object.keys(daagData)
+      .filter(s => s !== '_eod')
+      .some(sym => (daagData[sym] || []).some(fc => fc.werkelijkHoog === null));
+    if (heeftOpen) openDagen.push(datum);
+
     for (const sym of Object.keys(daagData).filter(s => s !== '_eod')) {
       const forecasts = daagData[sym] || [];
       for (const fc of forecasts) {
@@ -628,6 +706,29 @@ function renderGeschiedenis() {
           <td style="font-size:10px;color:#64748b;max-width:200px;">${fc.katalysator || '—'}</td>
         </tr>`);
       }
+    }
+  }
+
+  // Toon banner voor open dagen
+  const bannerEl = document.getElementById('open-dagen-banner');
+  if (bannerEl) {
+    if (openDagen.length > 0) {
+      bannerEl.style.display = 'block';
+      bannerEl.innerHTML = openDagen.map(dag => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;
+                    background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin-bottom:6px;">
+          <span style="font-size:12px;color:#92400e;">
+            ⏳ <strong>${dag}</strong> — forecasts nog niet afgesloten
+          </span>
+          <button onclick="afrekenenDag('${dag}')"
+            style="font-size:11px;font-weight:600;padding:5px 12px;background:#d97706;color:#fff;
+                   border:none;border-radius:6px;cursor:pointer;">
+            📊 Reken af
+          </button>
+        </div>`).join('');
+    } else {
+      bannerEl.style.display = 'none';
+      bannerEl.innerHTML = '';
     }
   }
 

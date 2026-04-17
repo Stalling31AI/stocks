@@ -1757,23 +1757,28 @@ app.get('/api/eod-settlement', async (req, res) => {
   try {
     const symbols = (req.query.symbols || '').split(',').filter(Boolean).slice(0, 15);
     if (!symbols.length) return res.status(400).json({ error: 'Geen symbolen' });
+    // offset=0 → meest recente handelsdag, offset=1 → dag daarvoor
+    const offset = Math.min(Math.max(parseInt(req.query.offset) || 0, 0), 4);
     const results = {};
     for (const sym of symbols) {
       try {
         await new Promise(r => setTimeout(r, 600));
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=3d`;
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`;
         const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) });
         if (!resp.ok) continue;
         const json = await resp.json();
         const result = json.chart?.result?.[0];
         if (!result) continue;
         const q = result.indicators.quote[0];
-        const n = q.high.length - 1;
+        const ts = result.timestamp || [];
+        const n = q.high.length - 1 - offset;
+        if (n < 0) continue;
         results[sym] = {
-          high: q.high[n] ? +q.high[n].toFixed(2) : null,
-          low:  q.low[n]  ? +q.low[n].toFixed(2)  : null,
-          open: q.open[n] ? +q.open[n].toFixed(2) : null,
+          high:  q.high[n]  ? +q.high[n].toFixed(2)  : null,
+          low:   q.low[n]   ? +q.low[n].toFixed(2)   : null,
+          open:  q.open[n]  ? +q.open[n].toFixed(2)  : null,
           close: q.close[n] ? +q.close[n].toFixed(2) : null,
+          datum: ts[n] ? new Date(ts[n] * 1000).toLocaleDateString('nl-NL') : null,
         };
       } catch(e) { console.warn(`EOD ${sym}:`, e.message); }
     }
