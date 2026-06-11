@@ -63,7 +63,10 @@ async function fetchChart(symbol, interval, range) {
 
   let result;
   try {
-    result = await _yf.chart(symbol, { period1, period2, interval, includePrePost: false });
+    // includePrePost niet op false zetten: Yahoo kan de eerste 30 min van
+    // Euronext-aandelen als pre-market markeren waardoor 09:00-09:30 AMS
+    // wordt uitgesloten. De analyse-code filtert zelf op reguliere sessie.
+    result = await _yf.chart(symbol, { period1, period2, interval });
   } catch (e) {
     throw new Error(`Yahoo ${symbol} ${interval}/${range}: ${e.message}`);
   }
@@ -75,7 +78,8 @@ async function fetchChart(symbol, interval, range) {
   for (const q of quotes) {
     const { open: o, high: h, low: l, close: c, volume, date } = q;
     if (o == null || h == null || l == null || c == null) continue;
-    const ts = Math.floor(date.getTime() / 1000);
+    // quote.date is een JS Date → epoch-seconden → tsToAms voor Amsterdam tijd
+    const ts = Math.floor(new Date(date).getTime() / 1000);
     const t = tsToAms(ts);
     out.push({ ts, date: t.date, time: t.time, min: t.min, o, h, l, c, v: volume || 0 });
   }
@@ -149,6 +153,7 @@ function analyzeAsmlDay(dayCandles, prevClose) {
 
   // --- Opening dip: laagste punt 09:00-09:30 ---
   const dipWin = s.filter(c => c.min < M(9, 30));
+  if (!dipWin.length) return null; // vangnet: geen 09:00-09:30 candles (halve dag of data-gat)
   let dip = dipWin[0];
   for (const c of dipWin) if (c.l < dip.l) dip = c;
   const dipDepth = open - dip.l;
