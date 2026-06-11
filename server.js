@@ -169,7 +169,7 @@ const ASML_KEY_PATHS = new Set([
   '/api/asml/marktdata',
 ]);
 
-// Accepts ?key= query param OR Authorization: Bearer <key> header
+// Accepts ?key= query param, Authorization: Bearer header, or /api/p/:key/ path segment
 function hasValidAsmlKey(req) {
   const envKey = (process.env.ASML_API_KEY || '').trim();
   if (!envKey) return false;
@@ -177,7 +177,13 @@ function hasValidAsmlKey(req) {
   if (queryKey && queryKey === envKey) return true;
   const authHeader = (req.headers.authorization || '').trim();
   const bearerKey = authHeader.replace(/^Bearer\s+/i, '').trim();
-  return bearerKey === envKey;
+  if (bearerKey && bearerKey === envKey) return true;
+  // /api/p/:key/ — key is the 4th path segment (index 3)
+  if (req.path.startsWith('/api/p/')) {
+    const pathKey = (req.path.split('/')[3] || '').trim();
+    if (pathKey && pathKey === envKey) return true;
+  }
+  return false;
 }
 
 app.use((req, res, next) => {
@@ -192,8 +198,8 @@ app.use((req, res, next) => {
 
   // API routes
   if (req.path.startsWith('/api/')) {
-    // Query-token bypass for ASML external endpoints
-    if (ASML_KEY_PATHS.has(req.path) && hasValidAsmlKey(req)) return next();
+    // Key bypass for ASML endpoints (?key=, Bearer header, or /api/p/:key/ path)
+    if ((ASML_KEY_PATHS.has(req.path) || req.path.startsWith('/api/p/')) && hasValidAsmlKey(req)) return next();
     if (!ingelogd) return res.status(401).json({ error: 'Niet ingelogd' });
     return next();
   }
@@ -1826,7 +1832,7 @@ async function getAsmlBacktest() {
   return result;
 }
 
-app.get('/api/backtest-asml', async (req, res) => {
+async function serveAsmlRapport(req, res) {
   try {
     const { rapport } = await getAsmlBacktest();
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1835,9 +1841,9 @@ app.get('/api/backtest-asml', async (req, res) => {
     console.error('ASML backtest fout:', err.message);
     res.status(500).type('text/plain').send(err.message);
   }
-});
+}
 
-app.get('/api/backtest-asml/json', async (req, res) => {
+async function serveAsmlJson(req, res) {
   try {
     const { days } = await getAsmlBacktest();
     res.json(days);
@@ -1845,9 +1851,9 @@ app.get('/api/backtest-asml/json', async (req, res) => {
     console.error('ASML backtest fout:', err.message);
     res.status(500).type('text/plain').send(err.message);
   }
-});
+}
 
-app.get('/api/backtest-asml/csv', async (req, res) => {
+async function serveAsmlCsv(req, res) {
   try {
     const { csv } = await getAsmlBacktest();
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -1857,14 +1863,14 @@ app.get('/api/backtest-asml/csv', async (req, res) => {
     console.error('ASML backtest fout:', err.message);
     res.status(500).type('text/plain').send(err.message);
   }
-});
+}
 
 // ── ASML MARKTDATA: actuele quotes voor ASML.AS, ^VIX, NQ=F, ES=F, ^AEX ────
 let _asmlMarktCache = null;
 let _asmlMarktTs = 0;
 const ASML_MARKT_CACHE_MS = 60 * 1000; // max 1 minuut
 
-app.get('/api/asml/marktdata', async (req, res) => {
+async function serveAsmlMarktdata(req, res) {
   try {
     if (_asmlMarktCache && Date.now() - _asmlMarktTs < ASML_MARKT_CACHE_MS) {
       return res.json(_asmlMarktCache);
@@ -1914,7 +1920,27 @@ app.get('/api/asml/marktdata', async (req, res) => {
     console.error('ASML marktdata fout:', err.message);
     res.status(500).type('text/plain').send(err.message);
   }
-});
+}
+
+// Bestaande routes (ongewijzigd bereikbaar)
+app.get('/api/backtest-asml',      serveAsmlRapport);
+app.get('/api/backtest-asml/json', serveAsmlJson);
+app.get('/api/backtest-asml/csv',  serveAsmlCsv);
+app.get('/api/asml/marktdata',     serveAsmlMarktdata);
+
+// Path-segment key routes: /api/p/:key/... (key in URL, geen query-strip probleem)
+function asmlPathKeyCheck(req, res, next) {
+  const envKey = (process.env.ASML_API_KEY || '').trim();
+  if (!envKey || req.params.key.trim() !== envKey) {
+    return res.status(401).json({ error: 'Niet ingelogd' });
+  }
+  next();
+}
+
+app.get('/api/p/:key/backtest-asml',      asmlPathKeyCheck, serveAsmlRapport);
+app.get('/api/p/:key/backtest-asml/json', asmlPathKeyCheck, serveAsmlJson);
+app.get('/api/p/:key/backtest-asml/csv',  asmlPathKeyCheck, serveAsmlCsv);
+app.get('/api/p/:key/marktdata',          asmlPathKeyCheck, serveAsmlMarktdata);
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
