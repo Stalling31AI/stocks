@@ -1789,6 +1789,112 @@ app.get('/api/eod-settlement', async (req, res) => {
   }
 });
 
+// ── ASML BACKTEST ENDPOINTS (backtest-asml.js) ─────────────────────────────
+const { runBacktest: runAsmlBacktest } = require('./backtest-asml.js');
+
+// Cache: 60 minuten in memory, refresh bevraagt Yahoo niet opnieuw
+let _asmlBtCache = null;
+let _asmlBtTs = 0;
+const ASML_BT_CACHE_MS = 60 * 60 * 1000;
+
+async function getAsmlBacktest() {
+  if (_asmlBtCache && Date.now() - _asmlBtTs < ASML_BT_CACHE_MS) return _asmlBtCache;
+  const result = await runAsmlBacktest();
+  _asmlBtCache = result;
+  _asmlBtTs = Date.now();
+  return result;
+}
+
+app.get('/api/backtest-asml', async (req, res) => {
+  try {
+    const { rapport } = await getAsmlBacktest();
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(rapport);
+  } catch (err) {
+    console.error('ASML backtest fout:', err.message);
+    res.status(500).type('text/plain').send(err.message);
+  }
+});
+
+app.get('/api/backtest-asml/json', async (req, res) => {
+  try {
+    const { days } = await getAsmlBacktest();
+    res.json(days);
+  } catch (err) {
+    console.error('ASML backtest fout:', err.message);
+    res.status(500).type('text/plain').send(err.message);
+  }
+});
+
+app.get('/api/backtest-asml/csv', async (req, res) => {
+  try {
+    const { csv } = await getAsmlBacktest();
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="asml-backtest.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error('ASML backtest fout:', err.message);
+    res.status(500).type('text/plain').send(err.message);
+  }
+});
+
+// ── ASML MARKTDATA: actuele quotes voor ASML.AS, ^VIX, NQ=F, ES=F, ^AEX ────
+let _asmlMarktCache = null;
+let _asmlMarktTs = 0;
+const ASML_MARKT_CACHE_MS = 60 * 1000; // max 1 minuut
+
+app.get('/api/asml/marktdata', async (req, res) => {
+  try {
+    if (_asmlMarktCache && Date.now() - _asmlMarktTs < ASML_MARKT_CACHE_MS) {
+      return res.json(_asmlMarktCache);
+    }
+    const symbolen = ['ASML.AS', '^VIX', 'NQ=F', 'ES=F', '^AEX'];
+    const resultaten = await Promise.all(symbolen.map(async sym => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=2d&includePrePost=false`;
+        const resp = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!resp.ok) return { sym, error: `HTTP ${resp.status}` };
+        const json = await resp.json();
+        const r = json?.chart?.result?.[0];
+        if (!r) return { sym, error: 'geen data' };
+        const meta = r.meta || {};
+        const q = r.indicators?.quote?.[0];
+        const prijs = meta.regularMarketPrice ?? null;
+        const vorigeSlot = meta.chartPreviousClose ?? meta.previousClose ?? null;
+        const verandering = (prijs != null && vorigeSlot != null) ? +(prijs - vorigeSlot).toFixed(2) : null;
+        const percentage = (verandering != null && vorigeSlot) ? +((verandering / vorigeSlot) * 100).toFixed(2) : null;
+        // Volume: laatste niet-null dagvolume (futures/indices hebben dit soms niet)
+        let volume = null;
+        if (q?.volume) {
+          for (let i = q.volume.length - 1; i >= 0; i--) {
+            if (q.volume[i]) { volume = q.volume[i]; break; }
+          }
+        }
+        return { sym, prijs: prijs != null ? +prijs.toFixed(2) : null, verandering, percentage, volume };
+      } catch (e) {
+        return { sym, error: e.message };
+      }
+    }));
+    const out = { timestamp: new Date().toISOString() };
+    for (const r of resultaten) {
+      const { sym, ...rest } = r;
+      out[sym] = rest;
+    }
+    // Alleen cachen als minstens één symbool succesvol is (geen fout-cache)
+    if (resultaten.some(r => r.prijs != null)) {
+      _asmlMarktCache = out;
+      _asmlMarktTs = Date.now();
+    }
+    res.json(out);
+  } catch (err) {
+    console.error('ASML marktdata fout:', err.message);
+    res.status(500).type('text/plain').send(err.message);
+  }
+});
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
