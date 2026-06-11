@@ -26,6 +26,11 @@
 
 const fs = require('fs');
 
+// yahoo-finance2 handelt crumb/cookie-auth af zodat historische
+// 5m/60d data niet met 403 wordt geweigerd zoals bij directe fetch
+const YF = require('yahoo-finance2').default;
+const _yf = new YF({ validation: { logErrors: false } });
+
 const TZ = 'Europe/Amsterdam';
 const SYMBOL = 'ASML.AS';
 const DIP_MIN_EUR = 2;        // minimaal €2 onder open = dip telt
@@ -48,24 +53,31 @@ function tsToAms(ts) {
 const M = (h, m = 0) => h * 60 + m; // minuten sinds middernacht
 
 // ---------- data ophalen ----------
+const RANGE_DAYS = { '60d': 60, '4mo': 125, '5d': 5, '2d': 2 };
+
 async function fetchChart(symbol, interval, range) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
-              `?interval=${interval}&range=${range}&includePrePost=false`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (yappi-backtest)' },
-  });
-  if (!res.ok) throw new Error(`Yahoo ${symbol} ${interval}/${range}: HTTP ${res.status}`);
-  const json = await res.json();
-  const r = json?.chart?.result?.[0];
-  if (!r || !r.timestamp) throw new Error(`Geen data voor ${symbol}`);
-  const q = r.indicators.quote[0];
+  const days = RANGE_DAYS[range];
+  if (!days) throw new Error(`Onbekende range: ${range}`);
+  const period2 = new Date();
+  const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  let result;
+  try {
+    result = await _yf.chart(symbol, { period1, period2, interval, includePrePost: false });
+  } catch (e) {
+    throw new Error(`Yahoo ${symbol} ${interval}/${range}: ${e.message}`);
+  }
+
+  const quotes = result.quotes || [];
+  if (!quotes.length) throw new Error(`Geen data voor ${symbol}`);
+
   const out = [];
-  for (let i = 0; i < r.timestamp.length; i++) {
-    const o = q.open[i], h = q.high[i], l = q.low[i], c = q.close[i];
+  for (const q of quotes) {
+    const { open: o, high: h, low: l, close: c, volume, date } = q;
     if (o == null || h == null || l == null || c == null) continue;
-    const t = tsToAms(r.timestamp[i]);
-    out.push({ ts: r.timestamp[i], date: t.date, time: t.time, min: t.min,
-               o, h, l, c, v: q.volume[i] || 0 });
+    const ts = Math.floor(date.getTime() / 1000);
+    const t = tsToAms(ts);
+    out.push({ ts, date: t.date, time: t.time, min: t.min, o, h, l, c, v: volume || 0 });
   }
   return out;
 }
