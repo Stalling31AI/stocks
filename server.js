@@ -169,6 +169,17 @@ const ASML_KEY_PATHS = new Set([
   '/api/asml/marktdata',
 ]);
 
+// Accepts ?key= query param OR Authorization: Bearer <key> header
+function hasValidAsmlKey(req) {
+  const envKey = (process.env.ASML_API_KEY || '').trim();
+  if (!envKey) return false;
+  const queryKey = (req.query.key || '').trim();
+  if (queryKey && queryKey === envKey) return true;
+  const authHeader = (req.headers.authorization || '').trim();
+  const bearerKey = authHeader.replace(/^Bearer\s+/i, '').trim();
+  return bearerKey === envKey;
+}
+
 app.use((req, res, next) => {
   const cookie = req.headers.cookie || '';
   const ingelogd = cookie.includes('yappi_auth=true');
@@ -182,10 +193,7 @@ app.use((req, res, next) => {
   // API routes
   if (req.path.startsWith('/api/')) {
     // Query-token bypass for ASML external endpoints
-    if (ASML_KEY_PATHS.has(req.path)) {
-      const asmlKey = process.env.ASML_API_KEY;
-      if (asmlKey && req.query.key === asmlKey) return next();
-    }
+    if (ASML_KEY_PATHS.has(req.path) && hasValidAsmlKey(req)) return next();
     if (!ingelogd) return res.status(401).json({ error: 'Niet ingelogd' });
     return next();
   }
