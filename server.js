@@ -161,6 +161,14 @@ async function tdRateLimit() {
 }
 
 const WACHTWOORD = process.env.APP_WACHTWOORD || 'yappi2024';
+
+const ASML_KEY_PATHS = new Set([
+  '/api/backtest-asml',
+  '/api/backtest-asml/json',
+  '/api/backtest-asml/csv',
+  '/api/asml/marktdata',
+]);
+
 app.use((req, res, next) => {
   const cookie = req.headers.cookie || '';
   const ingelogd = cookie.includes('yappi_auth=true');
@@ -173,6 +181,11 @@ app.use((req, res, next) => {
 
   // API routes
   if (req.path.startsWith('/api/')) {
+    // Query-token bypass for ASML external endpoints
+    if (ASML_KEY_PATHS.has(req.path)) {
+      const asmlKey = process.env.ASML_API_KEY;
+      if (asmlKey && req.query.key === asmlKey) return next();
+    }
     if (!ingelogd) return res.status(401).json({ error: 'Niet ingelogd' });
     return next();
   }
